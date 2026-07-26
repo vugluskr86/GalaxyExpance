@@ -1,0 +1,15 @@
+{
+  "name": "pixel-cosmos",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Процедурный пиксельный космос: кластер галактик → галактика → система → тело. Каркас для игры.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.1.5"
+  }
+}
