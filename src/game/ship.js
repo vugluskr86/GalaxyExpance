@@ -96,10 +96,14 @@ export class Ship {
       while(da > Math.PI) da -= 2*Math.PI;
       while(da < -Math.PI) da += 2*Math.PI;
       this.nose += Math.max(-4*dt, Math.min(4*dt, da));
-      /* разгон / торможение: тормозной путь v²/(2·b) */
-      const brake = this.cruiseV*this.cruiseV/(2*260);
+      /* разгон / торможение: тормозной путь v²/(2·b).
+       *  b повышено для малых тел — иначе торможение не успевает. */
+      const psT = primaryState(sys, this.target);
+      const captureR = (psT ? psT.bodyR : 4) + this.altitude;
+      const brakeAcc = Math.max(260, (psT ? psT.mu / Math.max(10, captureR) : 260));
+      const brake = this.cruiseV*this.cruiseV/(2*brakeAcc);
       if (d > brake + 20) this.cruiseV = Math.min(420, this.cruiseV + 300*dt);
-      else this.cruiseV = Math.max(24, this.cruiseV - 300*dt);
+      else this.cruiseV = Math.max(12, this.cruiseV - 300*dt);
       const nx = gx + Math.cos(this.nose)*this.cruiseV*dt;
       const ny = gy + Math.sin(this.nose)*this.cruiseV*dt;
       /* состояние храним в раме будущего primary (цели, если она гравитирует) */
@@ -110,21 +114,19 @@ export class Ship {
       this.rx = nx - ps.x; this.ry = ny - ps.y;
       this.rvx = Math.cos(this.nose)*this.cruiseV - ps.vx;
       this.rvy = Math.sin(this.nose)*this.cruiseV - ps.vy;
-      const psT = primaryState(sys, this.target);
-      const captureR = (psT ? psT.bodyR : 4) + this.altitude;
       if (d < captureR + 8){
-        if (["planet","moon","star"].includes(this.target.kind)){
-          this.setCircular(sys, this.target, this.altitude);
-        } else {
-          /* комета/обломок: viseться рядом, скорость цели */
-          this.mode = "newton";
-          this.primary = { ...this.target };
-          const a2 = Math.random()*Math.PI*2;
-          const r2 = captureR;
-          this.rx = Math.cos(a2)*r2; this.ry = Math.sin(a2)*r2;
-          const v2 = Math.sqrt(30/r2);
-          this.rvx = -Math.sin(a2)*v2; this.rvy = Math.cos(a2)*v2;
+        /* Выход из FSD: обрезаем скорость до 90% круговой на целевой высоте —
+         * корабль выйдет на эллиптическую орбиту без столкновения. */
+        if (psT && psT.mu > 0){
+          const vCirc = Math.sqrt(psT.mu / captureR);
+          if (this.cruiseV > vCirc * 0.9){
+            this.cruiseV = vCirc * 0.9;
+            // пересчитываем rvx/rvy с новой скоростью
+            this.rvx = Math.cos(this.nose)*this.cruiseV - ps.vx;
+            this.rvy = Math.sin(this.nose)*this.cruiseV - ps.vy;
+          }
         }
+        this.mode = "newton";
         this.target = null;
         sys.mgr?.onChange?.();
       }
@@ -193,6 +195,72 @@ export class Ship {
     const tx = -this.ry/r, ty = this.rx/r;
     const dir = (this.rvx*tx + this.rvy*ty) >= 0 ? 1 : -1;
     this.rvx = tx*v*dir; this.rvy = ty*v*dir;
+  }
+  /** Манёвровый узел: планирование delta-v в заданной точке орбиты.
+   *  @param {number} dvProg — prograde delta-v
+   *  @param {number} dvRad — radial-out delta-v (положительное: от тела)
+   *  @param {number} [eta=20] — время до узла (сек), по умолчанию 20 */
+  setManeuverNode(dvProg, dvRad, eta = 20){
+    if (this.mode !== "newton") return;
+    this.manNode = {
+      dvProg, dvRad,
+      eta,             // время до исполнения
+      timer: eta,      // убывающий таймер
+      rx: this.rx, ry: this.ry  // позиция узла в текущей раме (для визуализации)
+    };
+  }
+  /** Применяет манёвровый узел, когда таймер истекает. */
+  _executeNode(sys){
+    const n = this.manNode;
+    if (!n) return;
+    n.timer -= 1/60;                               // ~16ms кадр
+    if (n.timer <= 0){
+      const r = Math.hypot(this.rx, this.ry);
+      const tx = -this.ry/r, ty = this.rx/r;       // prograde
+      const rx = this.rx/r, ry = this.ry/r;        // radial-out
+      this.rvx += tx*n.dvProg + rx*n.dvRad;
+      this.rvy += ty*n.dvProg + ry*n.dvRad;
+      this.manNode = null;
+      sys.mgr?.onChange?.();
+    }
+  }
+  /** Отменить манёвровый узел. */
+  cancelNode(){ this.manNode = null; }
+  /** Гомановский переход между круговыми орбитами вокруг текущего primary.
+   *  Первый импульс (prograde) — сейчас, второй запоминается в hohPhase. */
+  hohmannTo(sys, targetAlt){
+    if (this.mode !== "newton") return;
+    const ps = primaryState(sys, this.primary);
+    if (!ps) return;
+    const r1 = Math.hypot(this.rx, this.ry);
+    const r2 = ps.bodyR + targetAlt;
+    if (Math.abs(r1 - r2) < 2) return;   // уже там
+    const mu = ps.mu;
+    const a = (r1 + r2)/2;               // большая полуось переходной орбиты
+    const v1 = Math.sqrt(mu/r1);         // текущая круговая скорость
+    const vTransfer = Math.sqrt(2*mu/r1 - mu/a);
+    const dv = r1 < r2 ? vTransfer - v1 : -(v1 - vTransfer);
+    // prograde импульс
+    const tx = -this.ry/r1, ty = this.rx/r1;
+    this.rvx += tx*dv; this.rvy += ty*dv;
+    this.hohPhase = { r2, a };
+    sys.mgr?.onChange?.();
+  }
+  /** Проверка и выполнение второго импульса гомановского перехода. */
+  _checkHohmann(sys){
+    if (!this.hohPhase) return;
+    const ps = primaryState(sys, this.primary);
+    if (!ps){ this.hohPhase = null; return; }
+    const r = Math.hypot(this.rx, this.ry);
+    if (Math.abs(r - this.hohPhase.r2) < 3){
+      // циркуляризуемся на целевой высоте
+      const v = Math.sqrt(ps.mu/r);
+      const tx = -this.ry/r, ty = this.rx/r;
+      const dir = (this.rvx*tx + this.rvy*ty) >= 0 ? 1 : -1;
+      this.rvx = tx*v*dir; this.rvy = ty*v*dir;
+      this.hohPhase = null;
+      sys.mgr?.onChange?.();
+    }
   }
   draw(sctx, X, Y, t){
     const c = Math.cos(this.nose), s = Math.sin(this.nose);

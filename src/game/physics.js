@@ -8,7 +8,8 @@ export const MU_SUN = 40000;
 
 export function muOf(kind, o){
   if (kind === "star") return MU_SUN;
-  return 3.4 * (o.size || 4) * (o.size || 4);   // планеты и луны: μ ∝ size²
+  if (kind === "comet" || kind === "rock") return 30;   // малые тела: минимальная гравитация
+  return 3.4 * (o.size || 4) * (o.size || 4);          // планеты и луны: μ ∝ size²
 }
 export function bodyROf(o){ return o && o.size ? o.size/2 : 4; }
 
@@ -55,11 +56,40 @@ export function primaryState(sys, selRef){
       key: keyOf(selRef), selRef
     };
   }
-  /* кометы/обломки: масса пренебрежима — их «SOI» условная, только для стыковки */
-  const pos = sys.posOf(selRef);
-  if (!pos) return null;
-  return { x:pos[0], y:pos[1], vx:0, vy:0, mu: 30, bodyR: bodyROf(sys.obj(selRef)),
-           soi: 26, key: keyOf(selRef), selRef };
+  /* кометы/обломки: реальная скорость из кеплеровых элементов */
+  if (selRef.kind === "comet"){
+    const c = S.comets[selRef.i];
+    if (!c) return null;
+    const r = c.r || 100;
+    const vKep = Math.sqrt(MU_SUN*(2/r - 1/c.a));
+    const tang = Math.acos((c.a*(1 - c.e*c.e)/r - 1)/c.e) || 0;
+    const ta = c.th;  // true anomaly
+    const flightAngle = Math.atan2(c.e*Math.sin(ta), 1 + c.e*Math.cos(ta));
+    const dir = c.dir || 1;
+    const ang = ta + c.om + flightAngle;
+    return {
+      x: c.x, y: c.y,
+      vx: -Math.sin(ang)*vKep*dir, vy: Math.cos(ang)*vKep*dir,
+      mu: muOf("comet"), bodyR: 3,
+      soi: Math.max(10, r * Math.pow(30/MU_SUN, 0.4)),
+      key: keyOf(selRef), selRef
+    };
+  }
+  if (selRef.kind === "rock"){
+    const pos2 = sys.posOf(selRef);
+    const o2 = sys.obj(selRef);
+    if (!pos2 || !o2) return null;
+    const r2 = o2.dist || 100;
+    const vCirc = Math.sqrt(MU_SUN/r2);
+    return {
+      x: pos2[0], y: pos2[1],
+      vx: -Math.sin(o2.ang)*vCirc, vy: Math.cos(o2.ang)*vCirc,
+      mu: muOf("rock"), bodyR: bodyROf(o2),
+      soi: Math.max(8, r2 * Math.pow(30/MU_SUN, 0.4)),
+      key: keyOf(selRef), selRef
+    };
+  }
+  return null;
 }
 
 /** Доминирующее тело для глобальной точки: солнце → планета → её луна. */
@@ -77,6 +107,16 @@ export function findPrimary(sys, gx, gy){
       }
       break;
     }
+  }
+  /* кометы: гравитационный захват */
+  for(let i=0;i<S.comets.length;i++){
+    const cs = primaryState(sys, { kind:"comet", i, j:0 });
+    if (cs && Math.hypot(gx - cs.x, gy - cs.y) < cs.soi){ best = cs; break; }
+  }
+  /* обломки пояса: гравитационный захват */
+  if (S.belt) for(let i=0;i<S.belt.rocks.length;i++){
+    const rs = primaryState(sys, { kind:"rock", i, j:0 });
+    if (rs && Math.hypot(gx - rs.x, gy - rs.y) < rs.soi){ best = rs; break; }
   }
   return best;
 }

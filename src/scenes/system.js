@@ -52,6 +52,7 @@ export class SystemScene {
     else if (down && code === "KeyX"){ sh.ctrl.thrust = sh.ctrl.retro = false; }
     else if (down && code === "KeyC" && sh.mode === "newton") sh.circularize(this);
     else if (down && code === "KeyF" && this.sel) sh.fsdTo(this.sel, this.orbitAlt);
+    else if (down && code === "KeyH" && this.sel) sh.hohmannTo(this, this.orbitAlt);
   }
   /** Характеристики любого выбираемого тела (для карточки и тултипа). */
   statsOf(sel){
@@ -97,7 +98,11 @@ export class SystemScene {
   }
   update(dt){
     stepSystem(this.S, dt);
-    if (this.playerShip) this.playerShip.update(dt, this);
+    if (this.playerShip){
+      this.playerShip.update(dt, this);
+      this.playerShip._checkHohmann(this);
+      this.playerShip._executeNode(this);
+    }
     for(const n of this.npcs) n.update(dt, this);
     let camTgt = null;
     if (this.followShip && this.playerShip) camTgt = this.playerShip.globPos(this);
@@ -221,6 +226,16 @@ export class SystemScene {
           sctx.fillRect(X, Y, 1, 1);
         }
         sctx.globalAlpha = 1;
+        /* манёвровый узел: маркер на позиции узла */
+        if (sh.manNode){
+          const nX = Math.round(this.ssx(ps.x + sh.manNode.rx));
+          const nY = Math.round(this.ssy(ps.y + sh.manNode.ry));
+          sctx.fillStyle = "#7ee0ff";
+          sctx.fillRect(nX - 3, nY, 7, 1);
+          sctx.fillRect(nX, nY - 3, 1, 7);
+          sctx.fillStyle = "#ffffff";
+          sctx.fillRect(nX - 1, nY - 1, 3, 3);
+        }
       }
     }
     /* корабли */
@@ -273,7 +288,8 @@ export class SystemScene {
         const pName = sh.primary.kind === "star" ? this.S.name : this.label(sh.primary);
         const l1 = modeRu + " · рама: " + pName;
         const l2 = "v=" + els.v.toFixed(1) + " · h=" + Math.max(0, els.r - els.ps.bodyR).toFixed(0) +
-          (sh.mode === "newton" && isFinite(els.ra)
+          (sh.manNode ? " · <span style='color:#7ee0ff'>узел " + sh.manNode.timer.toFixed(0) + "с</span>" : "") +
+        (sh.mode === "newton" && isFinite(els.ra)
             ? " · Ап=" + Math.min(9999, els.ra - els.ps.bodyR).toFixed(0) +
               " · Пер=" + (els.rp - els.ps.bodyR).toFixed(0) + " · e=" + els.e.toFixed(2)
             : (sh.mode === "newton" ? " · гипербола e=" + els.e.toFixed(2) : ""));
@@ -461,7 +477,16 @@ export class SystemScene {
           this.mgr.onChange?.();
         } });
     }
+    if (this.sel && this.playerShip && this.playerShip.mode === "newton" &&
+        this.playerShip.sameTarget(this.sel)){
+      spec.push({ kind:"action", label:"Гоман к цели (H, h=" + this.orbitAlt + ")",
+        run: () => { this.playerShip.hohmannTo(this, this.orbitAlt); this.mgr.onChange?.(); } });
+    }
     if (this.playerShip && this.playerShip.mode === "newton"){
+      spec.push({ kind:"action", label:"Узел: +5 prograde (M)",
+        run: () => { this.playerShip.setManeuverNode(5, 0, 20); this.mgr.onChange?.(); } });
+      if (this.playerShip.manNode) spec.push({ kind:"action", label:"Отменить узел",
+        run: () => { this.playerShip.cancelNode(); this.mgr.onChange?.(); } });
       spec.push({ kind:"action", label:"Циркуляризовать орбиту (C)",
         run: () => { this.playerShip.circularize(this); this.mgr.onChange?.(); } });
     }
