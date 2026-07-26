@@ -190,7 +190,7 @@ export class LandingScene {
   primary(){
     return { label:"Взлёт", run: () => {
       const ship = this.sys.playerShip;
-      if (ship) ship.state = "orbit";
+      if (ship) ship.takeoff(this.sys, this.sys.orbitAlt);
       this.mgr.pop();
     } };
   }

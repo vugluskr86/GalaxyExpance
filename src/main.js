@@ -66,6 +66,19 @@ document.getElementById("btnFit").addEventListener("click", () => mgr.current?.f
 document.getElementById("btnZin").addEventListener("click", () => mgr.current?.zoomBy?.(1.35));
 document.getElementById("btnZout").addEventListener("click", () => mgr.current?.zoomBy?.(1/1.35));
 
+/* полётные клавиши → активная сцена (по e.code, независимо от раскладки) */
+const FLIGHT_CODES = new Set(["KeyW","KeyA","KeyS","KeyD","KeyX","KeyC","KeyF"]);
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (FLIGHT_CODES.has(e.code)){
+    e.preventDefault();
+    mgr.current?.onKey?.(e.code, true);
+  }
+});
+document.addEventListener("keyup", e => {
+  if (FLIGHT_CODES.has(e.code)) mgr.current?.onKey?.(e.code, false);
+});
+
 const SPEED_PRESETS = { "0": 1, "1": 1, "2": 2, "3": 5, "4": 10 };
 const SPEED_STEPS = [0, 1, 2, 5, 10];
 document.addEventListener("keydown", e => {

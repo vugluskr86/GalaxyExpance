@@ -9,6 +9,7 @@ import { lblText, toLbl } from "../ui/panel.js";
 import { bakeSystemNebula, NEB_SPAN } from "../gen/nebula.js";
 import { LandingScene } from "./landing.js";
 import { Ship, makeNpcs } from "../game/ship.js";
+import { primaryState, predictPath, muOf, soiOf, MU_SUN } from "../game/physics.js";
 import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 
@@ -24,9 +25,33 @@ export class SystemScene {
     this.orbitAlt = 14;
     this.nebCvs = this.S.neb ? bakeSystemNebula(this.S.neb) : null;
     /* корабли */
-    this.playerShip = this.S.bhOnly ? null : new Ship(0, -186, "#ffd166");
-    if (this.playerShip) this.playerShip.ang = Math.PI/2;
-    this.npcs = makeNpcs(this.S, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
+    this.playerShip = this.S.bhOnly ? null : new Ship(this, "#ffd166");
+    this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
+    this.followShip = false;
+    this.zoom = 1;
+  }
+  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = 1; }
+  ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
+  ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
+  zoomBy(f){ this.zoom = Math.min(4, Math.max(0.15, this.zoom*f)); }
+  onWheel(mx, my, deltaY){
+    const wx = (mx - this.ctx.SCR/2)/this.zoom + this.cam.x;
+    const wy = (my - this.ctx.SCR/2)/this.zoom + this.cam.y;
+    this.zoom = Math.min(4, Math.max(0.15, this.zoom * (deltaY < 0 ? 1.18 : 1/1.18)));
+    this.cam.x = wx - (mx - this.ctx.SCR/2)/this.zoom;
+    this.cam.y = wy - (my - this.ctx.SCR/2)/this.zoom;
+  }
+  /** Управление с клавиатуры (e.code): газ/тормоз/поворот, манёвры. */
+  onKey(code, down){
+    const sh = this.playerShip;
+    if (!sh || sh.mode === "landed") return;
+    if (code === "KeyA") sh.ctrl.left = down;
+    else if (code === "KeyD") sh.ctrl.right = down;
+    else if (code === "KeyW") sh.ctrl.thrust = down;
+    else if (code === "KeyS") sh.ctrl.retro = down;
+    else if (down && code === "KeyX"){ sh.ctrl.thrust = sh.ctrl.retro = false; }
+    else if (down && code === "KeyC" && sh.mode === "newton") sh.circularize(this);
+    else if (down && code === "KeyF" && this.sel) sh.fsdTo(this.sel, this.orbitAlt);
   }
   /** Характеристики любого выбираемого тела (для карточки и тултипа). */
   statsOf(sel){
@@ -40,9 +65,6 @@ export class SystemScene {
     if (sel.kind === "rock") return smallBodyStats(this.S, "rock", o, o.dist);
     return null;
   }
-  fit(){ this.cam.x = 0; this.cam.y = 0; }
-  ssx(w){ return w - this.cam.x + this.ctx.SCR/2; }
-  ssy(w){ return w - this.cam.y + this.ctx.SCR/2; }
   posOf(s){
     if (s.kind === "star") return [0, 0];
     const o = this.obj(s);
@@ -75,19 +97,26 @@ export class SystemScene {
   }
   update(dt){
     stepSystem(this.S, dt);
-    if (this.playerShip){
-      const wasOrbit = this.playerShip.state;
-      this.playerShip.update(dt, this);
-      if (wasOrbit !== this.playerShip.state) this.mgr.onChange?.();
-    }
+    if (this.playerShip) this.playerShip.update(dt, this);
     for(const n of this.npcs) n.update(dt, this);
-    if (this.follow && this.sel){
-      const pos = this.posOf(this.sel);
-      if (pos){
-        const k = 1 - Math.exp(-dt*6);
-        this.cam.x += (pos[0] - this.cam.x)*k;
-        this.cam.y += (pos[1] - this.cam.y)*k;
-      }
+    let camTgt = null;
+    if (this.followShip && this.playerShip) camTgt = this.playerShip.globPos(this);
+    else if (this.follow && this.sel) camTgt = this.posOf(this.sel);
+    if (camTgt){
+      const k = 1 - Math.exp(-dt*6);
+      this.cam.x += (camTgt[0] - this.cam.x)*k;
+      this.cam.y += (camTgt[1] - this.cam.y)*k;
+    }
+  }
+  drawWorldCircleAt(cx, cy, r, col, skip){
+    const { sctx, SCR } = this.ctx;
+    sctx.fillStyle = col;
+    const steps = Math.max(24, Math.ceil(2*Math.PI*r/6));
+    for(let i=0;i<steps;i+=skip){
+      const a = i/steps*Math.PI*2;
+      const X = Math.round(this.ssx(cx + Math.cos(a)*r)), Y = Math.round(this.ssy(cy + Math.sin(a)*r));
+      if (X < 0 || Y < 0 || X >= SCR || Y >= SCR) continue;
+      sctx.fillRect(X, Y, 1, 1);
     }
   }
   drawOrbit(r, col){
@@ -172,11 +201,37 @@ export class SystemScene {
         sctx.drawImage(m.cvs, Math.round(this.ssx(m._x) - m.C/2), Math.round(this.ssy(m._y) - m.C/2));
       }
     }
+    /* SOI выбранного тела */
+    if (this.sel && (this.sel.kind === "planet" || this.sel.kind === "moon")){
+      const ps = primaryState(this, this.sel);
+      if (ps) this.drawWorldCircleAt(ps.x, ps.y, ps.soi, "#22305a", 4);
+    }
+    /* предсказанная траектория игрока (в раме его primary, как в KSP) */
+    const sh = this.playerShip;
+    if (sh && sh.mode === "newton"){
+      const ps = primaryState(this, sh.primary);
+      if (ps){
+        const pts = predictPath(sh, ps.mu, ps.soi, ps.bodyR);
+        sctx.fillStyle = "#ffd166";
+        sctx.globalAlpha = 0.55;
+        for(let i=0;i<pts.length;i+=2){
+          const X = Math.round(this.ssx(ps.x + pts[i][0]));
+          const Y = Math.round(this.ssy(ps.y + pts[i][1]));
+          if (X < 0 || Y < 0 || X >= SCR || Y >= SCR) continue;
+          sctx.fillRect(X, Y, 1, 1);
+        }
+        sctx.globalAlpha = 1;
+      }
+    }
     /* корабли */
-    for(const n of this.npcs)
-      n.ship.draw(sctx, this.ssx(n.ship.x), this.ssy(n.ship.y), t);
-    if (this.playerShip && this.playerShip.state !== "landed")
-      this.playerShip.draw(sctx, this.ssx(this.playerShip.x), this.ssy(this.playerShip.y), t);
+    for(const n of this.npcs){
+      const [nx, ny] = n.ship.globPos(this);
+      n.ship.draw(sctx, this.ssx(nx), this.ssy(ny), t);
+    }
+    if (sh && sh.mode !== "landed"){
+      const [px, py] = sh.globPos(this);
+      sh.draw(sctx, this.ssx(px), this.ssy(py), t);
+    }
     if (this.sel){
       const pos = this.posOf(this.sel);
       const o = this.obj(this.sel);
@@ -204,9 +259,27 @@ export class SystemScene {
         toLbl(this.ctx, this.ssx(pos[0])) + 12, toLbl(this.ctx, this.ssy(pos[1])) + 20, "#ffd166", 13);
     }
     for(const n of this.npcs){
-      if (n.ship.state !== "orbit") continue;
+      if (n.ship.mode !== "newton") continue;
+      const [nx, ny] = n.ship.globPos(this);
       lblText(this.ctx, n.name,
-        toLbl(this.ctx, this.ssx(n.ship.x)) + 6, toLbl(this.ctx, this.ssy(n.ship.y)) - 5, "#6fb7ff", 10);
+        toLbl(this.ctx, this.ssx(nx)) + 6, toLbl(this.ctx, this.ssy(ny)) - 5, "#6fb7ff", 10);
+    }
+    /* HUD корабля: скорость, высота, элементы орбиты */
+    const sh = this.playerShip;
+    if (sh && sh.mode !== "landed"){
+      const els = sh.els(this);
+      if (els){
+        const modeRu = sh.mode === "cruise" ? "FSD-круиз" : "ньютонова механика";
+        const pName = sh.primary.kind === "star" ? this.S.name : this.label(sh.primary);
+        const l1 = modeRu + " · рама: " + pName;
+        const l2 = "v=" + els.v.toFixed(1) + " · h=" + Math.max(0, els.r - els.ps.bodyR).toFixed(0) +
+          (sh.mode === "newton" && isFinite(els.ra)
+            ? " · Ап=" + Math.min(9999, els.ra - els.ps.bodyR).toFixed(0) +
+              " · Пер=" + (els.rp - els.ps.bodyR).toFixed(0) + " · e=" + els.e.toFixed(2)
+            : (sh.mode === "newton" ? " · гипербола e=" + els.e.toFixed(2) : ""));
+        lblText(this.ctx, l1, 12, this.ctx.LW - 30, "#dfe4ff", 11);
+        lblText(this.ctx, l2, 12, this.ctx.LW - 14, "#ffd166", 11);
+      }
     }
   }
   /** Кандидаты попадания в точку (общая логика для клика и тултипа). */
@@ -239,32 +312,46 @@ export class SystemScene {
     return cands[0].s;
   }
   /** Тултип характеристик при наведении — для любого тела, включая звезду. */
+  /** Экранные px → мировые координаты. */
+  toWorld(mx, my){
+    return {
+      wx: (mx - this.ctx.SCR/2)/this.zoom + this.cam.x,
+      wy: (my - this.ctx.SCR/2)/this.zoom + this.cam.y
+    };
+  }
   onHover(mx, my){
     if (this.S.bhOnly) return null;
-    const wx = mx - this.ctx.SCR/2 + this.cam.x;
-    const wy = my - this.ctx.SCR/2 + this.cam.y;
+    const { wx, wy } = this.toWorld(mx, my);
     const hit = this.hitAt(wx, wy, 6);
     if (!hit) return null;
     if (hit.kind === "star")
-      return starTooltipHTML(this.S.name, CLS[this.star.ci], this.S.sun.D);
+      return starTooltipHTML(this.S.name, CLS[this.star.ci], this.S.sun.D) +
+        "<br>μ = " + MU_SUN.toLocaleString("ru-RU");
     const st = this.statsOf(hit);
-    return st ? statsTooltipHTML(this.label(hit), st) : null;
+    if (!st) return null;
+    let html = statsTooltipHTML(this.label(hit), st);
+    if (hit.kind === "planet" || hit.kind === "moon"){
+      const ps = primaryState(this, hit);
+      if (ps) html += "<br>μ = " + Math.round(ps.mu) + " · SOI = " + Math.round(ps.soi);
+    }
+    return html;
   }
-  /** Посадка возможна на любое твёрдое тело: планета (кроме газовой), луна, обломок, ядро кометы. */
+  /** Посадка: корабль в ньютоне, в раме выбранного твёрдого тела, низко и небыстро. */
   canLand(){
-    if (!this.playerShip || this.playerShip.state !== "orbit" || !this.sel) return false;
-    if (!this.playerShip.sameTarget(this.sel)) return false;
+    const sh = this.playerShip;
+    if (!sh || sh.mode !== "newton" || !this.sel) return false;
+    if (!sh.sameTarget(this.sel)) return false;
     const k = this.sel.kind;
     if (k === "star") return false;
     const o = this.obj(this.sel);
     if (!o) return false;
-    if (k === "planet" || k === "moon") return o.type !== "gas";
-    return k === "rock" || k === "comet";
+    if ((k === "planet" || k === "moon") && o.type === "gas") return false;
+    const els = sh.els(this);
+    return els && (els.r - els.ps.bodyR) < 40 && els.v < 30;
   }
   onTap(mx, my){
     if (this.S.bhOnly) return;
-    const wx = mx - this.ctx.SCR/2 + this.cam.x;
-    const wy = my - this.ctx.SCR/2 + this.cam.y;
+    const { wx, wy } = this.toWorld(mx, my);
     const hit = this.hitAt(wx, wy, 9);
     if (!hit) return;
     if (this.sel && hit.kind === this.sel.kind && hit.i === this.sel.i && hit.j === this.sel.j){
@@ -280,8 +367,8 @@ export class SystemScene {
   }
   onDragMove(dx, dy, st){
     this.follow = false;
-    this.cam.x = st.cx - dx;
-    this.cam.y = st.cy - dy;
+    this.cam.x = st.cx - dx/this.zoom;
+    this.cam.y = st.cy - dy/this.zoom;
     this.mgr.onChange?.();
   }
   status(){
@@ -291,7 +378,7 @@ export class SystemScene {
       info: (S.jets ? "квазар" : "сверхмассивная чёрная дыра") + " · S-звёзд: " + S.sstars.length
     };
     const ship = this.playerShip;
-    const shipRu = ship ? ({idle:"дрейф", fly:"перелёт", orbit:"орбита", landed:"на поверхности"})[ship.state] : "";
+    const shipRu = ship ? ({newton:"ньютон", cruise:"FSD", landed:"на поверхности"})[ship.mode] : "";
     return {
       title: S.name,
       info: "система · класс " + CLS[this.star.ci].c + " · планет: " + S.planets.length +
@@ -340,13 +427,13 @@ export class SystemScene {
     if (this.S.bhOnly) return { label:"← к галактике", run: () => this.mgr.pop() };
     if (this.canLand()){
       return { label:"Посадка", run: () => {
-        this.playerShip.state = "landed";
+        this.playerShip.land(this.sel);
         this.mgr.push(new LandingScene(this, { ...this.sel }, this.statsOf(this.sel)));
       } };
     }
     if (this.sel && this.playerShip){
-      return { label:"Выйти на орбиту (h=" + this.orbitAlt + ")", run: () => {
-        this.playerShip.orbitAt(this.sel, this.orbitAlt);
+      return { label:"FSD к выбранному (F, h=" + this.orbitAlt + ")", run: () => {
+        this.playerShip.fsdTo(this.sel, this.orbitAlt);
         this.mgr.onChange?.();
       } };
     }
@@ -360,8 +447,24 @@ export class SystemScene {
       { kind:"range", label:"Высота орбиты", min:8, max:48, step:2,
         get:() => this.orbitAlt, set:v => { this.orbitAlt = v; } },
       { kind:"check", label:"Следить за выбранным",
-        get:() => this.follow, set:v => { this.follow = v; } }
+        get:() => this.follow, set:v => { this.follow = v; if (v) this.followShip = false; } },
+      { kind:"check", label:"Камера: корабль",
+        get:() => this.followShip, set:v => { this.followShip = v; if (v) this.follow = false; } }
     ];
+    if (this.sel && this.playerShip && this.playerShip.mode !== "landed"){
+      const sameBody = this.playerShip.sameTarget(this.sel);
+      spec.push({ kind:"action",
+        label: sameBody ? "Выйти на орбиту (h=" + this.orbitAlt + ")" : "FSD → орбита (h=" + this.orbitAlt + ")",
+        run: () => {
+          if (sameBody) this.playerShip.setCircular(this, this.sel, this.orbitAlt);
+          else this.playerShip.fsdTo(this.sel, this.orbitAlt);
+          this.mgr.onChange?.();
+        } });
+    }
+    if (this.playerShip && this.playerShip.mode === "newton"){
+      spec.push({ kind:"action", label:"Циркуляризовать орбиту (C)",
+        run: () => { this.playerShip.circularize(this); this.mgr.onChange?.(); } });
+    }
     if (this.sel) spec.push({ kind:"action", label:"Осмотреть (крупный план)",
       run: () => this.mgr.push(new BodyScene(this, { ...this.sel })) });
     return spec;

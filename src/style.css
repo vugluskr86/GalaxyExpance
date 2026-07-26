@@ -24,7 +24,7 @@ h1{font-size:22px; letter-spacing:6px; text-transform:uppercase; color:var(--acc
 #btnBack{left:10px; top:10px;}
 #btnZin{right:10px; bottom:46px; width:34px;}
 #btnZout{right:10px; bottom:10px; width:34px;}
-#btnFit{left:10px; bottom:10px;}
+#btnFit{right:10px; bottom:82px;}
 .panel{background:var(--panel); border:2px solid var(--line); border-radius:6px; padding:16px; width:400px; max-width:100%;}
 .sect{font-size:11px; letter-spacing:3px; color:var(--accent); text-transform:uppercase; margin:4px 0 10px;
   border-bottom:1px solid var(--line); padding-bottom:6px;}

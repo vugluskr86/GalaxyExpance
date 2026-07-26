@@ -5,6 +5,7 @@ import { lightAt } from "../gen/system.js";
 import { NEB_SPAN } from "../gen/nebula.js";
 import { planetStats, statsTooltipHTML } from "../game/stats.js";
 import { LandingScene } from "./landing.js";
+import { primaryState } from "../game/physics.js";
 
 export class BodyScene {
   constructor(sysScene, selRef){
@@ -144,58 +145,62 @@ export class BodyScene {
     }
     this.drawShips(sctx, t);
   }
-  /** Экранная позиция корабля в СХЕМАТИЧЕСКОМ пространстве крупного плана.
-   *  Корабль на орбите привязывается к нарисованному телу (центр схемы или
-   *  спутник на его увеличенной орбите), поэтому окружность остаётся
-   *  окружностью — независимо от того, где тело находится в реальных
-   *  координатах системы. Летящие корабли проецируются масштабом схемы. */
+  /** Экранная позиция корабля на крупном плане. Корабль в ньютоне в раме
+   *  просматриваемого тела рисуется прямо из относительных координат
+   *  (масштаб = радиус_схемы / радиус_тела) — эллипс честно виден эллипсом.
+   *  Прочие случаи проецируются масштабом схемы от центра тела. */
   shipScreenPos(ship){
     const SCR = this.ctx.SCR;
     const src = this.sys.obj(this.selRef);
     if (!src) return null;
-    const tg = ship.target;
-    if (ship.state === "orbit" && tg){
-      /* орбита вокруг просматриваемого тела → круг вокруг центра схемы */
-      const viewingTarget =
-        tg.kind === this.selRef.kind && tg.i === this.selRef.i &&
-        (tg.kind !== "moon" || tg.j === this.selRef.j);
-      if (viewingTarget && this.selRef.kind !== "star" && this.focus){
-        const R = this.focus.size/2 + 12;
-        return [SCR/2 + Math.cos(ship.orbitA)*R, SCR/2 + Math.sin(ship.orbitA)*R];
-      }
-      if (viewingTarget && this.selRef.kind === "star"){
+    const pr = ship.primary;
+    const viewingPrimary = ship.mode === "newton" && pr &&
+      pr.kind === this.selRef.kind && pr.i === this.selRef.i &&
+      (pr.kind !== "moon" || pr.j === this.selRef.j);
+    if (viewingPrimary){
+      let dispHalf, bodyR;
+      if (this.selRef.kind === "star"){
         const sun = this.sys.S.sun;
         const scale = Math.min(SCR / sun.C, SCR*0.7 / sun.D);
-        const R = (sun.D/2)*scale + 14;
-        return [SCR/2 + Math.cos(ship.orbitA)*R, SCR/2 + Math.sin(ship.orbitA)*R];
+        dispHalf = (sun.D/2)*scale; bodyR = sun.D/2;
+      } else {
+        dispHalf = this.focus.size/2;
+        bodyR = Math.max(3, (src.size || 16)/2);
       }
-      /* орбита вокруг спутника, показанного на схеме планеты */
-      if (this.selRef.kind === "planet" && tg.kind === "moon" && tg.i === this.selRef.i &&
-          src.moonList && src.moonList[tg.j]){
-        const mp = this.moonScreenPos(tg.j, src);
-        if (mp){
-          const R = mp.size + 7;
-          return [mp.x + Math.cos(ship.orbitA)*R, mp.y + Math.sin(ship.orbitA)*R];
-        }
+      const k = dispHalf/Math.max(3, bodyR);
+      const X = SCR/2 + ship.rx*k, Y = SCR/2 + ship.ry*k;
+      if (X < -30 || Y < -30 || X > SCR + 30 || Y > SCR + 30) return null;
+      return [X, Y];
+    }
+    /* корабль в раме спутника, показанного на схеме планеты */
+    if (ship.mode === "newton" && pr && this.selRef.kind === "planet" &&
+        pr.kind === "moon" && pr.i === this.selRef.i && src.moonList && src.moonList[pr.j]){
+      const mp = this.moonScreenPos(pr.j, src);
+      if (mp){
+        const m = src.moonList[pr.j];
+        const k = mp.size/Math.max(2, m.size/2);
+        return [mp.x + ship.rx*k, mp.y + ship.ry*k];
       }
     }
-    /* общий случай (перелёт, чужая орбита): реальные координаты, масштаб схемы */
+    /* общий случай: глобальные координаты, масштаб схемы от центра тела */
     const center = this.sys.posOf(this.selRef);
     if (!center) return null;
+    const [gx, gy] = ship.globPos(this.sys);
     const realSize = src.size || 8;
     const k = (this.focus ? this.focus.size : SCR*0.5)/Math.max(12, realSize);
-    const X = (ship.x - center[0])*k + SCR/2;
-    const Y = (ship.y - center[1])*k + SCR/2;
+    const X = (gx - center[0])*k + SCR/2;
+    const Y = (gy - center[1])*k + SCR/2;
     if (X < -30 || Y < -30 || X > SCR + 30 || Y > SCR + 30) return null;
     return [X, Y];
   }
+  onKey(code, down){ this.sys.onKey?.(code, down); }
   drawShips(sctx, t){
     for(const n of this.sys.npcs){
       const p = this.shipScreenPos(n.ship);
       if (p) n.ship.draw(sctx, p[0], p[1], t);
     }
     const ps = this.sys.playerShip;
-    if (ps && ps.state !== "landed"){
+    if (ps && ps.mode !== "landed"){
       const p = this.shipScreenPos(ps);
       if (p) ps.draw(sctx, p[0], p[1], t);
     }
@@ -284,19 +289,21 @@ export class BodyScene {
   canLandOnMoon(){
     if (!this.moonSel) return false;
     const ship = this.sys.playerShip;
-    if (!ship || ship.state !== "orbit") return false;
+    if (!ship || ship.mode !== "newton") return false;
     if (!ship.sameTarget(this.moonRef())) return false;
     const src = this.sys.obj(this.selRef);
     if (!src || !src.moonList) return false;
     const m = src.moonList[this.moonSel.i];
-    return m && m.type !== "gas";
+    if (!m || m.type === "gas") return false;
+    const els = ship.els(this.sys);
+    return els && (els.r - els.ps.bodyR) < 40 && els.v < 30;
   }
   primary(){
     if (this.selRef.kind === "planet" && this.moonSel !== null){
       const ship = this.sys.playerShip;
       if (this.canLandOnMoon()){
         return { label:"Посадка на спутник", run: () => {
-          ship.state = "landed";
+          ship.land(this.moonRef());
           const src = this.sys.obj(this.selRef);
           const m = src.moonList[this.moonSel.i];
           const st = planetStats(this.sys.S, m, "moon", src.dist);
@@ -304,8 +311,8 @@ export class BodyScene {
         } };
       }
       if (ship){
-        return { label:"Орбита спутника (h=" + this.sys.orbitAlt + ")", run: () => {
-          ship.orbitAt(this.moonRef(), this.sys.orbitAlt);
+        return { label:"FSD к спутнику (h=" + this.sys.orbitAlt + ")", run: () => {
+          ship.fsdTo(this.moonRef(), this.sys.orbitAlt);
           this.mgr.onChange?.();
         } };
       }
