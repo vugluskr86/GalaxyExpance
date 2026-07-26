@@ -8,10 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && gh-pages -d dist"
+    "deploy": "npm run build && git add docs/ && git commit -m \"Deploy to GitHub Pages\" && git push"
   },
   "devDependencies": {
-    "gh-pages": "^6.3.0",
     "vite": "^8.1.5"
   }
 }

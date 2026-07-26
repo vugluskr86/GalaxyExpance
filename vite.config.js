@@ -2,5 +2,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   base: "/GalaxyExpance/",
-  build: { target: "es2020" }
+  build: {
+    target: "es2020",
+    outDir: "docs",
+  },
 });
