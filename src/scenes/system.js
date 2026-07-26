@@ -28,9 +28,9 @@ export class SystemScene {
     this.playerShip = this.S.bhOnly ? null : new Ship(this, "#ffd166");
     this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
     this.followShip = false;
-    this.zoom = 1;
+    this.zoom = 0.3;
   }
-  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = 1; }
+  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = 0.3; }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
   ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
   zoomBy(f){ this.zoom = Math.min(4, Math.max(0.15, this.zoom*f)); }

@@ -210,21 +210,39 @@ export class Ship {
   }
 }
 
-/** NPC: тот же корабль, автопилот только на FSD-круизе. */
+/** NPC: использует FSD-круиз для перемещения между телами, автоматически
+ *  выходит на орбиту при подлёте и ждёт на орбите заданное время. */
 export class Npc {
   constructor(ship, name){
     this.ship = ship;
     this.name = name;
     this.timer = 2 + Math.random()*4;
   }
+  /** Случайная планета или спутник в системе (исключая газовые гиганты
+   *  для разнообразия — на них нельзя сесть, но можно покружить). */
+  pickTarget(sys){
+    const S = sys.S;
+    const cands = [];
+    for(let i=0;i<S.planets.length;i++){
+      cands.push({ kind:"planet", i, j:0 });
+      const p = S.planets[i];
+      for(let j=0;j<p.moonList.length;j++){
+        cands.push({ kind:"moon", i, j });
+      }
+    }
+    if (!cands.length) return null;
+    return cands[Math.floor(Math.random()*cands.length)];
+  }
   update(dt, sys){
     this.ship.update(dt, sys);
-    if (this.ship.mode === "cruise") return;
+    if (this.ship.mode === "cruise") return;   // ждём завершения FSD-перелёта
     this.timer -= dt;
-    if (this.timer <= 0 && sys.S.planets.length){
-      const i = Math.floor(Math.random()*sys.S.planets.length);
-      this.ship.fsdTo({ kind:"planet", i, j:0 }, 12 + Math.random()*10);
-      this.timer = 8 + Math.random()*10;
+    if (this.timer <= 0){
+      const target = this.pickTarget(sys);
+      if (target){
+        this.ship.fsdTo(target, 10 + Math.random()*12);
+        this.timer = 20 + Math.random()*25;    // держимся на орбите 20–45 сек
+      }
     }
   }
 }

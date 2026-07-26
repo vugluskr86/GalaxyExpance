@@ -5,5 +5,5 @@ export const settings = {
   rot: 0.01,
   twinkle: true,
   labels: true,
-  speed: 1     // 0 = пауза, 1× = норма, 2× / 5× / 10× — ускорение
-};
+  speed: 0.1     // 0 = пауза, 1× = норма, 2× = ускорение, 0.1× = замедление
+}
