@@ -4,5 +4,6 @@ export const settings = {
   lod: 1,
   rot: 0.01,
   twinkle: true,
-  labels: true
+  labels: true,
+  speed: 1     // 0 = пауза, 1× = норма, 2× / 5× / 10× — ускорение
 };

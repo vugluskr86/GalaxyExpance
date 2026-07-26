@@ -1,7 +1,13 @@
 import { mulberry32, hash2i } from "../core/rng.js";
 import { nameFromHash } from "../core/naming.js";
 
-/** Корабль в координатах системы: полёт к цели → орбита вокруг неё. */
+/** Радиус тела для расчёта орбиты (у комет/обломков — малое ядро). */
+export function bodyRadius(o){
+  return o && o.size ? o.size/2 : 4;
+}
+
+/** Корабль в координатах системы: полёт к цели → круговая орбита на заданной высоте.
+ *  Цель — любой selRef системы: планета, луна, комета, обломок пояса, звезда. */
 export class Ship {
   constructor(x, y, col){
     this.x = x; this.y = y;
@@ -10,13 +16,17 @@ export class Ship {
     this.state = "idle";        // idle | fly | orbit | landed
     this.target = null;         // selRef {kind,i,j}
     this.speed = 58;
+    this.altitude = 14;         // высота орбиты над поверхностью
     this.orbitR = 0;
     this.orbitA = 0;
   }
-  flyTo(selRef){
+  /** Выйти на орбиту вокруг любого тела на высоте alt (по умолчанию текущая). */
+  orbitAt(selRef, alt){
     this.state = "fly";
     this.target = { ...selRef };
+    if (alt !== undefined) this.altitude = alt;
   }
+  flyTo(selRef, alt){ this.orbitAt(selRef, alt); }
   sameTarget(selRef){
     return this.target && selRef &&
       this.target.kind === selRef.kind && this.target.i === selRef.i && this.target.j === selRef.j;
@@ -36,8 +46,8 @@ export class Ship {
       this.ang += Math.max(-3*dt, Math.min(3*dt, da));
       this.x += Math.cos(this.ang)*this.speed*dt;
       this.y += Math.sin(this.ang)*this.speed*dt;
-      const rr = (o.size ? o.size/2 : 4) + 14;
-      if (d < rr + 4){
+      const rr = bodyRadius(o) + this.altitude;
+      if (d < rr + 6){
         this.state = "orbit";
         this.orbitR = rr;
         this.orbitA = Math.atan2(this.y - pos[1], this.x - pos[0]);
@@ -55,9 +65,9 @@ export class Ship {
   draw(sctx, X, Y, t){
     const c = Math.cos(this.ang), s = Math.sin(this.ang);
     sctx.fillStyle = this.col;
-    sctx.fillRect(Math.round(X + c*3)-1, Math.round(Y + s*3)-1, 2, 2);          // нос
-    sctx.fillRect(Math.round(X)-1, Math.round(Y)-1, 2, 2);                       // корпус
-    sctx.fillRect(Math.round(X - c*2 - s*2), Math.round(Y - s*2 + c*2), 1, 1);   // крылья
+    sctx.fillRect(Math.round(X + c*3)-1, Math.round(Y + s*3)-1, 2, 2);
+    sctx.fillRect(Math.round(X)-1, Math.round(Y)-1, 2, 2);
+    sctx.fillRect(Math.round(X - c*2 - s*2), Math.round(Y - s*2 + c*2), 1, 1);
     sctx.fillRect(Math.round(X - c*2 + s*2), Math.round(Y - s*2 - c*2), 1, 1);
     if (this.state === "fly" && Math.floor(t*12) % 2){
       sctx.fillStyle = "#ffd166";

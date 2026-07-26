@@ -15,22 +15,25 @@ export class LandingScene {
     this.crumb = "Поверхность";
     const p = sys.obj(selRef);
     this.p = p;
+    /* тип ландшафта и зерно: у комет/обломков — мёртвый скальный мир */
+    this.terr = (selRef.kind === "comet" || selRef.kind === "rock") ? "moon" : p.type;
+    this.seedv = (p.seed ?? p.rseed ?? ((p.id || 1)*77)) | 0;
     player.refuel();
 
     const SCR = 420;
-    const rng = mulberry32(p.seed ^ 0x1a2d);
+    const rng = mulberry32(this.seedv ^ 0x1a2d);
     this.ns = Math.floor(rng()*99999);
     /* два хребта: дальний и ближний */
     this.h2 = new Float32Array(SCR);
     this.h1 = new Float32Array(SCR);
-    const rough = p.type === "moon" || p.type === "lava" ? 1.6 : (p.type === "ocean" ? 0.35 : 1);
+    const rough = this.terr === "moon" || this.terr === "lava" ? 1.6 : (this.terr === "ocean" ? 0.35 : 1);
     for(let x=0;x<SCR;x++){
       this.h2[x] = fbm(x*0.012, 3.1, 0, this.ns, 4)*70*rough;
       this.h1[x] = fbm(x*0.02, 7.7, 0, this.ns ^ 0x99, 4)*95*rough;
     }
     /* растительность: позиции ростков на ближнем хребте */
     this.plants = [];
-    if (stats.veg !== "нет" && p.type !== "ocean"){
+    if (stats.veg !== "нет" && this.terr !== "ocean"){
       for(let i=0;i<26;i++){
         this.plants.push({ x: Math.floor(rng()*SCR), s: 2 + Math.floor(rng()*4) });
       }
@@ -46,15 +49,19 @@ export class LandingScene {
       lava:["#150507","#5f150f","#c84a1c"], alien:["#160a28","#5b2d7a","#7ee08a"],
       moon:["#000000","#000000","#000000"]
     };
-    const sk = SKY[p.type] || SKY.moon;
+    const sk = SKY[this.terr] || SKY.moon;
     this.zen = hex2rgb(sk[0]); this.mid = hex2rgb(sk[1]); this.hor = hex2rgb(sk[2]);
-    const bands = PT[p.type].gas ? null : PT[p.type].bands;
+    const bands = PT[this.terr].gas ? null : PT[this.terr].bands;
     this.groundCol = hex2rgb(bands ? bands[Math.min(2, bands.length-1)][1] : "#6b6675");
     this.sunRGB = blackbody(this.sys.S.sun.temp);
-    this.vegCol = p.type === "alien" ? [124, 63, 168] : [38, 92, 44];
+    this.vegCol = this.terr === "alien" ? [124, 63, 168] : [38, 92, 44];
   }
   update(dt){ this.sys.update(dt); }
-  dayPhase(){ return this.p.rot % (Math.PI*2); }
+  dayPhase(){
+    const k = this.selRef.kind;
+    const src = k === "comet" ? this.p.th : (k === "rock" ? this.p.ang : this.p.rot);
+    return ((src % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+  }
   draw(t){
     const { sctx, SCR } = this.ctx;
     const ph = this.dayPhase();

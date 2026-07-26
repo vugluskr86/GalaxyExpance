@@ -10,7 +10,7 @@ import { bakeSystemNebula, NEB_SPAN } from "../gen/nebula.js";
 import { LandingScene } from "./landing.js";
 import { Ship, makeNpcs } from "../game/ship.js";
 import { player } from "../game/player.js";
-import { planetStats, statsTooltipHTML } from "../game/stats.js";
+import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 
 export class SystemScene {
   constructor(galaxy, star){
@@ -21,22 +21,30 @@ export class SystemScene {
     this.sel = this.S.planets.length ? { kind:"planet", i:0, j:0 } : null;
     this.cam = { x:0, y:0 };
     this.follow = false;
+    this.orbitAlt = 14;
     this.nebCvs = this.S.neb ? bakeSystemNebula(this.S.neb) : null;
     /* корабли */
     this.playerShip = this.S.bhOnly ? null : new Ship(0, -186, "#ffd166");
     if (this.playerShip) this.playerShip.ang = Math.PI/2;
     this.npcs = makeNpcs(this.S, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
   }
+  /** Характеристики любого выбираемого тела (для карточки и тултипа). */
   statsOf(sel){
     const o = this.obj(sel);
-    if (!o || (sel.kind !== "planet" && sel.kind !== "moon")) return null;
-    const parentDist = sel.kind === "moon" ? this.S.planets[sel.i].dist : 0;
-    return planetStats(this.S, o, sel.kind, parentDist);
+    if (!o) return null;
+    if (sel.kind === "planet" || sel.kind === "moon"){
+      const parentDist = sel.kind === "moon" ? this.S.planets[sel.i].dist : 0;
+      return planetStats(this.S, o, sel.kind, parentDist);
+    }
+    if (sel.kind === "comet") return smallBodyStats(this.S, "comet", o, Math.max(40, o.r));
+    if (sel.kind === "rock") return smallBodyStats(this.S, "rock", o, o.dist);
+    return null;
   }
   fit(){ this.cam.x = 0; this.cam.y = 0; }
   ssx(w){ return w - this.cam.x + this.ctx.SCR/2; }
   ssy(w){ return w - this.cam.y + this.ctx.SCR/2; }
   posOf(s){
+    if (s.kind === "star") return [0, 0];
     const o = this.obj(s);
     if (!o) return null;
     if (s.kind === "comet") return [o.x, o.y];
@@ -45,6 +53,7 @@ export class SystemScene {
   }
   obj(s){
     if (!s) return null;
+    if (s.kind === "star") return { type:"star", temp: this.S.sun.temp, size: this.S.sun.D, ci: this.star.ci };
     if (s.kind === "planet") return this.S.planets[s.i] || null;
     if (s.kind === "comet") return this.S.comets[s.i] || null;
     if (s.kind === "rock") return this.S.belt ? (this.S.belt.rocks[s.i] || null) : null;
@@ -52,6 +61,7 @@ export class SystemScene {
     return p ? (p.moonList[s.j] || null) : null;
   }
   label(s){
+    if (s.kind === "star") return this.S.name;
     if (s.kind === "comet"){
       const c = this.obj(s);
       return "C/" + (c ? c.id : "?") + " " + this.S.name.split(" ")[0];
@@ -199,57 +209,64 @@ export class SystemScene {
         toLbl(this.ctx, this.ssx(n.ship.x)) + 6, toLbl(this.ctx, this.ssy(n.ship.y)) - 5, "#6fb7ff", 10);
     }
   }
-  /** Тултип характеристик при наведении на планету/луну. */
+  /** Кандидаты попадания в точку (общая логика для клика и тултипа). */
+  hitAt(wx, wy, pad){
+    const cands = [];
+    this.S.planets.forEach((p, i) => {
+      p.moonList.forEach((m, j) => {
+        const d = Math.hypot(m._x - wx, m._y - wy);
+        if (d < m.size/2 + pad) cands.push({ s:{kind:"moon", i, j}, d, r:m.size/2 });
+      });
+      const d = Math.hypot(p._x - wx, p._y - wy);
+      if (d < p.size/2 + pad) cands.push({ s:{kind:"planet", i, j:0}, d, r:p.size/2 });
+    });
+    this.S.comets.forEach((c, i) => {
+      const d = Math.hypot(c.x - wx, c.y - wy);
+      if (d < 3 + pad) cands.push({ s:{kind:"comet", i, j:0}, d, r:3 });
+    });
+    if (this.S.belt){
+      this.S.belt.rocks.forEach((r, i) => {
+        const d = Math.hypot(Math.cos(r.ang)*r.dist - wx, Math.sin(r.ang)*r.dist - wy);
+        if (d < 2 + pad*0.8) cands.push({ s:{kind:"rock", i, j:0}, d, r:2 });
+      });
+    }
+    {
+      const d = Math.hypot(wx, wy);
+      if (d < this.S.sun.D/2 + pad) cands.push({ s:{kind:"star", i:0, j:0}, d, r:1000 });
+    }
+    if (!cands.length) return null;
+    cands.sort((a, b) => (a.r - b.r) || (a.d - b.d));
+    return cands[0].s;
+  }
+  /** Тултип характеристик при наведении — для любого тела, включая звезду. */
   onHover(mx, my){
     if (this.S.bhOnly) return null;
     const wx = mx - this.ctx.SCR/2 + this.cam.x;
     const wy = my - this.ctx.SCR/2 + this.cam.y;
-    let hit = null, hr = 1e9;
-    this.S.planets.forEach((p, i) => {
-      p.moonList.forEach((m, j) => {
-        const d = Math.hypot(m._x - wx, m._y - wy);
-        if (d < m.size/2 + 6 && m.size/2 < hr){ hr = m.size/2; hit = { kind:"moon", i, j }; }
-      });
-      const d = Math.hypot(p._x - wx, p._y - wy);
-      if (d < p.size/2 + 6 && p.size/2 < hr){ hr = p.size/2; hit = { kind:"planet", i, j:0 }; }
-    });
+    const hit = this.hitAt(wx, wy, 6);
     if (!hit) return null;
+    if (hit.kind === "star")
+      return starTooltipHTML(this.S.name, CLS[this.star.ci], this.S.sun.D);
     const st = this.statsOf(hit);
     return st ? statsTooltipHTML(this.label(hit), st) : null;
   }
+  /** Посадка возможна на любое твёрдое тело: планета (кроме газовой), луна, обломок, ядро кометы. */
   canLand(){
     if (!this.playerShip || this.playerShip.state !== "orbit" || !this.sel) return false;
     if (!this.playerShip.sameTarget(this.sel)) return false;
-    if (this.sel.kind !== "planet" && this.sel.kind !== "moon") return false;
+    const k = this.sel.kind;
+    if (k === "star") return false;
     const o = this.obj(this.sel);
-    return o && o.type !== "gas";
+    if (!o) return false;
+    if (k === "planet" || k === "moon") return o.type !== "gas";
+    return k === "rock" || k === "comet";
   }
   onTap(mx, my){
     if (this.S.bhOnly) return;
     const wx = mx - this.ctx.SCR/2 + this.cam.x;
     const wy = my - this.ctx.SCR/2 + this.cam.y;
-    const cands = [];
-    this.S.planets.forEach((p, i) => {
-      p.moonList.forEach((m, j) => {
-        const d = Math.hypot(m._x - wx, m._y - wy);
-        if (d < m.size/2 + 9) cands.push({ s:{kind:"moon", i, j}, d, r:m.size/2 });
-      });
-      const d = Math.hypot(p._x - wx, p._y - wy);
-      if (d < p.size/2 + 9) cands.push({ s:{kind:"planet", i, j:0}, d, r:p.size/2 });
-    });
-    this.S.comets.forEach((c, i) => {
-      const d = Math.hypot(c.x - wx, c.y - wy);
-      if (d < 12) cands.push({ s:{kind:"comet", i, j:0}, d, r:3 });
-    });
-    if (this.S.belt){
-      this.S.belt.rocks.forEach((r, i) => {
-        const d = Math.hypot(Math.cos(r.ang)*r.dist - wx, Math.sin(r.ang)*r.dist - wy);
-        if (d < 7) cands.push({ s:{kind:"rock", i, j:0}, d, r:2 });
-      });
-    }
-    if (!cands.length) return;
-    cands.sort((a, b) => (a.r - b.r) || (a.d - b.d));
-    const hit = cands[0].s;
+    const hit = this.hitAt(wx, wy, 9);
+    if (!hit) return;
     if (this.sel && hit.kind === this.sel.kind && hit.i === this.sel.i && hit.j === this.sel.j){
       this.mgr.push(new BodyScene(this, hit));
     } else {
@@ -288,16 +305,28 @@ export class SystemScene {
       name: S.name,
       detail: S.jets ? "квазар: аккреционный диск, джеты и S-звёзды" : "сверхмассивная ЧД: диск и S-звёзды"
     };
-    if (!this.sel) return { name: S.name, detail: "кликните по планете, луне, комете или обломку пояса" };
+    if (!this.sel) return { name: S.name, detail: "кликните по любому телу: планете, луне, комете, обломку или звезде" };
     const o = this.obj(this.sel);
+    if (this.sel.kind === "star"){
+      const cls = CLS[this.star.ci];
+      return {
+        name: this.S.name,
+        detail: "спектральный класс " + cls.c + " · ≈" + cls.temp.toLocaleString("ru-RU") + " K" +
+          " · Ø " + this.S.sun.D + " px<br>" + (cls.c === "O" ? "голубой сверхгигант" :
+          cls.c === "M" ? "красный карлик" : cls.c === "L" ? "коричневый карлик" : "звезда главной последовательности") +
+          "<br>возможен выход на орбиту (посадка — нет)"
+      };
+    }
+    const st = this.statsOf(this.sel);
     if (this.sel.kind === "comet")
       return { name: this.label(this.sel),
         detail: "комета · a=" + Math.round(o.a) + " · e=" + o.e.toFixed(2) +
-          " · сейчас r=" + Math.round(o.r) };
+          " · сейчас r=" + Math.round(o.r) +
+          (st ? "<br>T ядра: " + (st.tempC > 0 ? "+" : "") + st.tempC + " °C · " + st.liquid : "") };
     if (this.sel.kind === "rock")
       return { name: this.label(this.sel),
-        detail: "обломок пояса · орбита " + Math.round(o.dist) };
-    const st = this.statsOf(this.sel);
+        detail: "обломок пояса · орбита " + Math.round(o.dist) +
+          (st ? "<br>недра: " + st.minerals : "") };
     const base = this.sel.kind === "planet"
       ? PT_RU[o.type] + " · орбита " + o.dist + " · спутников: " + o.moonList.length
       : "спутник · " + PT_RU[o.type] + " · Ø " + o.size + " px";
@@ -316,8 +345,8 @@ export class SystemScene {
       } };
     }
     if (this.sel && this.playerShip){
-      return { label:"Лететь к выбранному", run: () => {
-        this.playerShip.flyTo(this.sel);
+      return { label:"Выйти на орбиту (h=" + this.orbitAlt + ")", run: () => {
+        this.playerShip.orbitAt(this.sel, this.orbitAlt);
         this.mgr.onChange?.();
       } };
     }
@@ -328,6 +357,8 @@ export class SystemScene {
   panelSpec(){
     if (this.S.bhOnly) return [];
     const spec = [
+      { kind:"range", label:"Высота орбиты", min:8, max:48, step:2,
+        get:() => this.orbitAlt, set:v => { this.orbitAlt = v; } },
       { kind:"check", label:"Следить за выбранным",
         get:() => this.follow, set:v => { this.follow = v; } }
     ];

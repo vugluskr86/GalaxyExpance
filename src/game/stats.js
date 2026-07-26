@@ -84,6 +84,43 @@ export function planetStats(S, p, kind, parentDist){
   return p._stats;
 }
 
+/** Характеристики малых тел: ядро кометы, обломок пояса. */
+export function smallBodyStats(S, kind, body, dist){
+  if (body._stats) return body._stats;
+  const seedv = (body.rseed ?? ((body.id || 1)*77)) | 0;
+  const rng = mulberry32(seedv ^ 0x57a7);
+  const L = Math.pow(S.sun.D/37.7, 2)*Math.pow(S.sun.temp/5700, 4);
+  const flux = L/Math.pow(Math.max(30, dist)/100, 2);
+  const tempC = Math.round(278*Math.pow(flux, 0.25) - 273 + (rng()-0.5)*10);
+  let minerals, liquid, atm;
+  if (kind === "comet"){
+    minerals = "водяной и CO₂-льды, силикатная пыль" + (rng() < 0.4 ? ", клатраты CO" : "");
+    liquid = tempC > -60 ? "льды сублимируют (кома)" : "льды стабильны";
+    atm = "нет (газы комы)";
+  } else {
+    const pool = ["железо","никель","силикаты","углистые хондриты","платина","водяной лёд"];
+    const picked = pool.filter(() => rng() < 0.45).slice(0, 3);
+    minerals = (picked.length ? picked.join(", ") : "силикаты") + (rng() > 0.8 ? " · богатая руда" : "");
+    liquid = "нет";
+    atm = "нет";
+  }
+  body._stats = {
+    tempC, atm, pressure: "< 0.001 атм", liquid, minerals, veg: "нет",
+    grav: "< 0.01", day: Math.round(5 + rng()*20),
+    typeRu: kind === "comet" ? "ядро кометы" : "астероид", hasAtm: false
+  };
+  return body._stats;
+}
+
+/** Карточка звезды для тултипа. */
+export function starTooltipHTML(name, cls, D){
+  const KIND = { O:"голубой сверхгигант", B:"бело-голубая звезда", A:"белая звезда",
+    F:"жёлто-белая звезда", G:"жёлтый карлик", K:"оранжевый карлик",
+    M:"красный карлик", L:"коричневый карлик" };
+  return `<b>${name}</b><br>спектральный класс ${cls.c} · ${KIND[cls.c] || "звезда"}<br>` +
+    `фотосфера: ≈${cls.temp.toLocaleString("ru-RU")} K<br>Ø ${D} px · посадка невозможна`;
+}
+
 export function statsTooltipHTML(name, st){
   return `<b>${name}</b><br>` +
     `${st.typeRu} · сутки ${st.day} ч · ${st.grav} g<br>` +
