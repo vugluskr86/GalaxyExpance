@@ -4,7 +4,7 @@ import { bakeStar, starDiam } from "./star.js";
 import { bakeBH } from "./blackhole.js";
 import { CLS } from "./starclass.js";
 import { MU_SUN } from "../game/units.js";
-import { muOf, orbitRate } from "../game/physics.js";
+import { muOf, orbitRate, fitMoonOrbits } from "../game/physics.js";
 
 /** Скорость собственного вращения тел (сутки ≈ 6–20 часов симуляции). */
 const SPIN_SCALE = 2.6e-4;
@@ -169,8 +169,11 @@ export function buildSystem(galaxy, gs){
     neb = { hue: Math.floor(rng()*5), dens: 0.8 + rng()*0.6,
             scale: 0.8 + rng()*0.8, seed: Math.floor(rng()*1e9) };
   }
-  return { star: gs, sun, planets, belt, comets, neb,
-           name: gs.name || galaxy.fieldName(gs) };
+  const S = { star: gs, sun, planets, belt, comets, neb,
+              name: gs.name || galaxy.fieldName(gs) };
+  /* спутники обязаны помещаться в сферу влияния своей планеты */
+  fitMoonOrbits(S);
+  return S;
 }
 
 export function stepSystem(S, dt){

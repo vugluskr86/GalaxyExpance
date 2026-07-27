@@ -50,7 +50,30 @@ export function soiOf(kind, o, parentDist, parentMu, gap){
   /* потолок: сферы соседей не должны перекрываться */
   let hi = parentDist * 0.28;
   if (gap) hi = Math.min(hi, gap*0.42);
-  return Math.max(Math.min(Math.max(hill, lo), hi), R * 2.2);
+  const floor = kind === "moon" ? R*2.0 : R*2.2;
+  return Math.max(Math.min(Math.max(hill, lo), hi), floor);
+}
+
+/** Расстояние до ближайшей соседней орбиты луны. */
+function moonGap(p, j){
+  const m = p.moonList[j];
+  let gap = m.orbR;
+  for(let k=0;k<p.moonList.length;k++){
+    if (k === j) continue;
+    gap = Math.min(gap, Math.abs(p.moonList[k].orbR - m.orbR));
+  }
+  return Math.max(gap, m.orbR*0.18);
+}
+
+/** SOI планеты с учётом её спутников: сфера обязана вмещать всю
+ *  подсистему, иначе луна оказывается вне влияния своей же планеты
+ *  и передача системы отсчёта ломает орбиту. */
+export function planetSoi(S, i){
+  const p = S.planets[i];
+  /* Раздувать сферу под спутники нельзя — она налезет на соседнюю
+   * планету. Вместо этого сами орбиты лун подгоняются под неё
+   * функцией fitMoonOrbits() при генерации системы. */
+  return soiOf("planet", p, p.dist, MU_SUN, planetGap(S, i));
 }
 
 /** Расстояние до ближайшей соседней орбиты — ограничивает SOI планеты. */
@@ -64,8 +87,64 @@ function planetGap(S, i){
   return gap;
 }
 
+/** Приводит орбиты лун так, чтобы вся подсистема помещалась в SOI планеты.
+ *  Вызывается один раз после генерации; ГПСЧ не трогает, поэтому
+ *  детерминированность системы сохраняется. */
+export function fitMoonOrbits(S){
+  for(let i=0;i<S.planets.length;i++){
+    const p = S.planets[i];
+    if (!p.moonList || !p.moonList.length) continue;
+    const R = bodyROf(p);
+    const soi = soiOf("planet", p, p.dist, MU_SUN, planetGap(S, i));
+    /* Спутник занимает не точку, а свою сферу влияния: под неё нужен
+     * зазор и от поверхности планеты, и от границы её SOI. Если самая
+     * крупная луна не помещается — убираем её и пробуем снова. */
+    let list = p.moonList.slice().sort((a, b) => bodyROf(a) - bodyROf(b));
+    while (list.length){
+      const est = bodyROf(list[list.length-1])*2.0*1.2;
+      const inner = R*1.15 + est;
+      const outer = soi*0.88 - est;
+      if (outer > inner*1.02){
+        const n = list.length;
+        list.forEach((m, k) => {
+          m.orbR = inner + (n > 1 ? k/(n-1) : 0.5)*(outer - inner);
+        });
+        break;
+      }
+      list.pop();
+    }
+    p.moonList = list;
+  }
+}
+
+
 /** Наибольший безопасный радиус орбиты вокруг тела (внутри его SOI). */
 export function maxOrbitR(ps){ return ps.soi*0.55; }
+
+/** Радиус орбиты, не задевающий сферы влияния спутников: иначе корабль
+ *  выходит на орбиту не того тела — луна перехватывает его у планеты. */
+export function maxCleanOrbitR(sys, selRef){
+  const ps = primaryState(sys, selRef);
+  if (!ps || ps.mu <= 0) return 0;
+  let cap = maxOrbitR(ps);
+  if (selRef.kind === "planet"){
+    const p = sys.S.planets[selRef.i];
+    for(let j=0;j<(p.moonList||[]).length;j++){
+      const ms = primaryState(sys, { kind:"moon", i:selRef.i, j });
+      if (!ms) continue;
+      cap = Math.min(cap, (p.moonList[j].orbR - ms.soi)*0.88);
+    }
+  }
+  return Math.max(ps.bodyR*1.15, cap);
+}
+/** Итоговый радиус орбиты по запросу высоты, с учётом SOI и спутников. */
+export function cleanOrbitR(sys, selRef, alt){
+  const ps = primaryState(sys, selRef);
+  if (!ps) return 0;
+  const lo = ps.bodyR*1.12;
+  const hi = Math.max(lo + 0.5, maxCleanOrbitR(sys, selRef));
+  return Math.min(Math.max(ps.bodyR + alt, lo), hi);
+}
 /** Радиус орбиты по запрошенной высоте, зажатый в разумные пределы. */
 export function safeOrbitR(ps, alt){
   const lo = ps.bodyR*1.12;
@@ -99,7 +178,7 @@ export function primaryState(sys, selRef){
       x: p._x, y: p._y,
       vx: -Math.sin(p.ang)*w*p.dist, vy: Math.cos(p.ang)*w*p.dist,
       mu: muOf("planet", p), bodyR: bodyROf(p),
-      soi: soiOf("planet", p, p.dist, MU_SUN, planetGap(S, selRef.i)),
+      soi: planetSoi(S, selRef.i),
       key: keyOf(selRef), selRef, kind:"planet", body:p
     };
   }
@@ -114,7 +193,7 @@ export function primaryState(sys, selRef){
       vx: -Math.sin(p.ang)*wp*p.dist - Math.sin(m.ang)*m.w*m.orbR,
       vy:  Math.cos(p.ang)*wp*p.dist + Math.cos(m.ang)*m.w*m.orbR,
       mu: muOf("moon", m), bodyR: bodyROf(m),
-      soi: soiOf("moon", m, m.orbR, pMu, m.orbR*0.84),
+      soi: soiOf("moon", m, m.orbR, pMu, moonGap(p, selRef.j)),
       key: keyOf(selRef), selRef, kind:"moon", body:m
     };
   }

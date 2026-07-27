@@ -69,7 +69,7 @@ document.getElementById("btnZout").addEventListener("click", () => mgr.current?.
 /* --- клавиатура: пилотирование и ускорение времени --- */
 const FLIGHT_CODES = new Set([
   "KeyW","KeyA","KeyS","KeyD","KeyX","KeyZ","KeyC","KeyF","KeyH","KeyM","KeyN",
-  "KeyT","KeyG","ShiftLeft","ControlLeft"
+  "KeyT","KeyG","KeyB","ShiftLeft","ControlLeft"
 ]);
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;

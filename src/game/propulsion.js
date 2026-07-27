@@ -1,83 +1,129 @@
-/** Двигательная установка: двигатель, бак, тяга, ΔV по Циолковскому.
- *  Всё в инженерных единицах — тонны, килоньютоны, секунды удельного
- *  импульса, м/с — чтобы цифры читались как в KSP. */
+/** Конфигурация корабля: слоты, топливо, трюм.
+ *
+ *  Раньше двигатель и бак были жёстко зашитыми списками; теперь это
+ *  предметы из каталога (items.js), установленные в слоты. Внешний API
+ *  сохранён — Ship и сцены продолжают читать prop.engine.thrust и т.д. */
 
 import { G0, DU_M } from "./units.js";
+import { makeItem, byId, bySlot } from "./items.js";
+import { Inventory, starterInventory } from "./inventory.js";
 
-export const ENGINES = [
-  { id:"ion",    name:"Ионный «Тень»",     thrust:  18, isp: 3800, mass:0.9 },
-  { id:"lite",   name:"Маневровый LT-3",   thrust: 120, isp:  340, mass:0.6 },
-  { id:"main",   name:"Основной M-7",      thrust: 240, isp:  380, mass:1.4 },
-  { id:"heavy",  name:"Тяжёлый «Овен»",    thrust: 680, isp:  310, mass:3.2 },
-  { id:"nuke",   name:"Ядерный NERV-2",    thrust: 160, isp:  850, mass:2.8 }
-];
-export const TANKS = [
-  { id:"t1", name:"Бак малый",   dry:0.9, fuel: 8 },
-  { id:"t2", name:"Бак средний", dry:2.0, fuel:22 },
-  { id:"t3", name:"Бак большой", dry:4.2, fuel:52 }
-];
-export const HULL_MASS = 5.0;          // корпус, кабина, оборудование, т
+/* Совместимость: прежние экспорты собираются из каталога. */
+export const ENGINES = bySlot("engine").map(d => ({
+  id:d.id, name:d.name, thrust:d.stats.thrust, isp:d.stats.isp, mass:d.mass }));
+export const TANKS = bySlot("tank").map(d => ({
+  id:d.id, name:d.name, dry:d.mass, fuel:d.stats.cap }));
+export const HULL_MASS = 5.0;
 
 export class Propulsion {
-  constructor(engineId = "main", tankId = "t2"){
-    this.engine = ENGINES.find(e => e.id === engineId) || ENGINES[2];
-    this.tank   = TANKS.find(t => t.id === tankId) || TANKS[1];
-    this.fuel   = this.tank.fuel;       // т
-    this.throttle = 0;                  // 0..1
+  constructor(engineId = "eng_main", tankId = "tank_m",
+              hullId = "hull_std", scoopId = "scoop_fuel"){
+    this.slots = {
+      hull:   makeItem(hullId),
+      engine: makeItem(engineId),
+      tank:   makeItem(tankId),
+      scoop:  scoopId ? makeItem(scoopId) : null
+    };
+    this.fuel = this.slots.tank.stats.cap;
+    this.throttle = 0;
+    this.inventory = starterInventory();
+    this.cargo = new Inventory([]);       // то, что лежит в трюме корабля
+    this.scooping = false;
   }
-  setEngine(id){
-    const e = ENGINES.find(x => x.id === id);
-    if (e) this.engine = e;
-  }
-  setTank(id){
-    const t = TANKS.find(x => x.id === id);
-    if (!t) return;
-    const frac = this.fuel/this.tank.fuel;
-    this.tank = t;
-    this.fuel = t.fuel*Math.min(1, frac);
-  }
-  refuel(){ this.fuel = this.tank.fuel; }
 
-  get dryMass(){ return HULL_MASS + this.engine.mass + this.tank.dry; }
-  get mass(){ return this.dryMass + this.fuel; }             // т
-  get fuelFrac(){ return this.tank.fuel > 0 ? this.fuel/this.tank.fuel : 0; }
+  /* ---------- совместимый доступ к модулям ---------- */
+  get engine(){
+    const it = this.slots.engine;
+    return it ? { id:it.id, name:it.name, thrust:it.stats.thrust,
+                  isp:it.stats.isp, mass:it.def.mass, tag:it.tag }
+              : { id:"none", name:"нет", thrust:0, isp:1, mass:0, tag:"—" };
+  }
+  get tank(){
+    const it = this.slots.tank;
+    return it ? { id:it.id, name:it.name, dry:it.def.mass, fuel:it.stats.cap, tag:it.tag }
+              : { id:"none", name:"нет", dry:0, fuel:0, tag:"—" };
+  }
+  get hull(){
+    const it = this.slots.hull;
+    return it ? { id:it.id, name:it.name, mass:it.def.mass,
+                  cargo:it.stats.cargo, tag:it.tag }
+              : { id:"none", name:"нет", mass:2, cargo:0, tag:"—" };
+  }
+  get scoop(){
+    const it = this.slots.scoop;
+    return it ? { id:it.id, name:it.name, mass:it.def.mass, tag:it.tag, ...it.stats } : null;
+  }
 
-  /** Полное ускорение при 100 % тяги, м/с². */
-  get accelFullMs(){ return this.engine.thrust / this.mass; }
-  /** Текущее ускорение с учётом РУД, du/с². */
+  setEngine(id){ this.install(makeItem(id)); }
+  setTank(id){ this.install(makeItem(id)); }
+
+  /* ---------- установка и снятие ---------- */
+  /** Ставит предмет в его слот; вытесненный модуль уходит в инвентарь. */
+  install(item){
+    if (!item || !this.slots.hasOwnProperty(item.slot)) return null;
+    const old = this.slots[item.slot];
+    this.slots[item.slot] = item;
+    if (item.slot === "tank") this.fuel = Math.min(this.fuel, item.stats.cap);
+    return old;
+  }
+  /** Снимает модуль из слота (корпус снять нельзя). */
+  uninstall(slot){
+    if (slot === "hull") return null;
+    const it = this.slots[slot];
+    if (!it) return null;
+    this.slots[slot] = null;
+    return it;
+  }
+
+  /* ---------- массы ---------- */
+  get moduleMass(){
+    return Object.values(this.slots).reduce((s, it) => s + (it ? it.def.mass : 0), 0);
+  }
+  get cargoMass(){ return this.cargo.massTotal; }
+  get cargoCap(){ return this.hull.cargo; }
+  get dryMass(){ return this.moduleMass + this.cargoMass; }
+  get mass(){ return this.dryMass + this.fuel; }
+  get fuelCap(){ return this.tank.fuel; }
+  get fuelFrac(){ return this.fuelCap > 0 ? this.fuel/this.fuelCap : 0; }
+
+  refuel(){ this.fuel = this.fuelCap; }
+  /** Сбор топлива у звезды, т. Возвращает фактически принятое. */
+  scoopFuel(dt){
+    const sc = this.scoop;
+    if (!sc || !sc.scoopRate) return 0;
+    const take = Math.min(sc.scoopRate*dt, this.fuelCap - this.fuel);
+    this.fuel += take;
+    return take;
+  }
+
+  /* ---------- лётные характеристики ---------- */
+  get accelFullMs(){ return this.mass > 0 ? this.engine.thrust/this.mass : 0; }
   accel(){
     if (this.fuel <= 0) return 0;
-    return (this.engine.thrust*this.throttle / this.mass) / DU_M;
+    return (this.engine.thrust*this.throttle/this.mass)/DU_M;
   }
-  /** Расход, т/с при текущем РУД. */
   flow(){
-    if (this.fuel <= 0) return 0;
-    return this.engine.thrust*this.throttle*1000/(this.engine.isp*G0) / 1000;
+    if (this.fuel <= 0 || this.engine.isp <= 0) return 0;
+    return this.engine.thrust*this.throttle/(this.engine.isp*G0);
   }
-  /** Запас характеристической скорости, м/с. */
   get deltaV(){
     const m0 = this.mass, m1 = this.dryMass;
     return m1 > 0 && m0 > m1 ? this.engine.isp*G0*Math.log(m0/m1) : 0;
   }
-  /** Тяговооружённость относительно ускорения свободного падения g (du/с²). */
   twr(gDu){
     const g = gDu*DU_M;
     return g > 0 ? this.accelFullMs/g : Infinity;
   }
-  /** Длительность манёвра на dv (м/с) при заданном РУД — учитывает
-   *  облегчение корабля по мере выгорания топлива. */
   burnTime(dv, throttle = 1){
-    if (dv <= 0 || throttle <= 0) return 0;
+    if (dv <= 0 || throttle <= 0 || this.engine.thrust <= 0) return 0;
     const ve = this.engine.isp*G0;
     const m0 = this.mass;
     const m1 = m0*Math.exp(-Math.abs(dv)/ve);
-    if (m1 < this.dryMass) return Infinity;                 // топлива не хватит
-    const mdot = this.engine.thrust*throttle/ve;            // т/с
+    if (m1 < this.dryMass) return Infinity;
+    const mdot = this.engine.thrust*throttle/ve;
     return (m0 - m1)/mdot;
   }
-  /** Хватит ли топлива на dv. */
   canAfford(dv){ return Math.abs(dv) <= this.deltaV; }
-  /** Списать топливо за dt работы двигателя. */
   consume(dt){
     const used = this.flow()*dt;
     this.fuel = Math.max(0, this.fuel - used);

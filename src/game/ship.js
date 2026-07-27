@@ -1,7 +1,8 @@
 import { mulberry32, hash2i } from "../core/rng.js";
 import { nameFromHash } from "../core/naming.js";
 import { primaryState, findPrimary, elements, propagate, bodyROf,
-         surfaceG, conicPath, safeOrbitR, maxOrbitR } from "./physics.js";
+         surfaceG, conicPath, safeOrbitR, maxOrbitR, cleanOrbitR,
+         maxCleanOrbitR } from "./physics.js";
 import { Propulsion } from "./propulsion.js";
 import { ManeuverNode, stateAfterNode, nodeDvVector, stateAtNode } from "./maneuver.js";
 import { DU_M } from "./units.js";
@@ -70,9 +71,10 @@ export class Ship {
   setCircular(sys, selRef, h, bearing){
     const ps = primaryState(sys, selRef);
     if (!ps || ps.mu <= 0) return false;
-    /* высота зажимается сферой влияния: орбита, вылезающая за SOI,
-     * не орбита, а траектория ухода — раньше именно так корабль и «терялся» */
-    const r = safeOrbitR(ps, h ?? this.altitude);
+    /* высота зажимается сферой влияния тела И сферами его спутников:
+     * орбита, вылезающая за SOI, — траектория ухода, а орбита, задевающая
+     * луну, уводит корабль к луне вместо цели */
+    const r = cleanOrbitR(sys, selRef, h ?? this.altitude);
     const a = bearing !== undefined ? bearing : Math.atan2(this.ry, this.rx);
     this.mode = "newton";
     this.primary = { ...selRef };
@@ -83,6 +85,11 @@ export class Ship {
     this.landedOn = null;
     this.manNode = null; this.nodeAuto = false;
     return true;
+  }
+  /** Гарантированный выход на орбиту вокруг тела. */
+  ensureOrbit(sys, selRef, h){
+    if (!this.setCircular(sys, selRef, h)) return false;
+    return this._verifyOrbit(sys, selRef);
   }
 
   /* ---------------- FSD ---------------- */
@@ -100,6 +107,41 @@ export class Ship {
   takeoff(sys, h){
     if (this.landedOn) this.setCircular(sys, this.landedOn, h ?? this.altitude);
     else this.mode = "newton";
+  }
+
+  /** Проверка захвата: если после выхода из FSD корабль почему-то
+   *  оказался не в раме цели или орбита не помещается в SOI —
+   *  переставляем на гарантированно безопасную круговую орбиту. */
+  _verifyOrbit(sys, want){
+    let shrink = 1;
+    for(let attempt = 0; attempt < 5; attempt++){
+      const [gx, gy] = this.globPos(sys);
+      const best = findPrimary(sys, gx, gy);
+      const ps = primaryState(sys, this.primary);
+      if (!ps || ps.mu <= 0) return false;
+      const el = elements(ps.mu, this.rx, this.ry, this.rvx, this.rvy);
+      const inSoi = isFinite(el.ra) && el.ra < ps.soi*0.92;
+      const clears = el.rp > ps.bodyR*1.05;
+      const rightBody = !best || best.key === ps.key;
+      if (inSoi && clears && rightBody) return true;
+
+      /* Сначала пытаемся удержаться у ЗАПРОШЕННОГО тела, снижая орбиту:
+       * чаще всего мешает сфера влияния близкой луны. Только если и это
+       * не помогает — принимаем то тело, которое нас реально держит. */
+      let target = want || this.primary;
+      let psT = primaryState(sys, target);
+      if (attempt >= 3 || !psT || psT.mu <= 0){
+        if (!best) return false;
+        target = best.selRef;
+        psT = primaryState(sys, target);
+        if (!psT || psT.mu <= 0) return false;
+      }
+      shrink *= 0.7;
+      const room = maxCleanOrbitR(sys, target) - psT.bodyR;
+      const alt = Math.max(psT.bodyR*0.14, Math.min(this.altitude, room)*shrink);
+      this.setCircular(sys, target, alt, Math.atan2(this.ry, this.rx));
+    }
+    return false;
   }
 
   /* ---------------- манёвры ---------------- */
@@ -208,15 +250,25 @@ export class Ship {
     this.nose += Math.max(-4*dt, Math.min(4*dt, da));
 
     const psT = primaryState(sys, this.target);
-    const captureR = (psT && psT.mu > 0) ? safeOrbitR(psT, this.altitude)
+    const captureR = (psT && psT.mu > 0) ? cleanOrbitR(sys, this.target, this.altitude)
                                          : (psT ? psT.bodyR : 4) + 6;
     const ACC = 60, VMAX = 120;                 // du/с², du/с
     const brakeDist = this.cruiseV*this.cruiseV/(2*ACC);
     if (d > brakeDist + captureR*1.5) this.cruiseV = Math.min(VMAX, this.cruiseV + ACC*dt);
     else this.cruiseV = Math.max(1.5, this.cruiseV - ACC*dt);
 
-    const nx = gx + Math.cos(this.nose)*this.cruiseV*dt;
-    const ny = gy + Math.sin(this.nose)*this.cruiseV*dt;
+    /* Движение дробится на подшаги короче окна захвата: при крупном кадре
+     * (или варпе) корабль иначе перепрыгивал бы шар захвата целиком и
+     * бесконечно нарезал круги вокруг цели. */
+    const travel = this.cruiseV*dt;
+    const sub = Math.max(1, Math.min(64, Math.ceil(travel/(captureR*0.35))));
+    let nx = gx, ny = gy, dd = d;
+    for(let k=0;k<sub;k++){
+      nx += Math.cos(this.nose)*this.cruiseV*(dt/sub);
+      ny += Math.sin(this.nose)*this.cruiseV*(dt/sub);
+      dd = Math.hypot(pos[0] - nx, pos[1] - ny);
+      if (dd <= captureR*1.25) break;
+    }
     const anchor = (psT && psT.mu > 0) ? this.target : { kind:"star", i:0, j:0 };
     const ps = primaryState(sys, anchor);
     this.primary = { ...anchor };
@@ -224,15 +276,18 @@ export class Ship {
     this.rvx = Math.cos(this.nose)*this.cruiseV;
     this.rvy = Math.sin(this.nose)*this.cruiseV;
 
-    if (d <= captureR*1.25){
+    if (dd <= captureR*1.25){
       /* ГЛАВНОЕ ИСПРАВЛЕНИЕ: раньше корабль выходил из FSD со скоростью,
        * направленной НА тело (по носу) — это радиальная скорость, а такая
        * орбита неизбежно втыкается в поверхность. Теперь выход всегда
        * ставит корабль на круговую орбиту: скорость перпендикулярна
        * радиус-вектору и равна ровно круговой. */
       if (psT && psT.mu > 0){
-        const bearing = Math.atan2(gy - pos[1], gx - pos[0]);
+        const bearing = Math.atan2(ny - pos[1], nx - pos[0]);
         this.setCircular(sys, this.target, this.altitude, bearing);
+        /* Страховка: убеждаемся, что итоговая орбита действительно
+         * принадлежит цели и целиком лежит внутри её сферы влияния. */
+        this._verifyOrbit(sys, this.target);
         this.lastStatus = "выход из FSD: круговая орбита";
       } else {
         /* комета или обломок: гравитации нет — идём рядом, кинематически */

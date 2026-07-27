@@ -152,6 +152,29 @@ export class Panel {
       const b = this.h(`<button class="big" style="margin-bottom:10px">${s.label}</button>`);
       b.addEventListener("click", s.run);
       root.appendChild(b);
+    } else if (s.kind === "rows"){
+      const box = this.h(`<div class="list" style="max-height:none"></div>`);
+      if (!s.items.length) box.innerHTML =
+        `<small style="color:var(--muted)">${s.empty || "пусто"}</small>`;
+      for(const r of s.items){
+        const row = this.h(`<div class="itemrow${r.sel ? " sel" : ""}"></div>`);
+        const head = this.h(`<button class="itemhead"><span class="itag">${r.tag || ""}</span>` +
+          `${r.label}<small>${r.note || ""}</small></button>`);
+        head.addEventListener("click", () => { r.run?.(); this.refresh(); });
+        row.appendChild(head);
+        if (r.sub) row.appendChild(this.h(`<div class="itemsub">${r.sub}</div>`));
+        if (r.actions && r.actions.length){
+          const acts = this.h(`<div class="itemacts"></div>`);
+          for(const a of r.actions){
+            const b = this.h(`<button${a.warn ? ' class="warn"' : ""}>${a.label}</button>`);
+            b.addEventListener("click", e => { e.stopPropagation(); a.run(); this.refresh(); });
+            acts.appendChild(b);
+          }
+          row.appendChild(acts);
+        }
+        box.appendChild(row);
+      }
+      root.appendChild(box);
     } else if (s.kind === "readout"){
       root.appendChild(this.h(
         `<div class="selbox"><b>${s.label}</b><small>${s.value}</small></div>`));

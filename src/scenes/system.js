@@ -11,9 +11,13 @@ import { LandingScene } from "./landing.js";
 import { Ship, makeNpcs } from "../game/ship.js";
 import { primaryState, elements, conicPath, surfaceG, muOf, soiOf, MU_SUN } from "../game/physics.js";
 import { ENGINES, TANKS } from "../game/propulsion.js";
-import { planCircularize, planHohmann, hohmannBudget, orbitAfterNode } from "../game/maneuver.js";
+import { planCircularize, planHohmann, hohmannBudget, orbitAfterNode,
+         stateAtNode, ManeuverNode } from "../game/maneuver.js";
 import { fmtSpeed, fmtDist, fmtDv, fmtTime, fmtMass, fmtAcc, DU_M } from "../game/units.js";
-import { timeToApo, timeToPeri } from "../game/physics.js";
+import { OutfitScene } from "./outfit.js";
+import { FloatingItem } from "../game/inventory.js";
+import { makeItem } from "../game/items.js";
+import { timeToApo, timeToPeri, timeToNu, pointAt } from "../game/physics.js";
 import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 
@@ -33,6 +37,10 @@ export class SystemScene {
     this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
     this.followShip = false;
     this.zoom = 0.3;
+    this.cargoField = [];        // контейнеры, брошенные в космос
+    this.scoopMsg = "";
+    this.nodeStep = 10;          // шаг ручки манёвра, м/с
+    this._handles = [];          // экранные ручки узла (KSP-стиль)
   }
   fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = 0.3; }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
@@ -63,9 +71,64 @@ export class SystemScene {
     else if (code === "KeyM") this.planCirc(true);
     else if (code === "KeyN") sh.executeNode();
     else if (code === "KeyC") this.planCirc(false);
+    else if (code === "KeyB") this.mgr.push(new OutfitScene(this));
     else if (code === "KeyF" && this.sel) sh.fsdTo(this.sel, this.orbitAlt);
     else if (code === "KeyH") this.planTransfer();
     this.mgr.onChange?.();
+  }
+  /** Захват: сбор топлива в короне звезды и подбор контейнеров.
+   *  Заправка работает, как в Elite, — на низкой орбите звезды. */
+  _scoopAndGrab(dt){
+    const sh = this.playerShip;
+    this.scoopMsg = "";
+    if (!sh || sh.mode === "landed") return;
+    const sc = sh.prop.scoop;
+    if (!sc) return;
+
+    /* --- топливозаборник --- */
+    sh.prop.scooping = false;
+    if (sc.scoopRate > 0 && sh.primary.kind === "star"){
+      const ps = primaryState(this, sh.primary);
+      const h = Math.hypot(sh.rx, sh.ry) - ps.bodyR;
+      const band = ps.bodyR*sc.scoopAlt;
+      if (h < band){
+        const eff = Math.max(0.15, 1 - h/band);
+        const got = sh.prop.scoopFuel(dt*eff);
+        sh.prop.scooping = got > 0;
+        this.scoopMsg = got > 0
+          ? "СБОР ТОПЛИВА " + Math.round(eff*100) + "% · " +
+            sh.prop.fuel.toFixed(1) + "/" + sh.prop.fuelCap + " т"
+          : "бак полон";
+        if (h < ps.bodyR*0.12) this.scoopMsg = "ОПАСНО: слишком близко к фотосфере";
+      }
+    }
+
+    /* --- подбор контейнеров --- */
+    const [gx, gy] = sh.globPos(this);
+    const [gvx, gvy] = sh.globVel(this);
+    for(let i = this.cargoField.length - 1; i >= 0; i--){
+      const f = this.cargoField[i];
+      const p = f.globPos(this), v = f.globVel(this);
+      if (Math.hypot(p[0]-gx, p[1]-gy) > sc.grabRange) continue;
+      if (Math.hypot(v[0]-gvx, v[1]-gvy) > sc.grabSpeed) continue;
+      const prop = sh.prop;
+      const target = f.item.slot === "cargo" && prop.cargoMass + f.item.mass <= prop.cargoCap
+        ? prop.cargo : prop.inventory;
+      target.add(f.item);
+      this.cargoField.splice(i, 1);
+      this.scoopMsg = "подобрано: " + f.item.name;
+      this.mgr.onChange?.();
+    }
+  }
+  /** Сбросить предмет за борт из текущего состояния корабля. */
+  dropItem(item){
+    const sh = this.playerShip;
+    if (!sh) return;
+    const a = Math.random()*Math.PI*2;
+    const f = new FloatingItem(item, sh.primary, sh.rx, sh.ry,
+      sh.rvx + Math.cos(a)*0.0008, sh.rvy + Math.sin(a)*0.0008);
+    if (sh.mode === "landed"){ f.landed = { ...sh.primary }; f.rvx = 0; f.rvy = 0; }
+    this.cargoField.push(f);
   }
   /** Варп режется на активном участке: под тягой физика идёт шагами. */
   warpLimit(){
@@ -73,6 +136,29 @@ export class SystemScene {
     if (sh && sh.mode === "newton" && sh.burning) return 10;
     if (sh && sh.mode === "cruise") return 5;
     return Infinity;
+  }
+  /** Клик по собственной орбите ставит узел в эту точку — как перетаскивание
+   *  узла по траектории в KSP. Возвращает true, если попали по орбите. */
+  tryPlaceNode(wx, wy){
+    const sh = this.playerShip;
+    if (!sh || sh.mode !== "newton" || sh.nodeAuto) return false;
+    const ps = primaryState(this, sh.primary);
+    if (!ps || ps.mu <= 0) return false;
+    const el = elements(ps.mu, sh.rx, sh.ry, sh.rvx, sh.rvy);
+    const rx = wx - ps.x, ry = wy - ps.y;
+    const rClick = Math.hypot(rx, ry);
+    if (rClick < ps.bodyR) return false;
+    /* истинная аномалия точки клика и радиус орбиты в ней */
+    const nu = ((Math.atan2(ry, rx) - el.argp)*el.s + Math.PI*4) % (Math.PI*2);
+    const rOrb = el.p/(1 + el.e*Math.cos(nu));
+    if (!isFinite(rOrb) || rOrb <= 0) return false;
+    const tol = Math.max(4, 10/this.zoom);
+    if (Math.abs(rOrb - rClick) > tol) return false;
+    const eta = Math.max(0, timeToNu(el, nu));
+    if (sh.manNode) sh.manNode.eta = eta;
+    else sh.setNode(eta, 0, 0);
+    this.mgr.onChange?.();
+    return true;
   }
   /** Запланировать циркуляризацию в апоцентре (или перицентре). */
   planCirc(atApo){
@@ -105,6 +191,10 @@ export class SystemScene {
     return null;
   }
   posOf(s){
+    if (s.kind === "cargo"){
+      const f = this.cargoField[s.i];
+      return f ? f.globPos(this) : null;
+    }
     if (s.kind === "star") return [0, 0];
     const o = this.obj(s);
     if (!o) return null;
@@ -114,6 +204,10 @@ export class SystemScene {
   }
   obj(s){
     if (!s) return null;
+    if (s.kind === "cargo"){
+      const f = this.cargoField[s.i];
+      return f ? { type:"cargo", size:4, item:f.item, floating:f } : null;
+    }
     if (s.kind === "star") return { type:"star", temp: this.S.sun.temp, size: this.S.sun.D, ci: this.star.ci };
     if (s.kind === "planet") return this.S.planets[s.i] || null;
     if (s.kind === "comet") return this.S.comets[s.i] || null;
@@ -122,6 +216,10 @@ export class SystemScene {
     return p ? (p.moonList[s.j] || null) : null;
   }
   label(s){
+    if (s.kind === "cargo"){
+      const f = this.cargoField[s.i];
+      return f ? "Контейнер: " + f.item.name : "Контейнер";
+    }
     if (s.kind === "star") return this.S.name;
     if (s.kind === "comet"){
       const c = this.obj(s);
@@ -137,6 +235,8 @@ export class SystemScene {
   update(dt){
     stepSystem(this.S, dt);
     if (this.playerShip) this.playerShip.update(dt, this);
+    for(const f of this.cargoField) f.update(dt, this);
+    this._scoopAndGrab(dt);
     for(const n of this.npcs) n.update(dt, this);
     let camTgt = null;
     if (this.followShip && this.playerShip) camTgt = this.playerShip.globPos(this);
@@ -293,21 +393,52 @@ export class SystemScene {
           sctx.fillRect(X-2, Y-1, 1, 3); sctx.fillRect(X+2, Y-1, 1, 3);
         }
         /* запланированный манёвр: орбита после узла + маркер узла */
+        this._handles = [];
         const na = sh.nodeOrbit(this);
         if (na){
           const np = conicPath(na.el, ps.soi, ps.bodyR);
           this.drawTrack(np.pts, ps, "#7ee0ff", 0.5, 3);
-          const pt = sh.nodePoint(this);
-          if (pt){
-            const nX = Math.round(this.ssx(ps.x + pt[0])), nY = Math.round(this.ssy(ps.y + pt[1]));
-            sctx.fillStyle = "#7ee0ff";
-            sctx.fillRect(nX - 4, nY, 9, 1);
-            sctx.fillRect(nX, nY - 4, 1, 9);
-            sctx.fillStyle = "#ffffff";
-            sctx.fillRect(nX - 1, nY - 1, 3, 3);
+          const st = stateAtNode(ps.mu, sh, Math.max(0, sh.manNode.eta));
+          const nX = Math.round(this.ssx(ps.x + st.rx)), nY = Math.round(this.ssy(ps.y + st.ry));
+          sctx.fillStyle = "#7ee0ff";
+          sctx.fillRect(nX - 4, nY, 9, 1);
+          sctx.fillRect(nX, nY - 4, 1, 9);
+          sctx.fillStyle = "#ffffff";
+          sctx.fillRect(nX - 1, nY - 1, 3, 3);
+          /* Ручки манёвра как в KSP: прогрейд/ретрогрейд вдоль скорости,
+           * радиальные — вдоль радиус-вектора. По ним можно кликать. */
+          const vv = Math.hypot(st.vx, st.vy) || 1e-9;
+          const px = st.vx/vv, py = st.vy/vv;
+          const rr = Math.hypot(st.rx, st.ry) || 1e-9;
+          const ux = st.rx/rr, uy = st.ry/rr;
+          const D = 18;
+          const H = [
+            { k:"pro",  dx: px,  dy: py,  col:"#7ee08a" },
+            { k:"retro",dx:-px,  dy:-py,  col:"#ff9a6b" },
+            { k:"radO", dx: ux,  dy: uy,  col:"#8fd0ff" },
+            { k:"radI", dx:-ux,  dy:-uy,  col:"#c9a0e8" }
+          ];
+          for(const h of H){
+            const hx = Math.round(nX + h.dx*D), hy = Math.round(nY + h.dy*D);
+            sctx.fillStyle = "#0a0d18";
+            sctx.fillRect(hx-4, hy-4, 9, 9);
+            sctx.fillStyle = h.col;
+            sctx.fillRect(hx-3, hy-3, 7, 1);
+            sctx.fillRect(hx-3, hy+3, 7, 1);
+            sctx.fillRect(hx-3, hy-3, 1, 7);
+            sctx.fillRect(hx+3, hy-3, 1, 7);
+            sctx.fillRect(hx-1, hy-1, 3, 3);
+            this._handles.push({ x:hx, y:hy, k:h.k });
           }
         }
       }
+    }
+    /* дрейфующий груз */
+    for(const f of this.cargoField){
+      const p = f.globPos(this);
+      const X = this.ssx(p[0]), Y = this.ssy(p[1]);
+      if (X < -6 || Y < -6 || X > SCR+6 || Y > SCR+6) continue;
+      f.draw(sctx, X, Y, t);
     }
     /* корабли */
     for(const n of this.npcs){
@@ -384,6 +515,9 @@ export class SystemScene {
               (sh.nodeAuto ? " ▶" : "");
       }
       lblText(this.ctx, l3, 12, L - 16, sh.burning ? "#ff9a6b" : "#8d95c9", 11);
+      if (this.scoopMsg)
+        lblText(this.ctx, this.scoopMsg, 12, L - 60,
+          this.scoopMsg.startsWith("ОПАСНО") ? "#ff5c4d" : "#7ee08a", 11);
     }
   }
   /** Кандидаты попадания в точку (общая логика для клика и тултипа). */
@@ -407,6 +541,11 @@ export class SystemScene {
         if (d < 2 + pad*0.8) cands.push({ s:{kind:"rock", i, j:0}, d, r:2 });
       });
     }
+    this.cargoField.forEach((f, i) => {
+      const p = f.globPos(this);
+      const d = Math.hypot(p[0] - wx, p[1] - wy);
+      if (d < 4 + pad) cands.push({ s:{kind:"cargo", i, j:0}, d, r:2.5 });
+    });
     {
       const d = Math.hypot(wx, wy);
       if (d < this.S.sun.D/2 + pad) cands.push({ s:{kind:"star", i:0, j:0}, d, r:1000 });
@@ -446,7 +585,7 @@ export class SystemScene {
     if (!sh || sh.mode !== "newton" || !this.sel) return false;
     if (!sh.sameTarget(this.sel)) return false;
     const k = this.sel.kind;
-    if (k === "star") return false;
+    if (k === "star" || k === "cargo") return false;
     const o = this.obj(this.sel);
     if (!o) return false;
     if ((k === "planet" || k === "moon") && o.type === "gas") return false;
@@ -460,7 +599,23 @@ export class SystemScene {
   }
   onTap(mx, my){
     if (this.S.bhOnly) return;
+    /* 1. ручка манёвра */
+    for(const h of this._handles){
+      if (Math.hypot(h.x - mx, h.y - my) < 9){
+        const s = this.nodeStep;
+        const sh = this.playerShip;
+        if (h.k === "pro")   sh.nudgeNode(s, 0, 0);
+        if (h.k === "retro") sh.nudgeNode(-s, 0, 0);
+        if (h.k === "radO")  sh.nudgeNode(0, s, 0);
+        if (h.k === "radI")  sh.nudgeNode(0, -s, 0);
+        this.mgr.onChange?.();
+        return;
+      }
+    }
     const { wx, wy } = this.toWorld(mx, my);
+    /* 2. клик по собственной орбите — поставить или перенести узел */
+    if (this.tryPlaceNode(wx, wy)) return;
+    /* 3. выбор объекта */
     const hit = this.hitAt(wx, wy, 9);
     if (!hit) return;
     if (this.sel && hit.kind === this.sel.kind && hit.i === this.sel.i && hit.j === this.sel.j){
@@ -512,6 +667,14 @@ export class SystemScene {
           cls.c === "M" ? "красный карлик" : cls.c === "L" ? "коричневый карлик" : "звезда главной последовательности") +
           "<br>возможен выход на орбиту (посадка — нет)"
       };
+    }
+    if (this.sel.kind === "cargo"){
+      const f = this.cargoField[this.sel.i];
+      if (!f) return { name:"—", detail:"контейнер подобран" };
+      return { name:"Контейнер · " + f.item.name,
+        detail: "масса " + f.item.mass.toFixed(1) + " т · " +
+          (f.landed ? "лежит на поверхности" : "дрейфует по орбите") +
+          "<br>подойдите с захватом — груз возьмётся сам" };
     }
     const st = this.statsOf(this.sel);
     if (this.sel.kind === "comet")
@@ -610,27 +773,41 @@ export class SystemScene {
       if (n){
         const after = sh.nodeOrbit(this);
         const bt = sh.prop.burnTime(n.dv);
-        spec.push({ kind:"readout", label:"Узел",
-          value: "Δv " + fmtDv(n.dv) + " (prograde " + fmtDv(n.dvPro) +
-            ", radial " + fmtDv(n.dvRad) + ")" +
-            "<br>до узла " + fmtTime(n.eta) + " · прожиг " + fmtTime(bt) +
+        const ps = primaryState(this, sh.primary);
+        spec.push({ kind:"readout", label:"Узел манёвра",
+          value: "Δv " + fmtDv(n.dv) + " · прожиг " + fmtTime(bt) +
+            "<br>прогрейд " + fmtDv(n.dvPro) + " · радиально " + fmtDv(n.dvRad) +
+            "<br>до узла " + fmtTime(n.eta) +
             "<br>после: Ап " + (after && isFinite(after.el.ra)
-              ? fmtDist(after.el.ra - after.ps.bodyR) : "выход из SOI") +
+              ? fmtDist(after.el.ra - after.ps.bodyR) : "уход из SOI") +
             " · Пе " + (after ? fmtDist(after.el.rp - after.ps.bodyR) : "—") +
-            "<br>" + (sh.prop.canAfford(n.dv)
-              ? "топлива хватает" : "<span style='color:#ff9a6b'>не хватает ΔV</span>") });
-        const step = Math.max(5, Math.round(n.dv*0.1)) || 10;
+            (after && after.el.rp < after.ps.bodyR
+              ? " <span style='color:#ff5c4d'>· столкновение!</span>" : "") +
+            "<br>запас ΔV " + fmtDv(sh.prop.deltaV) +
+            (sh.prop.canAfford(n.dv) ? "" : " <span style='color:#ff9a6b'>— не хватает</span>") });
+        spec.push({ kind:"buttons", items:[1, 10, 100].map(v => ({
+          label: v + " м/с", sel: this.nodeStep === v,
+          run: () => { this.nodeStep = v; } })) });
+        const s = this.nodeStep;
         spec.push({ kind:"buttons", items:[
-          { label:"prograde +" + step, run:() => sh.nudgeNode(step, 0, 0) },
-          { label:"−" + step,          run:() => sh.nudgeNode(-step, 0, 0) },
-          { label:"radial +" + step,   run:() => sh.nudgeNode(0, step, 0) },
-          { label:"−" + step,          run:() => sh.nudgeNode(0, -step, 0) } ] });
+          { label:"▲ прогрейд +" + s, run:() => sh.nudgeNode(s, 0, 0) },
+          { label:"▼ ретро −" + s,     run:() => sh.nudgeNode(-s, 0, 0) } ] });
         spec.push({ kind:"buttons", items:[
-          { label:"узел ⟵ 60с", run:() => sh.nudgeNode(0, 0, -60) },
-          { label:"⟶ 60с",      run:() => sh.nudgeNode(0, 0, 60) },
-          { label:"⟶ 10м",      run:() => sh.nudgeNode(0, 0, 600) } ] });
+          { label:"► радиально +" + s, run:() => sh.nudgeNode(0, s, 0) },
+          { label:"◄ радиально −" + s, run:() => sh.nudgeNode(0, -s, 0) } ] });
         spec.push({ kind:"buttons", items:[
-          { label: sh.nodeAuto ? "исполняется…" : "Исполнить (N)", run:() => sh.executeNode() },
+          { label:"−1 мин", run:() => sh.nudgeNode(0, 0, -60) },
+          { label:"+1 мин", run:() => sh.nudgeNode(0, 0, 60) },
+          { label:"+10 мин", run:() => sh.nudgeNode(0, 0, 600) } ] });
+        if (ps && ps.mu > 0){
+          const el = elements(ps.mu, sh.rx, sh.ry, sh.rvx, sh.rvy);
+          spec.push({ kind:"buttons", items:[
+            { label:"узел → Ап", run:() => { n.eta = timeToApo(el); } },
+            { label:"узел → Пе", run:() => { n.eta = timeToPeri(el); } },
+            { label:"сброс Δv",  run:() => { n.dvPro = 0; n.dvRad = 0; } } ] });
+        }
+        spec.push({ kind:"buttons", items:[
+          { label: sh.nodeAuto ? "◼ идёт прожиг" : "▶ Исполнить (N)", run:() => sh.executeNode() },
           { label:"Отменить", run:() => sh.cancelNode() } ] });
       } else {
         spec.push({ kind:"buttons", items:[
@@ -645,6 +822,26 @@ export class SystemScene {
             value: "1-й импульс " + fmtDv(b.dv1) + " · 2-й " + fmtDv(b.dv2) +
               "<br>итого " + fmtDv(b.total) + " · в пути " + fmtTime(b.transferTime) });
         }
+      }
+    }
+
+    /* ---------- груз и снаряжение ---------- */
+    spec.push({ kind:"sect", label:"Снаряжение" });
+    spec.push({ kind:"action", label:"Экран корабля · экипировка (B)",
+      run: () => this.mgr.push(new OutfitScene(this)) });
+    if (sh){
+      const sc = sh.prop.scoop;
+      spec.push({ kind:"readout", label:"Захват",
+        value: sc ? sc.name + " · подбор " + fmtDist(sc.grabRange) +
+              (sc.scoopRate > 0
+                ? "<br>сбор топлива " + (sc.scoopRate*60).toFixed(1) +
+                  " т/мин на высоте до " + sc.scoopAlt + " радиуса звезды"
+                : "<br>сбор топлива недоступен") +
+              "<br>трюм " + sh.prop.cargoMass.toFixed(1) + " / " + sh.prop.cargoCap + " т"
+            : "не установлен" });
+      if (this.sel && this.sel.kind === "cargo"){
+        spec.push({ kind:"action", label:"FSD к контейнеру",
+          run: () => { sh.fsdTo(this.sel, 4); this.mgr.onChange?.(); } });
       }
     }
 
