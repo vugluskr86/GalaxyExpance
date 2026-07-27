@@ -3,6 +3,7 @@ import { FloatingItem } from "../game/inventory.js";
 import { primaryState } from "../game/physics.js";
 import { fmtDv, fmtMass, fmtSpeed, fmtTime, fmtDist, DU_M } from "../game/units.js";
 import { lblText } from "../ui/panel.js";
+import { openComputerEditor } from "./computer.js";
 
 /** Экран корабля: слоты, инвентарь, характеристики.
  *  Компоновка как в оснастке Elite: слева схема с точками подвески,
@@ -167,6 +168,9 @@ export class OutfitScene {
     spec.push({ kind:"rows", items: SLOTS.map(s => {
       const it = p.slots[s.id];
       const acts = [];
+      if (s.id === "computer" && it){
+        acts.push({ label:"Программировать", run:() => openComputerEditor(it) });
+      }
       if (it && s.id !== "hull"){
         acts.push({ label:"Снять", run:() => this.uninstall(s.id) });
         acts.push({ label:"Выбросить", warn:true, run:() => {
