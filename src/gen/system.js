@@ -3,6 +3,11 @@ import { bakePlanet, genMoons } from "./planet.js";
 import { bakeStar, starDiam } from "./star.js";
 import { bakeBH } from "./blackhole.js";
 import { CLS } from "./starclass.js";
+import { MU_SUN } from "../game/units.js";
+import { muOf, orbitRate } from "../game/physics.js";
+
+/** Скорость собственного вращения тел (сутки ≈ 6–20 часов симуляции). */
+const SPIN_SCALE = 2.6e-4;
 
 export const LETTERS = "bcdefgh";
 export const ROM = ["I","II","III","IV"];
@@ -179,24 +184,28 @@ export function stepSystem(S, dt){
     }
     return;
   }
-  S.sun.rot += 0.10*dt;
+  S.sun.rot += SPIN_SCALE*dt;
   for(const p of S.planets){
-    const w = 200/Math.pow(p.dist, 1.5);
-    p.ang += w*dt;
-    p.rot += p.spin*dt*0.5;
-    p.crot += p.spin*dt*0.7;
+    /* тела движутся по тем же кеплеровым законам, что и корабль:
+     * ω = sqrt(μ/r³) — иначе орбитальная механика рассогласуется */
+    p.ang += orbitRate(MU_SUN, p.dist)*dt;
+    p.rot += p.spin*dt*SPIN_SCALE;
+    p.crot += p.spin*dt*SPIN_SCALE*1.4;
     p._x = Math.cos(p.ang)*p.dist;
     p._y = Math.sin(p.ang)*p.dist;
+    const muP = muOf("planet", p);
     for(const m of p.moonList){
-      m.ang += m.w*dt;
+      m.ang += Math.sign(m.w || 1)*orbitRate(muP, m.orbR)*dt;
       m._x = p._x + Math.cos(m.ang)*m.orbR;
       m._y = p._y + Math.sin(m.ang)*m.orbR;
     }
   }
-  if (S.belt) for(const r of S.belt.rocks) r.ang += r.w*dt;
+  if (S.belt) for(const r of S.belt.rocks) r.ang += orbitRate(MU_SUN, r.dist)*dt;
   for(const c of S.comets){
+    /* угловая скорость из момента импульса: dθ/dt = h/r² */
+    const h = Math.sqrt(MU_SUN*c.a*(1 - c.e*c.e));
     c.r = c.a*(1 - c.e*c.e)/(1 + c.e*Math.cos(c.th));
-    c.th += c.dir*(1200/(c.r*c.r))*dt;
+    c.th += c.dir*(h/(c.r*c.r))*dt;
     c.x = Math.cos(c.th + c.om)*c.r;
     c.y = Math.sin(c.th + c.om)*c.r;
   }

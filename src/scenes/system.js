@@ -9,7 +9,11 @@ import { lblText, toLbl } from "../ui/panel.js";
 import { bakeSystemNebula, NEB_SPAN } from "../gen/nebula.js";
 import { LandingScene } from "./landing.js";
 import { Ship, makeNpcs } from "../game/ship.js";
-import { primaryState, predictPath, muOf, soiOf, MU_SUN } from "../game/physics.js";
+import { primaryState, elements, conicPath, surfaceG, muOf, soiOf, MU_SUN } from "../game/physics.js";
+import { ENGINES, TANKS } from "../game/propulsion.js";
+import { planCircularize, planHohmann, hohmannBudget, orbitAfterNode } from "../game/maneuver.js";
+import { fmtSpeed, fmtDist, fmtDv, fmtTime, fmtMass, fmtAcc, DU_M } from "../game/units.js";
+import { timeToApo, timeToPeri } from "../game/physics.js";
 import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 
@@ -22,7 +26,7 @@ export class SystemScene {
     this.sel = this.S.planets.length ? { kind:"planet", i:0, j:0 } : null;
     this.cam = { x:0, y:0 };
     this.follow = false;
-    this.orbitAlt = 14;
+    this.orbitAlt = 20;
     this.nebCvs = this.S.neb ? bakeSystemNebula(this.S.neb) : null;
     /* корабли */
     this.playerShip = this.S.bhOnly ? null : new Ship(this, "#ffd166");
@@ -44,15 +48,49 @@ export class SystemScene {
   /** Управление с клавиатуры (e.code): газ/тормоз/поворот, манёвры. */
   onKey(code, down){
     const sh = this.playerShip;
-    if (!sh || sh.mode === "landed") return;
+    if (!sh) return;
     if (code === "KeyA") sh.ctrl.left = down;
     else if (code === "KeyD") sh.ctrl.right = down;
     else if (code === "KeyW") sh.ctrl.thrust = down;
     else if (code === "KeyS") sh.ctrl.retro = down;
-    else if (down && code === "KeyX"){ sh.ctrl.thrust = sh.ctrl.retro = false; }
-    else if (down && code === "KeyC" && sh.mode === "newton") sh.circularize(this);
-    else if (down && code === "KeyF" && this.sel) sh.fsdTo(this.sel, this.orbitAlt);
-    else if (down && code === "KeyH" && this.sel) sh.hohmannTo(this, this.orbitAlt);
+    else if (!down) return;
+    else if (code === "ShiftLeft") sh.prop.throttle = Math.min(1, sh.prop.throttle + 0.1);
+    else if (code === "ControlLeft") sh.prop.throttle = Math.max(0, sh.prop.throttle - 0.1);
+    else if (code === "KeyZ") sh.prop.throttle = 1;
+    else if (code === "KeyX"){ sh.prop.throttle = 0; sh.ctrl.thrust = sh.ctrl.retro = false; }
+    else if (code === "KeyT") sh.sas = sh.sas === "prograde" ? "off" : "prograde";
+    else if (code === "KeyG") sh.sas = sh.sas === "retrograde" ? "off" : "retrograde";
+    else if (code === "KeyM") this.planCirc(true);
+    else if (code === "KeyN") sh.executeNode();
+    else if (code === "KeyC") this.planCirc(false);
+    else if (code === "KeyF" && this.sel) sh.fsdTo(this.sel, this.orbitAlt);
+    else if (code === "KeyH") this.planTransfer();
+    this.mgr.onChange?.();
+  }
+  /** Варп режется на активном участке: под тягой физика идёт шагами. */
+  warpLimit(){
+    const sh = this.playerShip;
+    if (sh && sh.mode === "newton" && sh.burning) return 10;
+    if (sh && sh.mode === "cruise") return 5;
+    return Infinity;
+  }
+  /** Запланировать циркуляризацию в апоцентре (или перицентре). */
+  planCirc(atApo){
+    const sh = this.playerShip;
+    if (!sh || sh.mode !== "newton") return;
+    const ps = primaryState(this, sh.primary);
+    if (!ps || ps.mu <= 0) return;
+    const n = planCircularize(ps.mu, sh, atApo);
+    if (n) sh.manNode = n;
+  }
+  /** Гомановский переход на выбранную высоту (узлом, а не телепортом). */
+  planTransfer(){
+    const sh = this.playerShip;
+    if (!sh || sh.mode !== "newton") return;
+    const ps = primaryState(this, sh.primary);
+    if (!ps || ps.mu <= 0) return;
+    const n = planHohmann(ps.mu, sh, ps.bodyR + this.orbitAlt);
+    if (n) sh.manNode = n;
   }
   /** Характеристики любого выбираемого тела (для карточки и тултипа). */
   statsOf(sel){
@@ -98,11 +136,7 @@ export class SystemScene {
   }
   update(dt){
     stepSystem(this.S, dt);
-    if (this.playerShip){
-      this.playerShip.update(dt, this);
-      this.playerShip._checkHohmann(this);
-      this.playerShip._executeNode(this);
-    }
+    if (this.playerShip) this.playerShip.update(dt, this);
     for(const n of this.npcs) n.update(dt, this);
     let camTgt = null;
     if (this.followShip && this.playerShip) camTgt = this.playerShip.globPos(this);
@@ -123,6 +157,32 @@ export class SystemScene {
       if (X < 0 || Y < 0 || X >= SCR || Y >= SCR) continue;
       sctx.fillRect(X, Y, 1, 1);
     }
+  }
+  /** Пунктирная прорисовка списка точек в раме тела. */
+  drawTrack(pts, ps, col, alpha, skip){
+    const { sctx, SCR } = this.ctx;
+    sctx.fillStyle = col;
+    sctx.globalAlpha = alpha;
+    for(let i=0;i<pts.length;i+=skip){
+      const X = Math.round(this.ssx(ps.x + pts[i][0]));
+      const Y = Math.round(this.ssy(ps.y + pts[i][1]));
+      if (X < 0 || Y < 0 || X >= SCR || Y >= SCR) continue;
+      sctx.fillRect(X, Y, 1, 1);
+    }
+    sctx.globalAlpha = 1;
+  }
+  /** Маркер апсиды (nu = 0 перицентр, π апоцентр). */
+  drawApsis(el, ps, nu, col){
+    if (el.e >= 1 && nu === Math.PI) return;
+    const rr = el.p/(1 + el.e*Math.cos(nu));
+    if (!isFinite(rr) || rr > ps.soi || rr < ps.bodyR) return;
+    const th = el.argp + el.s*nu;
+    const X = Math.round(this.ssx(ps.x + rr*Math.cos(th)));
+    const Y = Math.round(this.ssy(ps.y + rr*Math.sin(th)));
+    const { sctx, SCR } = this.ctx;
+    if (X < 0 || Y < 0 || X >= SCR || Y >= SCR) return;
+    sctx.fillStyle = col;
+    sctx.fillRect(X-1, Y-1, 3, 3);
   }
   drawOrbit(r, col){
     const { sctx, SCR } = this.ctx;
@@ -211,30 +271,41 @@ export class SystemScene {
       const ps = primaryState(this, this.sel);
       if (ps) this.drawWorldCircleAt(ps.x, ps.y, ps.soi, "#22305a", 4);
     }
-    /* предсказанная траектория игрока (в раме его primary, как в KSP) */
+    /* Траектория корабля — точная коника из элементов орбиты, а не
+     * результат интегрирования: она совпадает с тем, куда корабль реально
+     * прилетит, и не «плывёт» на варпе. */
     const sh = this.playerShip;
     if (sh && sh.mode === "newton"){
       const ps = primaryState(this, sh.primary);
-      if (ps){
-        const pts = predictPath(sh, ps.mu, ps.soi, ps.bodyR);
-        sctx.fillStyle = "#ffd166";
-        sctx.globalAlpha = 0.55;
-        for(let i=0;i<pts.length;i+=2){
-          const X = Math.round(this.ssx(ps.x + pts[i][0]));
-          const Y = Math.round(this.ssy(ps.y + pts[i][1]));
-          if (X < 0 || Y < 0 || X >= SCR || Y >= SCR) continue;
-          sctx.fillRect(X, Y, 1, 1);
+      if (ps && ps.mu > 0){
+        const el = elements(ps.mu, sh.rx, sh.ry, sh.rvx, sh.rvy);
+        const path = conicPath(el, ps.soi, ps.bodyR);
+        this.drawTrack(path.pts, ps, "#ffd166", 0.55, 1);
+        /* апоцентр и перицентр */
+        this.drawApsis(el, ps, Math.PI, "#8fd0ff");
+        this.drawApsis(el, ps, 0, "#ff9a6b");
+        /* точка выхода из сферы влияния или удара */
+        if (path.exit && path.pts.length){
+          const p = path.pts[path.pts.length-1];
+          const X = Math.round(this.ssx(ps.x + p[0])), Y = Math.round(this.ssy(ps.y + p[1]));
+          sctx.fillStyle = path.exit.type === "impact" ? "#ff5c4d" : "#7ee0ff";
+          sctx.fillRect(X-2, Y-2, 5, 1); sctx.fillRect(X-2, Y+2, 5, 1);
+          sctx.fillRect(X-2, Y-1, 1, 3); sctx.fillRect(X+2, Y-1, 1, 3);
         }
-        sctx.globalAlpha = 1;
-        /* манёвровый узел: маркер на позиции узла */
-        if (sh.manNode){
-          const nX = Math.round(this.ssx(ps.x + sh.manNode.rx));
-          const nY = Math.round(this.ssy(ps.y + sh.manNode.ry));
-          sctx.fillStyle = "#7ee0ff";
-          sctx.fillRect(nX - 3, nY, 7, 1);
-          sctx.fillRect(nX, nY - 3, 1, 7);
-          sctx.fillStyle = "#ffffff";
-          sctx.fillRect(nX - 1, nY - 1, 3, 3);
+        /* запланированный манёвр: орбита после узла + маркер узла */
+        const na = sh.nodeOrbit(this);
+        if (na){
+          const np = conicPath(na.el, ps.soi, ps.bodyR);
+          this.drawTrack(np.pts, ps, "#7ee0ff", 0.5, 3);
+          const pt = sh.nodePoint(this);
+          if (pt){
+            const nX = Math.round(this.ssx(ps.x + pt[0])), nY = Math.round(this.ssy(ps.y + pt[1]));
+            sctx.fillStyle = "#7ee0ff";
+            sctx.fillRect(nX - 4, nY, 9, 1);
+            sctx.fillRect(nX, nY - 4, 1, 9);
+            sctx.fillStyle = "#ffffff";
+            sctx.fillRect(nX - 1, nY - 1, 3, 3);
+          }
         }
       }
     }
@@ -279,23 +350,40 @@ export class SystemScene {
       lblText(this.ctx, n.name,
         toLbl(this.ctx, this.ssx(nx)) + 6, toLbl(this.ctx, this.ssy(ny)) - 5, "#6fb7ff", 10);
     }
-    /* HUD корабля: скорость, высота, элементы орбиты */
+    /* HUD: режим, элементы орбиты, состояние двигателя */
     const sh = this.playerShip;
-    if (sh && sh.mode !== "landed"){
-      const els = sh.els(this);
-      if (els){
-        const modeRu = sh.mode === "cruise" ? "FSD-круиз" : "ньютонова механика";
-        const pName = sh.primary.kind === "star" ? this.S.name : this.label(sh.primary);
-        const l1 = modeRu + " · рама: " + pName;
-        const l2 = "v=" + els.v.toFixed(1) + " · h=" + Math.max(0, els.r - els.ps.bodyR).toFixed(0) +
-          (sh.manNode ? " · <span style='color:#7ee0ff'>узел " + sh.manNode.timer.toFixed(0) + "с</span>" : "") +
-        (sh.mode === "newton" && isFinite(els.ra)
-            ? " · Ап=" + Math.min(9999, els.ra - els.ps.bodyR).toFixed(0) +
-              " · Пер=" + (els.rp - els.ps.bodyR).toFixed(0) + " · e=" + els.e.toFixed(2)
-            : (sh.mode === "newton" ? " · гипербола e=" + els.e.toFixed(2) : ""));
-        lblText(this.ctx, l1, 12, this.ctx.LW - 30, "#dfe4ff", 11);
-        lblText(this.ctx, l2, 12, this.ctx.LW - 14, "#ffd166", 11);
+    if (sh){
+      const L = this.ctx.LW;
+      const pName = sh.primary.kind === "star" ? this.S.name : this.label(sh.primary);
+      if (sh.mode === "cruise"){
+        lblText(this.ctx, "FSD-СВЕРХКРУИЗ · " + fmtSpeed(sh.cruiseV) +
+          " · цель: " + (sh.target ? this.label(sh.target) : "—"), 12, L - 32, "#8fd0ff", 11);
+      } else if (sh.mode === "landed"){
+        lblText(this.ctx, "НА ПОВЕРХНОСТИ · " + pName + " · топливо " +
+          Math.round(sh.prop.fuelFrac*100) + "%", 12, L - 32, "#7ee08a", 11);
+      } else {
+        const el = sh.els(this);
+        if (el){
+          const hAlt = el.r - el.ps.bodyR;
+          lblText(this.ctx, "ОРБИТА " + pName + " · h " + fmtDist(hAlt) +
+            " · v " + fmtSpeed(el.v), 12, L - 46, "#dfe4ff", 11);
+          const ap = isFinite(el.ra) ? fmtDist(el.ra - el.ps.bodyR) : "выход";
+          lblText(this.ctx,
+            "Ап " + ap + " · Пе " + fmtDist(el.rp - el.ps.bodyR) +
+            " · e " + el.e.toFixed(3) +
+            (isFinite(el.period) ? " · T " + fmtTime(el.period) : " · гипербола"),
+            12, L - 32, "#ffd166", 11);
+        }
       }
+      const p = sh.prop;
+      let l3 = "РУД " + Math.round(p.throttle*100) + "% · топл " +
+        Math.round(p.fuelFrac*100) + "% · ΔV " + fmtDv(p.deltaV);
+      if (sh.manNode){
+        const rem = sh.manNode.dv - (sh.manNode.done || 0);
+        l3 += " · узел Δv " + fmtDv(rem) + " через " + fmtTime(sh.manNode.eta) +
+              (sh.nodeAuto ? " ▶" : "");
+      }
+      lblText(this.ctx, l3, 12, L - 16, sh.burning ? "#ff9a6b" : "#8d95c9", 11);
     }
   }
   /** Кандидаты попадания в точку (общая логика для клика и тултипа). */
@@ -363,7 +451,12 @@ export class SystemScene {
     if (!o) return false;
     if ((k === "planet" || k === "moon") && o.type === "gas") return false;
     const els = sh.els(this);
-    return els && (els.r - els.ps.bodyR) < 40 && els.v < 30;
+    if (!els) return false;
+    /* сесть можно с низкой орбиты: высота меньше 12% радиуса тела,
+     * скорость ниже 1.2 круговой — как в реальном сходе с орбиты */
+    const h = els.r - els.ps.bodyR;
+    const vCirc = Math.sqrt(els.ps.mu/els.r);
+    return h < Math.max(6, els.ps.bodyR*0.35) && els.v < vCirc*1.25;
   }
   onTap(mx, my){
     if (this.S.bhOnly) return;
@@ -394,7 +487,7 @@ export class SystemScene {
       info: (S.jets ? "квазар" : "сверхмассивная чёрная дыра") + " · S-звёзд: " + S.sstars.length
     };
     const ship = this.playerShip;
-    const shipRu = ship ? ({newton:"ньютон", cruise:"FSD", landed:"на поверхности"})[ship.mode] : "";
+    const shipRu = ship ? ({newton:"орбита", cruise:"FSD", landed:"посадка"})[ship.mode] : "";
     return {
       title: S.name,
       info: "система · класс " + CLS[this.star.ci].c + " · планет: " + S.planets.length +
@@ -448,7 +541,7 @@ export class SystemScene {
       } };
     }
     if (this.sel && this.playerShip){
-      return { label:"FSD к выбранному (F, h=" + this.orbitAlt + ")", run: () => {
+      return { label:"FSD → орбита " + fmtDist(this.orbitAlt) + " (F)", run: () => {
         this.playerShip.fsdTo(this.sel, this.orbitAlt);
         this.mgr.onChange?.();
       } };
@@ -459,37 +552,115 @@ export class SystemScene {
   }
   panelSpec(){
     if (this.S.bhOnly) return [];
-    const spec = [
-      { kind:"range", label:"Высота орбиты", min:8, max:48, step:2,
-        get:() => this.orbitAlt, set:v => { this.orbitAlt = v; } },
-      { kind:"check", label:"Следить за выбранным",
-        get:() => this.follow, set:v => { this.follow = v; if (v) this.followShip = false; } },
-      { kind:"check", label:"Камера: корабль",
-        get:() => this.followShip, set:v => { this.followShip = v; if (v) this.follow = false; } }
-    ];
-    if (this.sel && this.playerShip && this.playerShip.mode !== "landed"){
-      const sameBody = this.playerShip.sameTarget(this.sel);
-      spec.push({ kind:"action",
-        label: sameBody ? "Выйти на орбиту (h=" + this.orbitAlt + ")" : "FSD → орбита (h=" + this.orbitAlt + ")",
-        run: () => {
-          if (sameBody) this.playerShip.setCircular(this, this.sel, this.orbitAlt);
-          else this.playerShip.fsdTo(this.sel, this.orbitAlt);
-          this.mgr.onChange?.();
-        } });
+    const sh = this.playerShip;
+    const spec = [];
+
+    /* ---------- корабль ---------- */
+    if (sh){
+      const p = sh.prop;
+      const ps = primaryState(this, sh.primary);
+      const g = ps && ps.mu > 0 ? ps.mu/(ps.bodyR*ps.bodyR) : 0;
+      spec.push({ kind:"sect", label:"Корабль" });
+      spec.push({ kind:"readout", label:"Двигательная установка",
+        value: "масса " + fmtMass(p.mass) + " (сухая " + fmtMass(p.dryMass) + ")" +
+          "<br>тяга " + p.engine.thrust + " кН · Iₛₚ " + p.engine.isp + " с" +
+          "<br>ускорение " + p.accelFullMs.toFixed(2) + " м/с² · TWR " +
+          (g > 0 ? p.twr(g).toFixed(2) : "—") +
+          "<br>запас ΔV " + fmtDv(p.deltaV) + " · топливо " +
+          p.fuel.toFixed(1) + " / " + p.tank.fuel + " т" });
+      spec.push({ kind:"range", label:"РУД (Shift/Ctrl, Z, X)", min:0, max:100, step:5,
+        get:() => Math.round(p.throttle*100), set:v => { p.throttle = v/100; },
+        fmt:v => v + " %" });
+      const sasBtn = (id, lbl) => ({ label:lbl, sel: sh.sas === id,
+        run: () => { sh.sas = sh.sas === id ? "off" : id; } });
+      spec.push({ kind:"buttons", items:[
+        sasBtn("prograde","▲ прогр"), sasBtn("retrograde","▼ ретро"),
+        sasBtn("radial","◀ радиал"), sasBtn("node","◆ узел") ] });
+      spec.push({ kind:"select", label:"Двигатель",
+        options: ENGINES.map(e => [e.id, e.name + " · " + e.thrust + " кН"]),
+        get:() => p.engine.id, set:v => p.setEngine(v) });
+      spec.push({ kind:"select", label:"Топливный бак",
+        options: TANKS.map(t => [t.id, t.name + " · " + t.fuel + " т"]),
+        get:() => p.tank.id, set:v => p.setTank(v) });
+      if (sh.mode === "landed")
+        spec.push({ kind:"action", label:"Заправить бак", run: () => p.refuel() });
     }
-    if (this.sel && this.playerShip && this.playerShip.mode === "newton" &&
-        this.playerShip.sameTarget(this.sel)){
-      spec.push({ kind:"action", label:"Гоман к цели (H, h=" + this.orbitAlt + ")",
-        run: () => { this.playerShip.hohmannTo(this, this.orbitAlt); this.mgr.onChange?.(); } });
+
+    /* ---------- орбита ---------- */
+    if (sh && sh.mode === "newton"){
+      const el = sh.els(this);
+      if (el){
+        const ap = isFinite(el.ra) ? fmtDist(el.ra - el.ps.bodyR) : "—";
+        spec.push({ kind:"sect", label:"Орбита" });
+        spec.push({ kind:"readout", label:"Элементы",
+          value: "апоцентр " + ap + " · до Ап " + fmtTime(timeToApo(el)) +
+            "<br>перицентр " + fmtDist(el.rp - el.ps.bodyR) + " · до Пе " + fmtTime(timeToPeri(el)) +
+            "<br>e " + el.e.toFixed(4) + " · a " + fmtDist(el.a) +
+            (isFinite(el.period) ? " · период " + fmtTime(el.period) : " · незамкнутая") +
+            "<br>скорость " + fmtSpeed(el.v) + " · вертикальная " + fmtSpeed(el.vr) +
+            "<br>радиус SOI " + fmtDist(el.ps.soi) + " · g₀ " +
+            (el.ps.mu/(el.ps.bodyR*el.ps.bodyR)*DU_M).toFixed(2) + " м/с²" });
+      }
     }
-    if (this.playerShip && this.playerShip.mode === "newton"){
-      spec.push({ kind:"action", label:"Узел: +5 prograde (M)",
-        run: () => { this.playerShip.setManeuverNode(5, 0, 20); this.mgr.onChange?.(); } });
-      if (this.playerShip.manNode) spec.push({ kind:"action", label:"Отменить узел",
-        run: () => { this.playerShip.cancelNode(); this.mgr.onChange?.(); } });
-      spec.push({ kind:"action", label:"Циркуляризовать орбиту (C)",
-        run: () => { this.playerShip.circularize(this); this.mgr.onChange?.(); } });
+
+    /* ---------- манёвры ---------- */
+    if (sh && sh.mode === "newton"){
+      spec.push({ kind:"sect", label:"Планировщик манёвров" });
+      const n = sh.manNode;
+      if (n){
+        const after = sh.nodeOrbit(this);
+        const bt = sh.prop.burnTime(n.dv);
+        spec.push({ kind:"readout", label:"Узел",
+          value: "Δv " + fmtDv(n.dv) + " (prograde " + fmtDv(n.dvPro) +
+            ", radial " + fmtDv(n.dvRad) + ")" +
+            "<br>до узла " + fmtTime(n.eta) + " · прожиг " + fmtTime(bt) +
+            "<br>после: Ап " + (after && isFinite(after.el.ra)
+              ? fmtDist(after.el.ra - after.ps.bodyR) : "выход из SOI") +
+            " · Пе " + (after ? fmtDist(after.el.rp - after.ps.bodyR) : "—") +
+            "<br>" + (sh.prop.canAfford(n.dv)
+              ? "топлива хватает" : "<span style='color:#ff9a6b'>не хватает ΔV</span>") });
+        const step = Math.max(5, Math.round(n.dv*0.1)) || 10;
+        spec.push({ kind:"buttons", items:[
+          { label:"prograde +" + step, run:() => sh.nudgeNode(step, 0, 0) },
+          { label:"−" + step,          run:() => sh.nudgeNode(-step, 0, 0) },
+          { label:"radial +" + step,   run:() => sh.nudgeNode(0, step, 0) },
+          { label:"−" + step,          run:() => sh.nudgeNode(0, -step, 0) } ] });
+        spec.push({ kind:"buttons", items:[
+          { label:"узел ⟵ 60с", run:() => sh.nudgeNode(0, 0, -60) },
+          { label:"⟶ 60с",      run:() => sh.nudgeNode(0, 0, 60) },
+          { label:"⟶ 10м",      run:() => sh.nudgeNode(0, 0, 600) } ] });
+        spec.push({ kind:"buttons", items:[
+          { label: sh.nodeAuto ? "исполняется…" : "Исполнить (N)", run:() => sh.executeNode() },
+          { label:"Отменить", run:() => sh.cancelNode() } ] });
+      } else {
+        spec.push({ kind:"buttons", items:[
+          { label:"Циркуляризация в Ап (M)", run:() => this.planCirc(true) },
+          { label:"в Пе (C)", run:() => this.planCirc(false) } ] });
+        spec.push({ kind:"action", label:"Переход на высоту h (H)",
+          run:() => this.planTransfer() });
+        const ps = primaryState(this, sh.primary);
+        if (ps && ps.mu > 0){
+          const b = hohmannBudget(ps.mu, Math.hypot(sh.rx, sh.ry), ps.bodyR + this.orbitAlt);
+          spec.push({ kind:"readout", label:"Смета перехода",
+            value: "1-й импульс " + fmtDv(b.dv1) + " · 2-й " + fmtDv(b.dv2) +
+              "<br>итого " + fmtDv(b.total) + " · в пути " + fmtTime(b.transferTime) });
+        }
+      }
     }
+
+    /* ---------- навигация ---------- */
+    spec.push({ kind:"sect", label:"Навигация" });
+    spec.push({ kind:"range", label:"Высота орбиты", min:6, max:120, step:2,
+      get:() => this.orbitAlt, set:v => { this.orbitAlt = v; },
+      fmt:v => fmtDist(v) });
+    if (this.sel && sh && sh.mode !== "landed"){
+      spec.push({ kind:"action", label:"FSD к выбранному (F)",
+        run: () => { sh.fsdTo(this.sel, this.orbitAlt); this.mgr.onChange?.(); } });
+    }
+    spec.push({ kind:"check", label:"Следить за выбранным",
+      get:() => this.follow, set:v => { this.follow = v; if (v) this.followShip = false; } });
+    spec.push({ kind:"check", label:"Камера: корабль",
+      get:() => this.followShip, set:v => { this.followShip = v; if (v) this.follow = false; } });
     if (this.sel) spec.push({ kind:"action", label:"Осмотреть (крупный план)",
       run: () => this.mgr.push(new BodyScene(this, { ...this.sel })) });
     return spec;

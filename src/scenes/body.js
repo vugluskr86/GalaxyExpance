@@ -296,7 +296,9 @@ export class BodyScene {
     const m = src.moonList[this.moonSel.i];
     if (!m || m.type === "gas") return false;
     const els = ship.els(this.sys);
-    return els && (els.r - els.ps.bodyR) < 40 && els.v < 30;
+    if (!els) return false;
+    const h = els.r - els.ps.bodyR;
+    return h < Math.max(6, els.ps.bodyR*0.35) && els.v < Math.sqrt(els.ps.mu/els.r)*1.25;
   }
   primary(){
     if (this.selRef.kind === "planet" && this.moonSel !== null){

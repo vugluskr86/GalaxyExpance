@@ -3,7 +3,7 @@ import { ClusterScene } from "./scenes/cluster.js";
 import { Cluster } from "./gen/cluster.js";
 import { Panel } from "./ui/panel.js";
 import { attachInput } from "./core/input.js";
-import { settings } from "./ui/settings.js";
+import { settings, warpStep } from "./ui/settings.js";
 
 const SCR = 420;
 const scene = document.getElementById("scene");
@@ -66,23 +66,26 @@ document.getElementById("btnFit").addEventListener("click", () => mgr.current?.f
 document.getElementById("btnZin").addEventListener("click", () => mgr.current?.zoomBy?.(1.35));
 document.getElementById("btnZout").addEventListener("click", () => mgr.current?.zoomBy?.(1/1.35));
 
-const SPEED_PRESETS = { "0": 1, "1": 1, "2": 2, "3": 5, "4": 10 };
-const SPEED_STEPS = [0, 1, 2, 5, 10];
+/* --- клавиатура: пилотирование и ускорение времени --- */
+const FLIGHT_CODES = new Set([
+  "KeyW","KeyA","KeyS","KeyD","KeyX","KeyZ","KeyC","KeyF","KeyH","KeyM","KeyN",
+  "KeyT","KeyG","ShiftLeft","ControlLeft"
+]);
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-  if (e.key === "[" || e.key === "]"){
+  if (e.code === "BracketLeft" || e.code === "BracketRight"){
     e.preventDefault();
-    let idx = SPEED_STEPS.indexOf(settings.speed);
-    if (idx < 0) idx = SPEED_STEPS.indexOf(1);
-    const next = idx + (e.key === "[" ? -1 : 1);
-    if (next >= 0 && next < SPEED_STEPS.length) settings.speed = SPEED_STEPS[next];
-  } else if (e.key === "Backspace" || e.key === "0"){
-    e.preventDefault();
-    settings.speed = 1;
-  } else if (SPEED_PRESETS[e.key] !== undefined){
-    e.preventDefault();
-    settings.speed = SPEED_PRESETS[e.key];
+    warpStep(e.code === "BracketRight" ? 1 : -1);
+    return;
   }
+  if (e.code === "Backspace"){ e.preventDefault(); settings.speed = 1; return; }
+  if (FLIGHT_CODES.has(e.code)){
+    e.preventDefault();
+    mgr.current?.onKey?.(e.code, true);
+  }
+});
+document.addEventListener("keyup", e => {
+  if (FLIGHT_CODES.has(e.code)) mgr.current?.onKey?.(e.code, false);
 });
 
 const npTitle = document.getElementById("npTitle");
@@ -93,12 +96,19 @@ let last = performance.now();
 function loop(nowMs){
   const rawDt = Math.min(0.1, (nowMs - last)/1000);
   last = nowMs;
-  const dt = rawDt * settings.speed;
+  /* варп ограничивается сценой: под тягой физика идёт мелким шагом */
+  const cap = mgr.current?.warpLimit?.() ?? Infinity;
+  const warp = Math.min(settings.speed, cap);
+  const dt = rawDt * warp;
   const t = nowMs/1000;
   mgr.update(dt, t);
   mgr.draw(t);
   const st = mgr.current?.status?.();
-  if (st){ npTitle.textContent = st.title; npInfo.textContent = st.info + " · ×" + settings.speed; }
+  if (st){
+    npTitle.textContent = st.title;
+    npInfo.textContent = st.info + " · время ×" + warp.toLocaleString("ru-RU") +
+      (warp < settings.speed ? " (варп ограничен)" : "");
+  }
   btnBack.classList.toggle("hidden", mgr.stack.length <= 1);
   requestAnimationFrame(loop);
 }

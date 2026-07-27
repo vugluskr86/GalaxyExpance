@@ -152,6 +152,19 @@ export class Panel {
       const b = this.h(`<button class="big" style="margin-bottom:10px">${s.label}</button>`);
       b.addEventListener("click", s.run);
       root.appendChild(b);
+    } else if (s.kind === "readout"){
+      root.appendChild(this.h(
+        `<div class="selbox"><b>${s.label}</b><small>${s.value}</small></div>`));
+    } else if (s.kind === "sect"){
+      root.appendChild(this.h(`<div class="sect mt">${s.label}</div>`));
+    } else if (s.kind === "buttons"){
+      const row = this.h(`<div class="btns" style="margin-bottom:8px"></div>`);
+      for(const b of s.items){
+        const el = this.h(`<button${b.sel ? ' class="clsbtn sel"' : ""}>${b.label}</button>`);
+        el.addEventListener("click", () => { b.run(); this.refresh(); });
+        row.appendChild(el);
+      }
+      root.appendChild(row);
     } else if (s.kind === "check"){
       const row = this.h(`<div class="row checks"><label><input type="checkbox"> ${s.label}</label></div>`);
       const inp = row.querySelector("input");

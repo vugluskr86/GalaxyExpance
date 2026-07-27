@@ -77,7 +77,7 @@ export function planetStats(S, p, kind, parentDist){
     veg = "хемосинтетическая (пурпурная)";
 
   const grav = (p.size/24).toFixed(2);
-  const day = Math.round(24/p.spin*10)/10;
+  const day = Math.round((2*Math.PI/(Math.max(0.05, p.spin)*2.6e-4))/360)/10;
 
   p._stats = { tempC, atm, pressure, liquid, minerals, veg, grav, day,
                typeRu: PT_RU[p.type], hasAtm: !(atm.startsWith("нет")) };

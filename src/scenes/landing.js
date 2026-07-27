@@ -19,6 +19,7 @@ export class LandingScene {
     this.terr = (selRef.kind === "comet" || selRef.kind === "rock") ? "moon" : p.type;
     this.seedv = (p.seed ?? p.rseed ?? ((p.id || 1)*77)) | 0;
     player.refuel();
+    sys.playerShip?.prop.refuel();
 
     const SCR = 420;
     const rng = mulberry32(this.seedv ^ 0x1a2d);

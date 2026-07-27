@@ -1,35 +1,46 @@
 import { mulberry32, hash2i } from "../core/rng.js";
 import { nameFromHash } from "../core/naming.js";
-import { primaryState, findPrimary, elements } from "./physics.js";
+import { primaryState, findPrimary, elements, propagate, bodyROf,
+         surfaceG, conicPath, safeOrbitR, maxOrbitR } from "./physics.js";
+import { Propulsion } from "./propulsion.js";
+import { ManeuverNode, stateAfterNode, nodeDvVector, stateAtNode } from "./maneuver.js";
+import { DU_M } from "./units.js";
 
 export { bodyROf as bodyRadius } from "./physics.js";
 
-/** Корабль с тремя режимами движения:
- *  - "newton": свободный полёт в раме доминирующего тела (патч-коники),
- *    ручная тяга (нос/prograde/retrograde);
- *  - "cruise": FSD-сверхускорение внутри системы (гравитация отключена,
- *    скорость растёт, автоторможение и автоциркуляризация у цели);
- *  - "landed": на поверхности (гипер между звёзд живёт уровнем выше). */
+/** Корабль. Три режима:
+ *   newton — орбитальный полёт. Пока двигатель молчит, движение идёт «на
+ *            рельсах» точным решением Кеплера: орбита не разрушается ни
+ *            варпом, ни численной ошибкой. Двигатель включён — интегрируем.
+ *   cruise — FSD-сверхкруиз внутри системы (Elite): гравитация отключена,
+ *            выход ВСЕГДА на корректную круговую орбиту.
+ *   landed — на поверхности. */
 export class Ship {
-  constructor(sys, col, startRel = 186){
+  constructor(sys, col, startRel = 400){
     this.col = col;
     this.mode = "newton";
     this.primary = { kind:"star", i:0, j:0 };
-    this.rx = 0; this.ry = -startRel;
-    /* круговая орбита вокруг звезды по умолчанию */
     const ps = primaryState(sys, this.primary);
-    const v = Math.sqrt(ps.mu/startRel);
+    const r = Math.max(startRel, (ps ? ps.bodyR : 20) + 40);
+    this.rx = 0; this.ry = -r;
+    const v = Math.sqrt((ps ? ps.mu : 0.3)/r);
     this.rvx = v; this.rvy = 0;
     this.nose = 0;
+    this.turnRate = 1.2;
     this.ctrl = { left:false, right:false, thrust:false, retro:false };
-    this.thrustAcc = 26;
-    this.turnRate = 3;
-    this.altitude = 14;
-    this.target = null;       // цель FSD
+    this.prop = new Propulsion();
+    this.sas = "off";              // off | prograde | retrograde | radial | antiradial | node
+    this.altitude = 20;            // целевая высота орбиты, du
+    this.target = null;            // цель FSD
     this.cruiseV = 0;
     this.landedOn = null;
+    this.manNode = null;
+    this.nodeAuto = false;         // автопилот исполнения узла
+    this.burning = false;
+    this.lastStatus = "";
   }
-  key(s){ return s.kind + ":" + s.i + ":" + s.j; }
+
+  /* ---------------- геометрия и элементы ---------------- */
   globPos(sys){
     const ps = primaryState(sys, this.primary);
     return ps ? [ps.x + this.rx, ps.y + this.ry] : [this.rx, this.ry];
@@ -40,228 +51,338 @@ export class Ship {
   }
   els(sys){
     const ps = primaryState(sys, this.primary);
-    return ps ? { ...elements(ps.mu, this.rx, this.ry, this.rvx, this.rvy), ps } : null;
+    if (!ps || ps.mu <= 0) return null;
+    return { ...elements(ps.mu, this.rx, this.ry, this.rvx, this.rvy), ps };
   }
-  /** Мгновенно поставить на круговую орбиту (используется FSD-выходом и взлётом). */
-  setCircular(sys, selRef, h){
+  /** Высота над поверхностью текущего притягивающего тела. */
+  alt(sys){
+    const ps = primaryState(sys, this.primary);
+    if (!ps) return 0;
+    return Math.hypot(this.rx, this.ry) - ps.bodyR;
+  }
+  sameTarget(selRef){
+    const t = this.mode === "cruise" ? this.target : this.primary;
+    return !!(t && selRef && t.kind === selRef.kind && t.i === selRef.i && t.j === selRef.j);
+  }
+
+  /* ---------------- постановка на орбиту ---------------- */
+  /** Круговая орбита вокруг тела на высоте h, в текущем направлении подхода. */
+  setCircular(sys, selRef, h, bearing){
     const ps = primaryState(sys, selRef);
-    if (!ps) return;
+    if (!ps || ps.mu <= 0) return false;
+    /* высота зажимается сферой влияния: орбита, вылезающая за SOI,
+     * не орбита, а траектория ухода — раньше именно так корабль и «терялся» */
+    const r = safeOrbitR(ps, h ?? this.altitude);
+    const a = bearing !== undefined ? bearing : Math.atan2(this.ry, this.rx);
     this.mode = "newton";
     this.primary = { ...selRef };
-    const r = ps.bodyR + (h ?? this.altitude);
-    const a = Math.random()*Math.PI*2;
     this.rx = Math.cos(a)*r; this.ry = Math.sin(a)*r;
     const v = Math.sqrt(ps.mu/r);
     this.rvx = -Math.sin(a)*v; this.rvy = Math.cos(a)*v;
     this.nose = a + Math.PI/2;
     this.landedOn = null;
+    this.manNode = null; this.nodeAuto = false;
+    return true;
   }
-  /** FSD: сверхкруиз к любому телу системы. */
+
+  /* ---------------- FSD ---------------- */
   fsdTo(selRef, h){
     if (h !== undefined) this.altitude = h;
     this.target = { ...selRef };
     this.mode = "cruise";
-    this.cruiseV = Math.max(30, Math.hypot(this.rvx, this.rvy));
+    this.cruiseV = Math.max(2, Math.hypot(this.rvx, this.rvy));
+    this.manNode = null; this.nodeAuto = false;
   }
   orbitAt(selRef, h){ this.fsdTo(selRef, h); }
   flyTo(selRef, h){ this.fsdTo(selRef, h); }
-  sameTarget(selRef){
-    const t = this.mode === "cruise" ? this.target : this.primary;
-    return t && selRef && t.kind === selRef.kind && t.i === selRef.i && t.j === selRef.j;
-  }
-  land(body){
-    this.mode = "landed";
-    this.landedOn = { ...body };
-  }
+
+  land(body){ this.mode = "landed"; this.landedOn = { ...body }; this.burning = false; }
   takeoff(sys, h){
     if (this.landedOn) this.setCircular(sys, this.landedOn, h ?? this.altitude);
     else this.mode = "newton";
   }
-  update(dt, sys){
-    if (this.mode === "landed"){
-      /* стоим на поверхности: следуем за телом */
-      const ps = primaryState(sys, this.landedOn || this.primary);
-      if (ps){ this.primary = ps.selRef; this.rx = 0; this.ry = ps.bodyR; this.rvx = 0; this.rvy = 0; }
-      return;
-    }
-    if (this.mode === "cruise"){
-      const pos = sys.posOf(this.target);
-      const o = sys.obj(this.target);
-      if (!pos || !o){ this.mode = "newton"; return; }
-      const [gx, gy] = this.globPos(sys);
-      const dx = pos[0] - gx, dy = pos[1] - gy;
-      const d = Math.hypot(dx, dy);
-      const want = Math.atan2(dy, dx);
-      let da = want - this.nose;
-      while(da > Math.PI) da -= 2*Math.PI;
-      while(da < -Math.PI) da += 2*Math.PI;
-      this.nose += Math.max(-4*dt, Math.min(4*dt, da));
-      /* разгон / торможение: тормозной путь v²/(2·b).
-       *  b повышено для малых тел — иначе торможение не успевает. */
-      const psT = primaryState(sys, this.target);
-      const captureR = (psT ? psT.bodyR : 4) + this.altitude;
-      const brakeAcc = Math.max(260, (psT ? psT.mu / Math.max(10, captureR) : 260));
-      const brake = this.cruiseV*this.cruiseV/(2*brakeAcc);
-      if (d > brake + 20) this.cruiseV = Math.min(420, this.cruiseV + 300*dt);
-      else this.cruiseV = Math.max(12, this.cruiseV - 300*dt);
-      const nx = gx + Math.cos(this.nose)*this.cruiseV*dt;
-      const ny = gy + Math.sin(this.nose)*this.cruiseV*dt;
-      /* состояние храним в раме будущего primary (цели, если она гравитирует) */
-      const anchor = ["planet","moon","star"].includes(this.target.kind)
-        ? this.target : { kind:"star", i:0, j:0 };
-      const ps = primaryState(sys, anchor);
-      this.primary = { ...anchor };
-      this.rx = nx - ps.x; this.ry = ny - ps.y;
-      this.rvx = Math.cos(this.nose)*this.cruiseV - ps.vx;
-      this.rvy = Math.sin(this.nose)*this.cruiseV - ps.vy;
-      if (d < captureR + 8){
-        /* Выход из FSD: обрезаем скорость до 90% круговой на целевой высоте —
-         * корабль выйдет на эллиптическую орбиту без столкновения. */
-        if (psT && psT.mu > 0){
-          const vCirc = Math.sqrt(psT.mu / captureR);
-          if (this.cruiseV > vCirc * 0.9){
-            this.cruiseV = vCirc * 0.9;
-            // пересчитываем rvx/rvy с новой скоростью
-            this.rvx = Math.cos(this.nose)*this.cruiseV - ps.vx;
-            this.rvy = Math.sin(this.nose)*this.cruiseV - ps.vy;
-          }
-        }
-        this.mode = "newton";
-        this.target = null;
-        sys.mgr?.onChange?.();
-      }
-      return;
-    }
-    /* --- newton: патч-коники + ручная тяга --- */
-    if (this.ctrl.left) this.nose -= this.turnRate*dt;
-    if (this.ctrl.right) this.nose += this.turnRate*dt;
-    let ax = 0, ay = 0;
-    if (this.ctrl.thrust){
-      ax += Math.cos(this.nose)*this.thrustAcc;
-      ay += Math.sin(this.nose)*this.thrustAcc;
-    }
-    if (this.ctrl.retro){
-      const v = Math.hypot(this.rvx, this.rvy);
-      if (v > 0.5){ ax -= this.rvx/v*this.thrustAcc; ay -= this.rvy/v*this.thrustAcc; }
-    }
-    const ps = primaryState(sys, this.primary);
-    if (!ps){ this.primary = { kind:"star", i:0, j:0 }; return; }
-    const SUB = 4, h = dt/SUB;
-    for(let s=0; s<SUB; s++){
-      const r = Math.hypot(this.rx, this.ry);
-      const g = -ps.mu/(r*r*r);
-      this.rvx += (g*this.rx + ax)*h;
-      this.rvy += (g*this.ry + ay)*h;
-      this.rx += this.rvx*h;
-      this.ry += this.rvy*h;
-    }
-    /* столкновение с поверхностью → мягкая посадка/отскок на низкой скорости */
-    const r = Math.hypot(this.rx, this.ry);
-    if (r < ps.bodyR + 1){
-      const nx = this.rx/r, ny = this.ry/r;
-      this.rx = nx*(ps.bodyR + 1); this.ry = ny*(ps.bodyR + 1);
-      const vn = this.rvx*nx + this.rvy*ny;
-      if (vn < 0){ this.rvx -= vn*nx*1.4; this.rvy -= vn*ny*1.4; }
-    }
-    /* смена сферы влияния */
-    const gx = ps.x + this.rx, gy = ps.y + this.ry;
-    const docked = this.primary.kind === "comet" || this.primary.kind === "rock";
-    if (docked){
-      /* у малых тел «SOI» условная: держимся рядом, пока не улетели */
-      if (r > ps.soi*1.3){
-        const best = findPrimary(sys, gx, gy);
-        this.primary = { ...best.selRef };
-        this.rx = gx - best.x; this.ry = gy - best.y;
-        this.rvx = this.rvx - best.vx; this.rvy = this.rvy - best.vy;
-        sys.mgr?.onChange?.();
-      }
-    } else {
-      const best = findPrimary(sys, gx, gy);
-      if (best && best.key !== ps.key){
-        const gvx = ps.vx + this.rvx, gvy = ps.vy + this.rvy;
-        this.primary = { ...best.selRef };
-        this.rx = gx - best.x; this.ry = gy - best.y;
-        this.rvx = gvx - best.vx; this.rvy = gvy - best.vy;
-        sys.mgr?.onChange?.();
-      }
-    }
+
+  /* ---------------- манёвры ---------------- */
+  setNode(eta, dvPro = 0, dvRad = 0){
+    if (this.mode !== "newton") return;
+    this.manNode = new ManeuverNode(Math.max(0, eta), dvPro, dvRad);
+    this.nodeAuto = false;
   }
-  /** Циркуляризация в текущей точке (сервоманёвр). */
+  nudgeNode(dPro, dRad, dEta){
+    if (!this.manNode) return;
+    this.manNode.dvPro += dPro || 0;
+    this.manNode.dvRad += dRad || 0;
+    this.manNode.eta = Math.max(0, this.manNode.eta + (dEta || 0));
+  }
+  cancelNode(){ this.manNode = null; this.nodeAuto = false; }
+  /** Орбита после исполнения запланированного узла. */
+  nodeOrbit(sys){
+    if (!this.manNode) return null;
+    const ps = primaryState(sys, this.primary);
+    if (!ps || ps.mu <= 0) return null;
+    const s = stateAfterNode(ps.mu, this, this.manNode);
+    return { el: elements(ps.mu, s.rx, s.ry, s.vx, s.vy), ps };
+  }
+  /** Точка узла в раме тела (для маркера). */
+  nodePoint(sys){
+    if (!this.manNode) return null;
+    const ps = primaryState(sys, this.primary);
+    if (!ps || ps.mu <= 0) return null;
+    const s = stateAtNode(ps.mu, this, this.manNode.eta);
+    return [s.rx, s.ry];
+  }
+  /** Мгновенная циркуляризация оставлена только как сервисная команда
+   *  (например, после аварии) — штатный путь теперь через узел. */
   circularize(sys){
     const ps = primaryState(sys, this.primary);
-    if (!ps) return;
+    if (!ps || ps.mu <= 0) return;
     const r = Math.hypot(this.rx, this.ry);
     const v = Math.sqrt(ps.mu/r);
     const tx = -this.ry/r, ty = this.rx/r;
     const dir = (this.rvx*tx + this.rvy*ty) >= 0 ? 1 : -1;
     this.rvx = tx*v*dir; this.rvy = ty*v*dir;
   }
-  /** Манёвровый узел: планирование delta-v в заданной точке орбиты.
-   *  @param {number} dvProg — prograde delta-v
-   *  @param {number} dvRad — radial-out delta-v (положительное: от тела)
-   *  @param {number} [eta=20] — время до узла (сек), по умолчанию 20 */
-  setManeuverNode(dvProg, dvRad, eta = 20){
-    if (this.mode !== "newton") return;
-    this.manNode = {
-      dvProg, dvRad,
-      eta,             // время до исполнения
-      timer: eta,      // убывающий таймер
-      rx: this.rx, ry: this.ry  // позиция узла в текущей раме (для визуализации)
-    };
+
+  /* ---------------- ориентация ---------------- */
+  _sasTarget(sys){
+    const v = Math.hypot(this.rvx, this.rvy) || 1e-9;
+    const r = Math.hypot(this.rx, this.ry) || 1e-9;
+    switch(this.sas){
+      case "prograde":   return Math.atan2(this.rvy, this.rvx);
+      case "retrograde": return Math.atan2(-this.rvy, -this.rvx);
+      case "radial":     return Math.atan2(this.ry, this.rx);
+      case "antiradial": return Math.atan2(-this.ry, -this.rx);
+      case "node": {
+        if (!this.manNode) return null;
+        const ps = primaryState(sys, this.primary);
+        if (!ps) return null;
+        const s = stateAtNode(ps.mu, this, Math.max(0, this.manNode.eta));
+        const [dx, dy] = nodeDvVector(s, this.manNode);
+        if (!dx && !dy) return null;
+        return Math.atan2(dy, dx);
+      }
+      default: return null;
+    }
   }
-  /** Применяет манёвровый узел, когда таймер истекает. */
-  _executeNode(sys){
+  _steer(dt, sys){
+    if (this.ctrl.left) this.nose -= this.turnRate*dt;
+    if (this.ctrl.right) this.nose += this.turnRate*dt;
+    if (this.ctrl.left || this.ctrl.right) return;
+    const want = this._sasTarget(sys);
+    if (want === null) return;
+    let da = want - this.nose;
+    while(da > Math.PI) da -= 2*Math.PI;
+    while(da < -Math.PI) da += 2*Math.PI;
+    const step = this.turnRate*2.2*dt;
+    this.nose += Math.abs(da) < step ? da : Math.sign(da)*step;
+  }
+
+  /* ---------------- основной шаг ---------------- */
+  update(dt, sys){
+    if (dt <= 0) return;
+    if (this.mode === "landed"){
+      const ps = primaryState(sys, this.landedOn || this.primary);
+      if (ps){
+        this.primary = ps.selRef;
+        this.rx = 0; this.ry = ps.bodyR; this.rvx = 0; this.rvy = 0;
+      }
+      this.burning = false;
+      return;
+    }
+    if (this.mode === "cruise"){ this._cruise(dt, sys); return; }
+    this._orbital(dt, sys);
+  }
+
+  /** FSD-сверхкруиз: кинематический подлёт и КОРРЕКТНЫЙ выход на орбиту. */
+  _cruise(dt, sys){
+    const pos = sys.posOf(this.target);
+    const o = sys.obj(this.target);
+    if (!pos || !o){ this.mode = "newton"; return; }
+    const [gx, gy] = this.globPos(sys);
+    const dx = pos[0] - gx, dy = pos[1] - gy;
+    const d = Math.hypot(dx, dy);
+    const want = Math.atan2(dy, dx);
+    let da = want - this.nose;
+    while(da > Math.PI) da -= 2*Math.PI;
+    while(da < -Math.PI) da += 2*Math.PI;
+    this.nose += Math.max(-4*dt, Math.min(4*dt, da));
+
+    const psT = primaryState(sys, this.target);
+    const captureR = (psT && psT.mu > 0) ? safeOrbitR(psT, this.altitude)
+                                         : (psT ? psT.bodyR : 4) + 6;
+    const ACC = 60, VMAX = 120;                 // du/с², du/с
+    const brakeDist = this.cruiseV*this.cruiseV/(2*ACC);
+    if (d > brakeDist + captureR*1.5) this.cruiseV = Math.min(VMAX, this.cruiseV + ACC*dt);
+    else this.cruiseV = Math.max(1.5, this.cruiseV - ACC*dt);
+
+    const nx = gx + Math.cos(this.nose)*this.cruiseV*dt;
+    const ny = gy + Math.sin(this.nose)*this.cruiseV*dt;
+    const anchor = (psT && psT.mu > 0) ? this.target : { kind:"star", i:0, j:0 };
+    const ps = primaryState(sys, anchor);
+    this.primary = { ...anchor };
+    this.rx = nx - ps.x; this.ry = ny - ps.y;
+    this.rvx = Math.cos(this.nose)*this.cruiseV;
+    this.rvy = Math.sin(this.nose)*this.cruiseV;
+
+    if (d <= captureR*1.25){
+      /* ГЛАВНОЕ ИСПРАВЛЕНИЕ: раньше корабль выходил из FSD со скоростью,
+       * направленной НА тело (по носу) — это радиальная скорость, а такая
+       * орбита неизбежно втыкается в поверхность. Теперь выход всегда
+       * ставит корабль на круговую орбиту: скорость перпендикулярна
+       * радиус-вектору и равна ровно круговой. */
+      if (psT && psT.mu > 0){
+        const bearing = Math.atan2(gy - pos[1], gx - pos[0]);
+        this.setCircular(sys, this.target, this.altitude, bearing);
+        this.lastStatus = "выход из FSD: круговая орбита";
+      } else {
+        /* комета или обломок: гравитации нет — идём рядом, кинематически */
+        this.mode = "newton";
+        this.primary = { kind:"star", i:0, j:0 };
+        const st = primaryState(sys, this.primary);
+        this.rx = gx - st.x; this.ry = gy - st.y;
+        this.rvx = 0; this.rvy = 0;
+        this.lastStatus = "сближение завершено";
+      }
+      this.target = null;
+      this.cruiseV = 0;
+      sys.mgr?.onChange?.();
+    }
+  }
+
+  /** Орбитальный полёт: коастинг по конике или интегрирование под тягой. */
+  _orbital(dt, sys){
+    this._steer(dt, sys);
+    this._autoNode(dt, sys);
+
+    const wantThrust = this.ctrl.thrust || this.ctrl.retro || this.prop.throttle > 0;
+    const acc = this.prop.accel();
+    this.burning = wantThrust && acc > 0 && this.prop.fuel > 0;
+
+    if (this.burning) this._powered(dt, sys, acc);
+    else this._coast(dt, sys);
+  }
+
+  /** Активный участок: интегрируем с подшагами (тяга ломает конику). */
+  _powered(dt, sys, acc){
+    const ps = primaryState(sys, this.primary);
+    if (!ps || ps.mu <= 0) return;
+    let ax = 0, ay = 0;
+    if (this.ctrl.retro){
+      const v = Math.hypot(this.rvx, this.rvy) || 1e-9;
+      ax = -this.rvx/v*acc; ay = -this.rvy/v*acc;
+    } else {
+      ax = Math.cos(this.nose)*acc; ay = Math.sin(this.nose)*acc;
+    }
+    const r0 = Math.hypot(this.rx, this.ry);
+    const vv = Math.hypot(this.rvx, this.rvy) || 1e-9;
+    const n = Math.max(1, Math.min(64, Math.ceil(dt*vv/(r0*0.01))));
+    const h = dt/n;
+    for(let i=0;i<n;i++){
+      const r = Math.hypot(this.rx, this.ry) || 1e-9;
+      const g = -ps.mu/(r*r*r);
+      /* leapfrog: скорость на полшага, потом позиция, потом добор */
+      const axT = g*this.rx + ax, ayT = g*this.ry + ay;
+      this.rvx += axT*h*0.5; this.rvy += ayT*h*0.5;
+      this.rx += this.rvx*h;  this.ry += this.rvy*h;
+      const r2 = Math.hypot(this.rx, this.ry) || 1e-9;
+      const g2 = -ps.mu/(r2*r2*r2);
+      this.rvx += (g2*this.rx + ax)*h*0.5;
+      this.rvy += (g2*this.ry + ay)*h*0.5;
+    }
+    this.prop.consume(dt);
+    this._afterStep(sys, ps);
+  }
+
+  /** Коастинг: точная коника + поиск событий (SOI, поверхность). */
+  _coast(dt, sys){
+    let remain = dt, guard = 0;
+    while (remain > 1e-9 && guard++ < 16){
+      const ps = primaryState(sys, this.primary);
+      if (!ps || ps.mu <= 0){ this.primary = { kind:"star", i:0, j:0 }; break; }
+      const el = elements(ps.mu, this.rx, this.ry, this.rvx, this.rvy);
+      /* шаг не длиннее 1/24 витка — чтобы не проскочить SOI или поверхность */
+      const lim = isFinite(el.period) ? Math.max(el.period/24, 1e-3) : remain;
+      const step = Math.min(remain, lim);
+      const s = propagate(ps.mu, this.rx, this.ry, this.rvx, this.rvy, step);
+      this.rx = s.rx; this.ry = s.ry; this.rvx = s.vx; this.rvy = s.vy;
+      remain -= step;
+      if (this._afterStep(sys, ps)) continue;
+    }
+  }
+
+  /** События после шага: касание поверхности и смена сферы влияния. */
+  _afterStep(sys, ps){
+    const r = Math.hypot(this.rx, this.ry);
+    if (r < ps.bodyR){
+      /* Никаких отскоков (старый «отскок» добавлял энергию и выбрасывал
+       * корабль). Касание = посадка: гасим скорость и садимся. */
+      const a = Math.atan2(this.ry, this.rx);
+      this.rx = Math.cos(a)*ps.bodyR; this.ry = Math.sin(a)*ps.bodyR;
+      this.rvx = 0; this.rvy = 0;
+      this.mode = "landed";
+      this.landedOn = { ...this.primary };
+      this.lastStatus = "касание поверхности";
+      sys.mgr?.onChange?.();
+      return false;
+    }
+    const gx = ps.x + this.rx, gy = ps.y + this.ry;
+    const best = findPrimary(sys, gx, gy);
+    if (best && best.key !== ps.key){
+      const gvx = ps.vx + this.rvx, gvy = ps.vy + this.rvy;
+      this.primary = { ...best.selRef };
+      this.rx = gx - best.x; this.ry = gy - best.y;
+      this.rvx = gvx - best.vx; this.rvy = gvy - best.vy;
+      this.manNode = null; this.nodeAuto = false;
+      this.lastStatus = "смена сферы влияния";
+      sys.mgr?.onChange?.();
+      return true;
+    }
+    return false;
+  }
+
+  /** Автопилот исполнения узла: доворот, старт за полпрожига до узла,
+   *  выключение по набранной Δv — как «execute node» в KSP. */
+  _autoNode(dt, sys){
     const n = this.manNode;
     if (!n) return;
-    n.timer -= 1/60;                               // ~16ms кадр
-    if (n.timer <= 0){
-      const r = Math.hypot(this.rx, this.ry);
-      const tx = -this.ry/r, ty = this.rx/r;       // prograde
-      const rx = this.rx/r, ry = this.ry/r;        // radial-out
-      this.rvx += tx*n.dvProg + rx*n.dvRad;
-      this.rvy += ty*n.dvProg + ry*n.dvRad;
-      this.manNode = null;
+    n.eta -= dt;
+    if (!this.nodeAuto){
+      if (n.eta < -30) this.cancelNode();
+      return;
+    }
+    const need = n.dv - (n.done || 0);
+    if (need <= 0.5){
+      this.prop.throttle = 0;
+      this.ctrl.thrust = false;
+      this.cancelNode();
+      this.sas = "prograde";
+      this.lastStatus = "манёвр выполнен";
       sys.mgr?.onChange?.();
+      return;
+    }
+    this.sas = "node";
+    const halfBurn = this.prop.burnTime(need)/2;
+    if (n.eta <= halfBurn){
+      this.ctrl.thrust = true;
+      const soft = Math.min(1, need/Math.max(1e-6, this.prop.accelFullMs*1.5));
+      this.prop.throttle = Math.max(0.05, soft);
+      const dv = this.prop.accel()*DU_M*dt;
+      n.done = (n.done || 0) + dv;
+      n.executing = true;
+    } else {
+      this.ctrl.thrust = false;
+      this.prop.throttle = 0;
     }
   }
-  /** Отменить манёвровый узел. */
-  cancelNode(){ this.manNode = null; }
-  /** Гомановский переход между круговыми орбитами вокруг текущего primary.
-   *  Первый импульс (prograde) — сейчас, второй запоминается в hohPhase. */
-  hohmannTo(sys, targetAlt){
-    if (this.mode !== "newton") return;
-    const ps = primaryState(sys, this.primary);
-    if (!ps) return;
-    const r1 = Math.hypot(this.rx, this.ry);
-    const r2 = ps.bodyR + targetAlt;
-    if (Math.abs(r1 - r2) < 2) return;   // уже там
-    const mu = ps.mu;
-    const a = (r1 + r2)/2;               // большая полуось переходной орбиты
-    const v1 = Math.sqrt(mu/r1);         // текущая круговая скорость
-    const vTransfer = Math.sqrt(2*mu/r1 - mu/a);
-    const dv = r1 < r2 ? vTransfer - v1 : -(v1 - vTransfer);
-    // prograde импульс
-    const tx = -this.ry/r1, ty = this.rx/r1;
-    this.rvx += tx*dv; this.rvy += ty*dv;
-    this.hohPhase = { r2, a };
-    sys.mgr?.onChange?.();
+  /** Запустить исполнение запланированного узла. */
+  executeNode(){
+    if (!this.manNode) return;
+    this.manNode.done = 0;
+    this.nodeAuto = true;
+    this.sas = "node";
   }
-  /** Проверка и выполнение второго импульса гомановского перехода. */
-  _checkHohmann(sys){
-    if (!this.hohPhase) return;
-    const ps = primaryState(sys, this.primary);
-    if (!ps){ this.hohPhase = null; return; }
-    const r = Math.hypot(this.rx, this.ry);
-    if (Math.abs(r - this.hohPhase.r2) < 3){
-      // циркуляризуемся на целевой высоте
-      const v = Math.sqrt(ps.mu/r);
-      const tx = -this.ry/r, ty = this.rx/r;
-      const dir = (this.rvx*tx + this.rvy*ty) >= 0 ? 1 : -1;
-      this.rvx = tx*v*dir; this.rvy = ty*v*dir;
-      this.hohPhase = null;
-      sys.mgr?.onChange?.();
-    }
-  }
+
+  /* ---------------- отрисовка ---------------- */
   draw(sctx, X, Y, t){
     const c = Math.cos(this.nose), s = Math.sin(this.nose);
     sctx.fillStyle = this.col;
@@ -269,8 +390,8 @@ export class Ship {
     sctx.fillRect(Math.round(X)-1, Math.round(Y)-1, 2, 2);
     sctx.fillRect(Math.round(X - c*2 - s*2), Math.round(Y - s*2 + c*2), 1, 1);
     sctx.fillRect(Math.round(X - c*2 + s*2), Math.round(Y - s*2 - c*2), 1, 1);
-    const burning = this.mode === "cruise" || this.ctrl.thrust || this.ctrl.retro;
-    if (burning && Math.floor(t*12) % 2){
+    const fire = this.mode === "cruise" || this.burning;
+    if (fire && Math.floor(t*12) % 2){
       sctx.fillStyle = this.mode === "cruise" ? "#8fd0ff" : "#ffd166";
       sctx.fillRect(Math.round(X - c*4), Math.round(Y - s*4), 1, 1);
       if (this.mode === "cruise") sctx.fillRect(Math.round(X - c*6), Math.round(Y - s*6), 1, 1);
@@ -278,38 +399,32 @@ export class Ship {
   }
 }
 
-/** NPC: использует FSD-круиз для перемещения между телами, автоматически
- *  выходит на орбиту при подлёте и ждёт на орбите заданное время. */
+/** NPC: летает на FSD между телами и стоит на орбитах. */
 export class Npc {
   constructor(ship, name){
     this.ship = ship;
     this.name = name;
-    this.timer = 2 + Math.random()*4;
+    this.timer = 20 + Math.random()*40;
   }
-  /** Случайная планета или спутник в системе (исключая газовые гиганты
-   *  для разнообразия — на них нельзя сесть, но можно покружить). */
   pickTarget(sys){
     const S = sys.S;
     const cands = [];
     for(let i=0;i<S.planets.length;i++){
       cands.push({ kind:"planet", i, j:0 });
       const p = S.planets[i];
-      for(let j=0;j<p.moonList.length;j++){
-        cands.push({ kind:"moon", i, j });
-      }
+      for(let j=0;j<p.moonList.length;j++) cands.push({ kind:"moon", i, j });
     }
-    if (!cands.length) return null;
-    return cands[Math.floor(Math.random()*cands.length)];
+    return cands.length ? cands[Math.floor(Math.random()*cands.length)] : null;
   }
   update(dt, sys){
     this.ship.update(dt, sys);
-    if (this.ship.mode === "cruise") return;   // ждём завершения FSD-перелёта
+    if (this.ship.mode === "cruise") return;
     this.timer -= dt;
     if (this.timer <= 0){
       const target = this.pickTarget(sys);
       if (target){
-        this.ship.fsdTo(target, 10 + Math.random()*12);
-        this.timer = 20 + Math.random()*25;    // держимся на орбите 20–45 сек
+        this.ship.fsdTo(target, 14 + Math.random()*20);
+        this.timer = 400 + Math.random()*900;
       }
     }
   }
@@ -324,8 +439,8 @@ export function makeNpcs(sys, seed){
   const ROLES = ["Торговец", "Патруль", "Геолог", "Курьер"];
   for(let i=0;i<n;i++){
     const pi = Math.floor(rng()*S.planets.length);
-    const ship = new Ship(sys, "#6fb7ff", 120 + rng()*80);
-    ship.fsdTo({ kind:"planet", i:pi, j:0 }, 12);
+    const ship = new Ship(sys, "#6fb7ff", 300 + rng()*250);
+    ship.fsdTo({ kind:"planet", i:pi, j:0 }, 16);
     npcs.push(new Npc(ship,
       ROLES[Math.floor(rng()*ROLES.length)] + " «" + nameFromHash(hash2i(i, 71, seed)) + "»"));
   }
