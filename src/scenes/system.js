@@ -21,6 +21,14 @@ import { timeToApo, timeToPeri, timeToNu, pointAt } from "../game/physics.js";
 import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 import { execCommand } from "../game/console.js";
+/** Максимальный зум: планета на весь экран (как на уровне «Тело»). */
+const ZOOM_MAX = 12;
+/** Минимальный зум: вся система видна целиком. */
+const ZOOM_MIN = 0.15;
+/** Зум по умолчанию при входе в систему. */
+const ZOOM_DEFAULT = 0.3;
+/** Коэффициент шага колёсика мыши. */
+const ZOOM_WHEEL_STEP = 1.18;
 
 export class SystemScene {
   constructor(galaxy, star){
@@ -37,55 +45,26 @@ export class SystemScene {
     this.playerShip = this.S.bhOnly ? null : new Ship(this, "#ffd166");
     this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
     this.followShip = false;
-    this.zoom = 0.3;
+    this.zoom = ZOOM_DEFAULT;
     this.cargoField = [];        // контейнеры, брошенные в космос
     this.scoopMsg = "";
     this.nodeStep = 10;          // шаг ручки манёвра, м/с
     this._handles = [];          // экранные ручки узла (KSP-стиль)
   }
-  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = 0.3; }
+  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = ZOOM_DEFAULT; }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
   ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
-  zoomBy(f){ this.zoom = Math.min(4, Math.max(0.15, this.zoom*f)); }
+  zoomBy(f){ this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom*f)); }
+  execConsoleCommand(input, print){ execCommand(this, input, print); }
   onWheel(mx, my, deltaY){
     const wx = (mx - this.ctx.SCR/2)/this.zoom + this.cam.x;
     const wy = (my - this.ctx.SCR/2)/this.zoom + this.cam.y;
-    this.zoom = Math.min(4, Math.max(0.15, this.zoom * (deltaY < 0 ? 1.18 : 1/1.18)));
+    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * (deltaY < 0 ? ZOOM_WHEEL_STEP : 1/ZOOM_WHEEL_STEP)));
     this.cam.x = wx - (mx - this.ctx.SCR/2)/this.zoom;
     this.cam.y = wy - (my - this.ctx.SCR/2)/this.zoom;
   }
-  toggleConsole(){
-    const existing = document.getElementById("gameConsole");
-    if (existing){ existing.remove(); return; }
-    const stage = document.querySelector(".stage");
-    if (!stage) return;
-    const div = document.createElement("div");
-    div.id = "gameConsole";
-    div.className = "console-panel";
-    div.innerHTML = `<div class="console-header"><span>Консоль (~ — закрыть)</span></div>
-      <div class="console-output" id="conOutput"></div>
-      <input class="console-input" id="conInput" placeholder="команда..." autofocus>`;
-    stage.parentElement.insertBefore(div, stage.nextSibling);
-    const out = div.querySelector("#conOutput");
-    const inp = div.querySelector("#conInput");
-    const print = (msg) => { out.textContent += msg + "\n"; out.scrollTop = out.scrollHeight; };
-    inp.addEventListener("keydown", e => {
-      if (e.key === "Enter"){
-        const cmd = inp.value.trim();
-        if (cmd){
-          print("> " + cmd);
-          execCommand(this, cmd, print);
-        }
-        inp.value = "";
-      } else if (e.key === "Escape"){
-        div.remove();
-      }
-    });
-    inp.focus();
-  }
   /** Управление с клавиатуры (e.code): газ/тормоз/поворот, манёвры. */
   onKey(code, down){
-    if (code === "Backquote"){ if (down) this.toggleConsole(); return; }
     const sh = this.playerShip;
     if (!sh) return;
     if (code === "KeyA") sh.ctrl.left = down;
@@ -360,7 +339,8 @@ export class SystemScene {
       this.drawOrbit(S.planets[i].dist, hi ? "#3a4a8a" : "#1c2444");
     }
     renderStar(S.sun, t);
-    sctx.drawImage(S.sun.cvs, Math.round(this.ssx(0) - S.sun.C/2), Math.round(this.ssy(0) - S.sun.C/2));
+    const sunW = Math.round(S.sun.C * this.zoom);
+    sctx.drawImage(S.sun.cvs, Math.round(this.ssx(0) - sunW/2), Math.round(this.ssy(0) - sunW/2), sunW, sunW);
     if (S.belt){
       for(const r of S.belt.rocks){
         const X = Math.round(this.ssx(Math.cos(r.ang)*r.dist));
@@ -390,11 +370,13 @@ export class SystemScene {
     for(const p of S.planets){
       const [lx, ly, lz] = lightAt(p._x, p._y);
       renderPlanetBody(p, lx, ly, lz);
-      sctx.drawImage(p.cvs, Math.round(this.ssx(p._x) - p.C/2), Math.round(this.ssy(p._y) - p.C/2));
+      const w = Math.round(p.C * this.zoom);
+      sctx.drawImage(p.cvs, Math.round(this.ssx(p._x) - w/2), Math.round(this.ssy(p._y) - w/2), w, w);
       for(const m of p.moonList){
         const [mlx, mly, mlz] = lightAt(m._x, m._y);
         renderPlanetBody(m, mlx, mly, mlz);
-        sctx.drawImage(m.cvs, Math.round(this.ssx(m._x) - m.C/2), Math.round(this.ssy(m._y) - m.C/2));
+        const mw = Math.round(m.C * this.zoom);
+        sctx.drawImage(m.cvs, Math.round(this.ssx(m._x) - mw/2), Math.round(this.ssy(m._y) - mw/2), mw, mw);
       }
     }
     /* SOI выбранного тела */

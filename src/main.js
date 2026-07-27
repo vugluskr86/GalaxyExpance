@@ -4,6 +4,7 @@ import { Cluster } from "./gen/cluster.js";
 import { Panel } from "./ui/panel.js";
 import { attachInput } from "./core/input.js";
 import { settings, warpStep } from "./ui/settings.js";
+import { toggleConsole } from "./game/console.js";
 
 const SCR = 420;
 const scene = document.getElementById("scene");
@@ -26,6 +27,7 @@ sizeLabels();
 window.addEventListener("resize", sizeLabels);
 
 const mgr = new SceneManager(ctx);
+window._pixelCosmosMgr = mgr;
 new Panel(document.getElementById("panel"), mgr);
 mgr.push(new ClusterScene(new Cluster(31337)));
 
@@ -81,7 +83,7 @@ document.addEventListener("keydown", e => {
   if (e.code === "Backspace"){ e.preventDefault(); settings.speed = 1; return; }
   if (e.code === "Backquote"){           // ~
     e.preventDefault();
-    mgr.current?.onKey?.("Backquote", true);
+    toggleConsole();
     return;
   }
   if (FLIGHT_CODES.has(e.code)){
@@ -116,10 +118,11 @@ function loop(nowMs){
   }
   btnBack.classList.toggle("hidden", mgr.stack.length <= 1);
   /* кнопки зума/обзора скрыты на экране посадки */
-  const isLanding = mgr.current?.constructor?.name === "LandingScene";
-  document.getElementById("btnZin").classList.toggle("hidden", isLanding);
-  document.getElementById("btnZout").classList.toggle("hidden", isLanding);
-  document.getElementById("btnFit").classList.toggle("hidden", isLanding);
+  const cname = mgr.current?.constructor?.name;
+  const hideZoom = cname === "LandingScene" || cname === "OutfitScene";
+  document.getElementById("btnZin").classList.toggle("hidden", hideZoom);
+  document.getElementById("btnZout").classList.toggle("hidden", hideZoom);
+  document.getElementById("btnFit").classList.toggle("hidden", hideZoom);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

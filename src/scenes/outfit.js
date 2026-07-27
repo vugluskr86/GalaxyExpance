@@ -42,10 +42,11 @@ export class OutfitScene {
     }
     /* точки подвески */
     const pts = {
-      hull:   [cx, cy - 6],
-      engine: [cx, cy + 34],
-      tank:   [cx, cy + 14],
-      scoop:  [cx - 38, cy + 30]
+      hull:     [cx, cy - 6],
+      engine:   [cx, cy + 34],
+      tank:     [cx, cy + 14],
+      scoop:    [cx - 38, cy + 30],
+      computer: [cx + 36, cy - 18]
     };
     for(const s of SLOTS){
       const [x, y] = pts[s.id];
@@ -72,14 +73,15 @@ export class OutfitScene {
     const p = this.prop;
     if (!p) return;
     const L = this.ctx.LW, k = L/this.ctx.SCR;
+    const SCR = this.ctx.SCR;
+    const y0 = SCR - 80;
     for(const s of SLOTS){
-      const [x, y] = this._pts[s.id];
       const it = p.slots[s.id];
       const on = this.slot === s.id;
       lblText(this.ctx, s.name + ": " + (it ? it.name : "— пусто —"),
-        12, 26 + SLOTS.indexOf(s)*15, on ? "#ffd166" : "#8d95c9", 11);
+        12, y0 + SLOTS.indexOf(s)*14, on ? "#ffd166" : "#8d95c9", 11);
     }
-    if (this.msg) lblText(this.ctx, this.msg, 12, L - 14, "#7ee08a", 11);
+    if (this.msg) lblText(this.ctx, this.msg, 12, SCR - 14, "#7ee08a", 11);
   }
 
   /* ---------- действия ---------- */

@@ -22,7 +22,8 @@ export class Propulsion {
       hull:   makeItem(hullId),
       engine: makeItem(engineId),
       tank:   makeItem(tankId),
-      scoop:  scoopId ? makeItem(scoopId) : null
+      scoop:  scoopId ? makeItem(scoopId) : null,
+      computer: null
     };
     this.fuel = this.slots.tank.stats.cap;
     this.throttle = 0;

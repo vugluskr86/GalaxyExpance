@@ -5,11 +5,63 @@ import { makeItem, byId } from "./items.js";
 import { fmtDist, fmtSpeed, fmtDv, fmtTime } from "./units.js";
 import { settings } from "../ui/settings.js";
 
+let consolePanel = null;
+
+/** Найти SystemScene в стеке (может быть не на вершине при открытом экране корабля). */
+function findSystemScene(){
+  const mgr = window._pixelCosmosMgr;
+  return mgr?.stack?.find(s => typeof s.execConsoleCommand === "function");
+}
+
+/** Открыть/закрыть консоль глобально. */
+export function toggleConsole(){
+  const existing = document.getElementById("gameConsole");
+  if (existing && existing !== consolePanel){
+    existing.remove();
+  }
+  if (consolePanel){
+    consolePanel.remove();
+    consolePanel = null;
+    return;
+  }
+  const stage = document.querySelector(".stage");
+  if (!stage) return;
+  const div = document.createElement("div");
+  div.id = "gameConsole";
+  div.className = "console-panel";
+  div.innerHTML = `<div class="console-header"><span>Консоль (~ — закрыть)</span></div>
+    <div class="console-output" id="conOutput"></div>
+    <input class="console-input" id="conInput" placeholder="команда..." autofocus>`;
+  stage.parentElement.insertBefore(div, stage.nextSibling);
+  const out = div.querySelector("#conOutput");
+  const inp = div.querySelector("#conInput");
+  const print = (msg) => { out.textContent += msg + "\n"; out.scrollTop = out.scrollHeight; };
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter"){
+      const cmd = inp.value.trim();
+      if (cmd){
+        print("> " + cmd);
+        const sys = findSystemScene();
+        if (sys){
+          sys.execConsoleCommand(cmd, print);
+        } else {
+          print("Консоль доступна только в системе");
+        }
+      }
+      inp.value = "";
+    } else if (e.key === "Escape"){
+      div.remove();
+      consolePanel = null;
+    }
+  });
+  inp.focus();
+  consolePanel = div;
+}
+
 /* --- константы категорий --- */
 export const CAT_LEGAL = "legal";
 export const CAT_CHEAT = "cheat";
 
-/* --- константы сообщений --- */
 const MSG_HELP = `Консоль управления. Легальные команды (доступны через интерфейс):
   help          — эта справка
   info          — характеристики корабля и орбиты
@@ -29,12 +81,9 @@ const MSG_HELP = `Консоль управления. Легальные ком
 const SPEED_MAP = { "1":1, "2":2, "5":5, "10":10 };
 const PLANET_LETTERS = "bcdefgh";
 
-/** @type {Array<{name:string, cat:string, help:string, fn:function}>} */
 export const COMMANDS = [];
 
 const cmd = (name, cat, help, fn) => COMMANDS.push({ name, cat, help, fn });
-
-/* ======== легальные команды ======== */
 
 cmd("help", CAT_LEGAL, "справка по командам", (ctx, args, print) => {
   print(MSG_HELP);
@@ -137,6 +186,7 @@ cmd("give", CAT_CHEAT, "выдать предмет", (ctx, args, print) => {
     target.add(item);
   }
   print(`выдан: ${item.name} ×${qty}`);
+  ctx.mgr?.onChange?.();
 });
 
 cmd("fuel", CAT_CHEAT, "установить топливо", (ctx, args, print) => {
@@ -146,6 +196,7 @@ cmd("fuel", CAT_CHEAT, "установить топливо", (ctx, args, print)
   if (isNaN(amount) || amount < 0){ print("fuel <тонны>"); return; }
   sh.prop.fuel = Math.min(amount, sh.prop.fuelCap);
   print(`топливо: ${sh.prop.fuel.toFixed(1)}/${sh.prop.fuelCap} т`);
+  ctx.mgr?.onChange?.();
 });
 
 cmd("refuel", CAT_CHEAT, "заправить бак полностью", (ctx, args, print) => {
@@ -153,9 +204,9 @@ cmd("refuel", CAT_CHEAT, "заправить бак полностью", (ctx, a
   if (!sh){ print("корабль отсутствует"); return; }
   sh.prop.refuel();
   print(`бак полон: ${sh.prop.fuel.toFixed(1)}/${sh.prop.fuelCap} т`);
+  ctx.mgr?.onChange?.();
 });
 
-/** Выполнить команду. Возвращает строку для вывода. */
 export function execCommand(ctx, input, print){
   const trimmed = input.trim();
   if (!trimmed) return;
