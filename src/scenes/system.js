@@ -20,6 +20,7 @@ import { makeItem } from "../game/items.js";
 import { timeToApo, timeToPeri, timeToNu, pointAt } from "../game/physics.js";
 import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
+import { execCommand } from "../game/console.js";
 
 export class SystemScene {
   constructor(galaxy, star){
@@ -53,8 +54,38 @@ export class SystemScene {
     this.cam.x = wx - (mx - this.ctx.SCR/2)/this.zoom;
     this.cam.y = wy - (my - this.ctx.SCR/2)/this.zoom;
   }
+  toggleConsole(){
+    const existing = document.getElementById("gameConsole");
+    if (existing){ existing.remove(); return; }
+    const stage = document.querySelector(".stage");
+    if (!stage) return;
+    const div = document.createElement("div");
+    div.id = "gameConsole";
+    div.className = "console-panel";
+    div.innerHTML = `<div class="console-header"><span>Консоль (~ — закрыть)</span></div>
+      <div class="console-output" id="conOutput"></div>
+      <input class="console-input" id="conInput" placeholder="команда..." autofocus>`;
+    stage.parentElement.insertBefore(div, stage.nextSibling);
+    const out = div.querySelector("#conOutput");
+    const inp = div.querySelector("#conInput");
+    const print = (msg) => { out.textContent += msg + "\n"; out.scrollTop = out.scrollHeight; };
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter"){
+        const cmd = inp.value.trim();
+        if (cmd){
+          print("> " + cmd);
+          execCommand(this, cmd, print);
+        }
+        inp.value = "";
+      } else if (e.key === "Escape"){
+        div.remove();
+      }
+    });
+    inp.focus();
+  }
   /** Управление с клавиатуры (e.code): газ/тормоз/поворот, манёвры. */
   onKey(code, down){
+    if (code === "Backquote"){ if (down) this.toggleConsole(); return; }
     const sh = this.playerShip;
     if (!sh) return;
     if (code === "KeyA") sh.ctrl.left = down;

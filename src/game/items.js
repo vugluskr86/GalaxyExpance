@@ -1,3 +1,5 @@
+import { ComputerMemory } from "./computer.js";
+
 /** Абстракция предмета.
  *
  *  Всё, что можно нести, установить или выбросить, — это Item.
@@ -11,7 +13,8 @@ export const SLOTS = [
   { id:"hull",   name:"Корпус",       icon:"◧" },
   { id:"engine", name:"Двигатель",    icon:"▲" },
   { id:"tank",   name:"Топливный бак",icon:"▮" },
-  { id:"scoop",  name:"Захват",       icon:"◇" }
+  { id:"scoop",  name:"Захват",       icon:"◇" },
+  { id:"computer", name:"Борт. компьютер", icon:"◈" }
 ];
 export const SLOT_RU = Object.fromEntries(SLOTS.map(s => [s.id, s.name]));
 
@@ -66,7 +69,13 @@ export const CATALOG = [
   { id:"ice_h2o",  slot:"cargo", cls:1, rating:"E", name:"Водяной лёд",       mass:1, price:180 },
   { id:"he3",      slot:"cargo", cls:1, rating:"B", name:"Гелий-3",           mass:1, price:5400 },
   { id:"salvage",  slot:"cargo", cls:1, rating:"D", name:"Обломки конструкций", mass:1, price:760 },
-  { id:"probe",    slot:"cargo", cls:2, rating:"C", name:"Исследовательский зонд", mass:2, price:24000 }
+  { id:"probe",    slot:"cargo", cls:2, rating:"C", name:"Исследовательский зонд", mass:2, price:24000 },
+
+  /* ---------- бортовые компьютеры ---------- */
+  { id:"comp_basic", slot:"computer", cls:3, rating:"C", name:"МК-1 «Пролог»",
+    mass:1.8, price:450000, stats:{ ramKb:32 } },
+  { id:"comp_adv",   slot:"computer", cls:5, rating:"A", name:"МК-2П «Алгол»",
+    mass:2.4, price:1200000, stats:{ ramKb:128 } }
 ];
 
 export const byId = id => CATALOG.find(d => d.id === id) || null;
@@ -77,6 +86,9 @@ export class Item {
   constructor(defId, qty = 1){
     this.def = byId(defId);
     this.qty = qty;
+    if (this.slot === "computer"){
+      this.memory = new ComputerMemory(this.stats.ramKb || 32);
+    }
   }
   get id(){ return this.def.id; }
   get slot(){ return this.def.slot; }
@@ -92,7 +104,9 @@ export const makeItem = (id, qty = 1) => new Item(id, qty);
 export function itemStatLines(def){
   const s = def.stats || {};
   const out = [];
-  if (def.slot === "hull"){
+  if (def.slot === "computer"){
+    out.push("память " + s.ramKb + " КБ");
+  } else if (def.slot === "hull"){
     out.push("трюм " + s.cargo + " т", "экипаж " + s.crew, "прочность " + s.hullInt);
   } else if (def.slot === "engine"){
     out.push("тяга " + s.thrust + " кН", "Iₛₚ " + s.isp + " с");

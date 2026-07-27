@@ -79,6 +79,11 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (e.code === "Backspace"){ e.preventDefault(); settings.speed = 1; return; }
+  if (e.code === "Backquote"){           // ~
+    e.preventDefault();
+    mgr.current?.onKey?.("Backquote", true);
+    return;
+  }
   if (FLIGHT_CODES.has(e.code)){
     e.preventDefault();
     mgr.current?.onKey?.(e.code, true);
@@ -110,6 +115,11 @@ function loop(nowMs){
       (warp < settings.speed ? " (варп ограничен)" : "");
   }
   btnBack.classList.toggle("hidden", mgr.stack.length <= 1);
+  /* кнопки зума/обзора скрыты на экране посадки */
+  const isLanding = mgr.current?.constructor?.name === "LandingScene";
+  document.getElementById("btnZin").classList.toggle("hidden", isLanding);
+  document.getElementById("btnZout").classList.toggle("hidden", isLanding);
+  document.getElementById("btnFit").classList.toggle("hidden", isLanding);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
