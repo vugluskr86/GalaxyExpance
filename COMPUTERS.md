@@ -492,6 +492,10 @@ TEXT — `WRITE_PROTECTION_FAULT`.
 | `8f` | `IRET` | 0 | kernel | восстановить сохранённый контекст и режим |
 | `90` | `CLI` | 0 | kernel | запретить маскируемые прерывания |
 | `91` | `STI` | 0 | kernel | разрешить маскируемые прерывания |
+| `92` | `KGET_FAULT` | 0 | kernel | загрузить номер syscall/fault в `A` |
+| `93` | `KGET_ARG n` | 1 | kernel | загрузить сохранённый аргумент `A–D` по индексу `0–3` |
+| `94` | `KCALL_HOST` | 0 | kernel | вызвать разрешённый аппаратный/VFS механизм текущего trap |
+| `95` | `SYSRET` | 0 | kernel | записать `A–D` в context frame и вернуться в user mode |
 
 Добавление opcode требует новой зафиксированной версии ISA и обновления
 таблиц host/self-hosted assembler. Старые `PCVM v2` запускаются в real mode;
@@ -710,12 +714,13 @@ Host assembler автоматически выбирает v3 при дирек�
 флага `0x0001`.
 
 К CPU подключены `PM_ENABLE`, `PM_DISABLE`, `SET_UBASE`, `SET_ULIMIT`,
-`SET_KSP`, `SET_IVT`, `ENTER_USER`, `SYSCALL n`, `IRET`, `CLI` и `STI`.
+`SET_KSP`, `SET_IVT`, `ENTER_USER`, `SYSCALL n`, `IRET`, `CLI`, `STI`,
+`KGET_FAULT`, `KGET_ARG`, `KCALL_HOST` и `SYSRET`.
 Привилегированные инструкции используют `requireKernel()`, а `SYSCALL n`
 использует dispatcher этапа 4.
 
-Self-hosted `assembler.asm` содержит таблицу из 145 записей: 134 legacy и
-11 protected opcode. Он выпускает PCVM v3 payload внутри совместимого PCOB v2.
+Self-hosted `assembler.asm` содержит таблицу из 149 записей: 134 legacy и
+15 protected opcode. Он выпускает PCVM v3 payload внутри совместимого PCOB v2.
 Self-hosted `linker.asm` вычисляет размер заголовка каждого входного PCVM,
 поэтому принимает payload v2 и v3. Статическая multi-object линковка выпускает
 PCVM v3; динамический loader объединяет feature flags модулей.

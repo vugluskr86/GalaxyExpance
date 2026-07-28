@@ -1,0 +1,32 @@
+; Auto-generated protected mode constants — do not edit manually.
+; === Protected mode constants ===
+.equ PROTECTED_ISA_VERSION, 3
+.equ PROTECTED_FEATURE, 1
+.equ OP_PM_ENABLE, 0x87
+.equ OP_PM_DISABLE, 0x88
+.equ OP_SET_UBASE, 0x89
+.equ OP_SET_ULIMIT, 0x8a
+.equ OP_SET_KSP, 0x8b
+.equ OP_SET_IVT, 0x8c
+.equ OP_ENTER_USER, 0x8d
+.equ OP_SYSCALL, 0x8e
+.equ OP_IRET, 0x8f
+.equ OP_CLI, 0x90
+.equ OP_STI, 0x91
+.equ OP_KGET_FAULT, 0x92
+.equ OP_KGET_ARG, 0x93
+.equ OP_KCALL_HOST, 0x94
+.equ OP_SYSRET, 0x95
+.equ EXC_MEMORY_FAULT, 1
+.equ EXC_EXECUTE_FAULT, 2
+.equ EXC_WRITE_PROTECTION_FAULT, 3
+.equ EXC_PRIVILEGE_FAULT, 4
+.equ EXC_INVALID_OPCODE, 5
+.equ EXC_DIVIDE_BY_ZERO, 6
+.equ EXC_STACK_FAULT, 7
+.equ EXC_INVALID_IRET, 8
+.equ EXC_DOUBLE_FAULT, 9
+.equ EXC_SYSCALL, 32
+.equ EXC_TIMER, 33
+.equ CONTEXT_FIXED_BYTES, 224
+.equ CONTEXT_ALIGNMENT, 16

@@ -126,7 +126,9 @@ uu uu             число инструкций, u16 LE
 Директива `.protected` принудительно выбирает v3. Инструкции `PM_ENABLE`,
 `PM_DISABLE`, `SET_UBASE`, `SET_ULIMIT`, `SET_KSP`, `SET_IVT`, `ENTER_USER`,
 `SYSCALL`, `IRET`, `CLI` и `STI` включают protected feature автоматически.
-Они занимают opcode `135–145`; legacy-таблица `1–134` не перенумеровывалась.
+Они занимают opcode `135–149`; legacy-таблица `1–134` не перенумеровывалась.
+Kernel-only `KGET_FAULT`, `KGET_ARG`, `KCALL_HOST` и `SYSRET` обеспечивают
+исполняемый Assembly syscall dispatcher без автоматического host-side `IRET`.
 
 PCOB остаётся форматом v2: версия PCVM и feature flags находятся во вложенном
 payload, поэтому ABI symbol/relocation tables не изменяется.

@@ -32,7 +32,10 @@ export class ComputerTerminal {
     const c=this.canvas;
     c.addEventListener("keydown",e=>{
       this.keys.push({key:e.key,code:e.code,keyCode:e.keyCode || e.key.charCodeAt(0) || 0});
-      if(e.key==="Enter"){
+      if(e.ctrlKey&&e.code==="KeyC"){
+        this.inputLine="";this.lines.push("");this.lineQueue.push("\x03");
+        for(const fn of this.lineListeners)fn("\x03");
+      }else if(e.key==="Enter"){
         const line=this.inputLine;this.lines[this.lines.length-1]=this.prompt+line;
         this.lines.push("");this.inputLine="";this.lineQueue.push(line);
         for(const fn of this.lineListeners)fn(line);

@@ -1,0 +1,2 @@
+/dev/drive0 / pcfs rw 0 1
+/dev/tty0 /dev/console devfs rw 0 0

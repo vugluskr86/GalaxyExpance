@@ -6,7 +6,7 @@ workspace: .equ 65536
 opcode_names: .string "LOAD_A LOAD_B LOAD_C LOAD_D MOV_A_B MOV_A_C MOV_A_D MOV_B_A MOV_C_A MOV_D_A"
 .byte 0
 
-; Полная нормативная таблица: 134 legacy + 11 protected-mode команд.
+; Полная нормативная таблица: 134 legacy + 15 protected-mode команд.
 .align 4
 opcode_table: .dword 1424441849
 .byte 1, 1
@@ -298,6 +298,14 @@ opcode_table: .dword 1424441849
 .byte 144, 0
 .dword 2482385
 .byte 145, 0
+.dword 1970288941
+.byte 146, 0
+.dword -2078657911
+.byte 147, 1
+.dword -1959625363
+.byte 148, 0
+.dword -695705651
+.byte 149, 0
 opcode_table_end: .zero 0
 
 .align 4
@@ -525,9 +533,9 @@ MOV_B_C
 LOAD_D 6
 ADD_B_D
 MOV_A_B
-; Конец фиксированной таблицы 145×6 bytes: 4172 + 870 = 5042.
+; Конец фиксированной таблицы 149×6 bytes: 4172 + 894 = 5066.
 ; Числовая константа нужна bootstrap-поколению до поддержки .zero 0 labels.
-LOAD_D 5042
+LOAD_D 5066
 CMP_A_D
 JNZ symbol_opcode_lookup
 JMP symbol_pass_next
@@ -980,7 +988,7 @@ MOV_B_C
 LOAD_D 6
 ADD_B_D
 MOV_A_B
-LOAD_D 5042
+LOAD_D 5066
 CMP_A_D
 JNZ lookup_opcode
 ; Во втором проходе неизвестный mnemonic может быть data-директивой.

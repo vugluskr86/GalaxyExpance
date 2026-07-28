@@ -83,9 +83,13 @@ export class AssemblyCompiler {
       parts.forEach((operand,index)=>{
         if(!identifier(operand)||REGISTERS.has(operand.toUpperCase()))return;
         if(!symbols.has(operand)&&!imports.includes(operand))return;
+        const known=symbols.get(operand);
+        const type=CONTROL.has(op)?"ABS_TEXT":
+          /^LOAD_[ABCD]$/.test(op)&&known?.section==="TEXT"?"ABS_TEXT":
+          /^LOAD_[ABCD]$/.test(op)&&known?.section==="UND"?"ABS_ANY":"ABS_DATA";
         relocations.push({
           section:"TEXT",offset:instruction,operand:index,width:8,symbol:operand,
-          type:CONTROL.has(op)?"ABS_TEXT":"ABS_DATA",opcode:op,line:row.line
+          type,opcode:op,line:row.line
         });
       });
       instruction++;
@@ -148,8 +152,9 @@ export class Linker {
         const local=mod.symbols?.find(item=>item.name===relocation.symbol&&item.section!=="UND");
         const target=local||providers.get(relocation.symbol);
         if(!target)throw new Error(`relocation: символ ${relocation.symbol} не разрешён в ${mod.name}`);
-        const expected=relocation.type==="ABS_TEXT"?"TEXT":"DATA";
-        if(target.section!==expected)
+        const expected=relocation.type==="ABS_TEXT"?"TEXT":
+          relocation.type==="ABS_DATA"?"DATA":target.section;
+        if(relocation.type!=="ABS_ANY"&&target.section!==expected)
           throw new Error(`relocation ${relocation.opcode||relocation.section}: ${relocation.symbol} имеет секцию ${target.section}, ожидалась ${expected}`);
         relocation.resolved={module:target.module||mod.name,section:target.section,value:target.value};
       }

@@ -7,10 +7,13 @@ import fs from "node:fs";
 import { AssemblyCompiler, Linker } from "../src/game/toolchain.js";
 import { MemoryManager, PixelOS } from "../src/game/os.js";
 import {
-  CONTEXT_LAYOUT,IVT_LAYOUT,MEMORY_PERMISSIONS,PROCESS_MEMORY_LAYOUT,
-  PROTECTED_EXCEPTIONS,PROTECTED_FEATURE,
-  PROTECTED_ISA_VERSION,PROTECTED_OPCODES,PCVM_V3_HEADER,SYSCALL_ERRORS,SYSCALLS,
-  contextFrameBytes
+  ABI_LIMITS,CONTEXT_LAYOUT,DEBUG_REGS_LAYOUT,DIRENT_LAYOUT,ERRNO,
+  IVT_LAYOUT,MEMORY_PERMISSIONS,OPEN_FLAGS,PROCESS_INFO_LAYOUT,
+  PROCESS_MEMORY_LAYOUT,PROCESS_STATES,PROTECTED_EXCEPTIONS,PROTECTED_FEATURE,
+  PROTECTED_ISA_VERSION,PROTECTED_OPCODES,PCVM_V3_HEADER,
+  SEEK_WHENCE,STAT_LAYOUT,SYSCALLS,SYSCALL_ERRORS,
+  SYSINFO_LAYOUT,TIMESPEC_LAYOUT,UTSNAME_LAYOUT,
+  INODE_TYPES,SYSCALL_ARG_SPECS,generateAssemblyConstants,contextFrameBytes,
 } from "../src/game/protected-mode.js";
 
 const execute = (source, terminal=new ComputerTerminal()) => {
@@ -60,11 +63,15 @@ test("protected-mode v3 specification has stable non-overlapping ABI",()=>{
   const legacyOpcodes=new Set(ISA_TABLE.map(row=>row.opcode));
   const extension=Object.values(PROTECTED_OPCODES);
   assert.deepEqual(extension.map(row=>row.opcode),
-    [0x87,0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x8e,0x8f,0x90,0x91]);
+    Array.from({length:15},(_,index)=>0x87+index));
   assert.equal(extension.some(row=>legacyOpcodes.has(row.opcode)),false);
   assert.equal(PROTECTED_OPCODES.SYSCALL.argc,1);
   assert.equal(PROTECTED_OPCODES.SYSCALL.privileged,false);
   assert.equal(PROTECTED_OPCODES.IRET.privileged,true);
+  assert.equal(PROTECTED_OPCODES.KGET_FAULT.privileged,true);
+  assert.equal(PROTECTED_OPCODES.KGET_ARG.argc,1);
+  assert.equal(PROTECTED_OPCODES.KCALL_HOST.privileged,true);
+  assert.equal(PROTECTED_OPCODES.SYSRET.privileged,true);
   assert.equal(IVT_LAYOUT.entries*IVT_LAYOUT.entryBytes,IVT_LAYOUT.bytes);
   assert.equal(PROTECTED_EXCEPTIONS.SYSCALL,32);
   assert.equal(SYSCALLS.TTY_WRITE,0x41);
@@ -469,6 +476,273 @@ test("static and dynamic linker resolve an external library",()=>{
     new CPU(8192,x=>output.push(String(x)),new ComputerTerminal()).run(assembler.decodeBinary(executable));
     assert.ok(output.includes("42"));
   }
+});
+
+test("ABI stage 0: all syscall numbers are unique and follow reserved ranges",()=>{
+  const numbers=Object.values(SYSCALLS);
+  assert.equal(new Set(numbers).size,numbers.length,"duplicate syscall numbers detected");
+
+  // check that legacy 0x01-0x07, 0x10-0x12, 0x20-0x25, 0x30-0x31, 0x40-0x44, 0x50-0x51, 0x60-0x66, 0x70-0x74 are preserved
+  assert.equal(SYSCALLS.EXIT,0x01);
+  assert.equal(SYSCALLS.YIELD,0x02);
+  assert.equal(SYSCALLS.SPAWN,0x03);
+  assert.equal(SYSCALLS.WAIT,0x04);
+  assert.equal(SYSCALLS.GETPID,0x05);
+  assert.equal(SYSCALLS.KILL,0x06);
+  assert.equal(SYSCALLS.PROCESS_LIST,0x07);
+  assert.equal(SYSCALLS.ALLOC,0x10);
+  assert.equal(SYSCALLS.FREE,0x11);
+  assert.equal(SYSCALLS.MEM_INFO,0x12);
+  assert.equal(SYSCALLS.OPEN,0x20);
+  assert.equal(SYSCALLS.READ,0x21);
+  assert.equal(SYSCALLS.WRITE,0x22);
+  assert.equal(SYSCALLS.CLOSE,0x23);
+  assert.equal(SYSCALLS.LIST,0x24);
+  assert.equal(SYSCALLS.DELETE,0x25);
+  assert.equal(SYSCALLS.IPC_SEND,0x30);
+  assert.equal(SYSCALLS.IPC_RECV,0x31);
+  assert.equal(SYSCALLS.TTY_READ,0x40);
+  assert.equal(SYSCALLS.TTY_WRITE,0x41);
+  assert.equal(SYSCALLS.TTY_MODE,0x42);
+  assert.equal(SYSCALLS.TTY_CLEAR,0x43);
+  assert.equal(SYSCALLS.TTY_COLOR,0x44);
+  assert.equal(SYSCALLS.TIME,0x50);
+  assert.equal(SYSCALLS.SLEEP,0x51);
+  assert.equal(SYSCALLS.GFX_PIXEL,0x60);
+  assert.equal(SYSCALLS.GFX_LINE,0x61);
+  assert.equal(SYSCALLS.GFX_RECT,0x62);
+  assert.equal(SYSCALLS.GFX_CIRCLE,0x63);
+  assert.equal(SYSCALLS.GFX_BEGIN,0x64);
+  assert.equal(SYSCALLS.GFX_FRAME,0x65);
+  assert.equal(SYSCALLS.GFX_END,0x66);
+  assert.equal(SYSCALLS.INPUT_KEY,0x70);
+  assert.equal(SYSCALLS.INPUT_MOUSE_X,0x71);
+  assert.equal(SYSCALLS.INPUT_MOUSE_Y,0x72);
+  assert.equal(SYSCALLS.INPUT_MOUSE_BUTTONS,0x73);
+  assert.equal(SYSCALLS.INPUT_MOUSE_WHEEL,0x74);
+
+  // new stage 0 syscalls
+  assert.equal(SYSCALLS.EXEC,0x08);
+  assert.equal(SYSCALLS.GETPPID,0x09);
+  assert.equal(SYSCALLS.PROCESS_INFO,0x0A);
+  assert.equal(SYSCALLS.DUP,0x13);
+  assert.equal(SYSCALLS.DUP2,0x14);
+  assert.equal(SYSCALLS.SEEK,0x26);
+  assert.equal(SYSCALLS.STAT,0x27);
+  assert.equal(SYSCALLS.READDIR,0x28);
+  assert.equal(SYSCALLS.MKDIR,0x29);
+  assert.equal(SYSCALLS.UNLINK,0x2A);
+  assert.equal(SYSCALLS.RENAME,0x2B);
+  assert.equal(SYSCALLS.CHMOD,0x2C);
+  assert.equal(SYSCALLS.CHOWN,0x2D);
+  assert.equal(SYSCALLS.GETCWD,0x2E);
+  assert.equal(SYSCALLS.CHDIR,0x2F);
+  assert.equal(SYSCALLS.UNAME,0x52);
+  assert.equal(SYSCALLS.SYSINFO,0x53);
+  assert.equal(SYSCALLS.DEBUG_READ_REGS,0x80);
+  assert.equal(SYSCALLS.DEBUG_READ_MEM,0x81);
+  assert.equal(SYSCALLS.DEBUG_SET_BREAK,0x82);
+  assert.equal(SYSCALLS.DEBUG_CLEAR_BREAK,0x83);
+  assert.equal(SYSCALLS.DEBUG_CONTINUE,0x84);
+  assert.equal(SYSCALLS.DEBUG_STEP,0x85);
+
+  // verify ranges
+  const ranges={
+    process:[0x01,0x0F],memory:[0x10,0x1F],files:[0x20,0x2F],
+    ipc:[0x30,0x3F],terminal:[0x40,0x4F],time:[0x50,0x5F],
+    graphics:[0x60,0x6F],input:[0x70,0x7F],debug:[0x80,0x8F]
+  };
+  for(const [group,[min,max]] of Object.entries(ranges)){
+    for(const number of numbers){
+      if(number>=min&&number<=max)continue;
+    }
+    // each syscall must be in exactly one defined range
+  }
+  for(const number of numbers){
+    const inRange=Object.entries(ranges).some(([,r])=>number>=r[0]&&number<=r[1]);
+    assert.ok(inRange,
+      `syscall 0x${number.toString(16)} is not in any reserved range`);
+  }
+});
+
+test("ABI stage 0: errno constants match Linux values and legacy aliases work",()=>{
+  assert.equal(ERRNO.OK,0);
+  assert.equal(ERRNO.EPERM,1);
+  assert.equal(ERRNO.ENOENT,2);
+  assert.equal(ERRNO.ESRCH,3);
+  assert.equal(ERRNO.EINTR,4);
+  assert.equal(ERRNO.EIO,5);
+  assert.equal(ERRNO.ENXIO,6);
+  assert.equal(ERRNO.E2BIG,7);
+  assert.equal(ERRNO.ENOEXEC,8);
+  assert.equal(ERRNO.EBADF,9);
+  assert.equal(ERRNO.ECHILD,10);
+  assert.equal(ERRNO.EAGAIN,11);
+  assert.equal(ERRNO.ENOMEM,12);
+  assert.equal(ERRNO.EACCES,13);
+  assert.equal(ERRNO.EFAULT,14);
+  assert.equal(ERRNO.EBUSY,16);
+  assert.equal(ERRNO.EEXIST,17);
+  assert.equal(ERRNO.EXDEV,18);
+  assert.equal(ERRNO.ENOTDIR,20);
+  assert.equal(ERRNO.EISDIR,21);
+  assert.equal(ERRNO.EINVAL,22);
+  assert.equal(ERRNO.ENFILE,23);
+  assert.equal(ERRNO.EMFILE,24);
+  assert.equal(ERRNO.ENOSPC,28);
+  assert.equal(ERRNO.ESPIPE,29);
+  assert.equal(ERRNO.EROFS,30);
+  assert.equal(ERRNO.EPIPE,32);
+  assert.equal(ERRNO.ENAMETOOLONG,36);
+  assert.equal(ERRNO.ENOSYS,38);
+
+  // legacy aliases
+  assert.equal(SYSCALL_ERRORS.NOT_FOUND,-ERRNO.ENOENT);
+  assert.equal(SYSCALL_ERRORS.IO,-ERRNO.EIO);
+  assert.equal(SYSCALL_ERRORS.BAD_FILE,-ERRNO.EBADF);
+  assert.equal(SYSCALL_ERRORS.BAD_ADDRESS,-ERRNO.EFAULT);
+  assert.equal(SYSCALL_ERRORS.BUSY,-ERRNO.EBUSY);
+  assert.equal(SYSCALL_ERRORS.INVALID,-ERRNO.EINVAL);
+  assert.equal(SYSCALL_ERRORS.NOT_SUPPORTED,-ERRNO.ENOSYS);
+});
+
+test("ABI stage 0: struct sizes and field offsets are correct",()=>{
+  assert.equal(TIMESPEC_LAYOUT.bytes,8);
+  assert.equal(TIMESPEC_LAYOUT.SEC,0);
+  assert.equal(TIMESPEC_LAYOUT.NSEC,4);
+
+  assert.equal(STAT_LAYOUT.bytes,56);
+  assert.equal(STAT_LAYOUT.INO,0);
+  assert.equal(STAT_LAYOUT.TYPE,4);
+  assert.equal(STAT_LAYOUT.UID,8);
+  assert.equal(STAT_LAYOUT.GID,12);
+  assert.equal(STAT_LAYOUT.MODE,16);
+  assert.equal(STAT_LAYOUT.SIZE,20);
+  assert.equal(STAT_LAYOUT.NLINK,24);
+  assert.equal(STAT_LAYOUT.MTIME_SEC,28);
+  assert.equal(STAT_LAYOUT.MTIME_NSEC,32);
+  assert.equal(STAT_LAYOUT.CTIME_SEC,36);
+  assert.equal(STAT_LAYOUT.CTIME_NSEC,40);
+  assert.equal(STAT_LAYOUT.DEVICE,44);
+
+  assert.equal(DIRENT_LAYOUT.bytes,268);
+  assert.equal(DIRENT_LAYOUT.INO,0);
+  assert.equal(DIRENT_LAYOUT.TYPE,4);
+  assert.equal(DIRENT_LAYOUT.NAME_LEN,8);
+  assert.equal(DIRENT_LAYOUT.NAME,12);
+
+  assert.equal(PROCESS_INFO_LAYOUT.bytes,128);
+  assert.equal(PROCESS_INFO_LAYOUT.PID,0);
+  assert.equal(PROCESS_INFO_LAYOUT.PPID,4);
+  assert.equal(PROCESS_INFO_LAYOUT.UID,8);
+  assert.equal(PROCESS_INFO_LAYOUT.GID,12);
+  assert.equal(PROCESS_INFO_LAYOUT.STATE,16);
+  assert.equal(PROCESS_INFO_LAYOUT.EXIT_STATUS,20);
+  assert.equal(PROCESS_INFO_LAYOUT.TICKS,24);
+  assert.equal(PROCESS_INFO_LAYOUT.PREEMPTIONS,28);
+  assert.equal(PROCESS_INFO_LAYOUT.MEMORY_BYTES,32);
+  assert.equal(PROCESS_INFO_LAYOUT.START_TIME_SEC,36);
+  assert.equal(PROCESS_INFO_LAYOUT.START_TIME_NSEC,40);
+  assert.equal(PROCESS_INFO_LAYOUT.COMMAND,44);
+
+  assert.equal(DEBUG_REGS_LAYOUT.bytes,224);
+  assert.equal(DEBUG_REGS_LAYOUT.PC,CONTEXT_LAYOUT.PC);
+
+  assert.equal(SYSINFO_LAYOUT.bytes,40);
+  assert.equal(SYSINFO_LAYOUT.UPTIME_SEC,0);
+  assert.equal(SYSINFO_LAYOUT.TOTAL_RAM,8);
+  assert.equal(SYSINFO_LAYOUT.FREE_RAM,12);
+  assert.equal(SYSINFO_LAYOUT.TOTAL_DRIVE,16);
+  assert.equal(SYSINFO_LAYOUT.FREE_DRIVE,20);
+  assert.equal(SYSINFO_LAYOUT.PROCESSES,24);
+  assert.equal(SYSINFO_LAYOUT.CPU_THREADS,28);
+
+  assert.equal(UTSNAME_LAYOUT.bytes,384);
+  assert.equal(UTSNAME_LAYOUT.SYSNAME,0);
+  assert.equal(UTSNAME_LAYOUT.NODENAME,64);
+  assert.equal(UTSNAME_LAYOUT.RELEASE,128);
+  assert.equal(UTSNAME_LAYOUT.VERSION,192);
+  assert.equal(UTSNAME_LAYOUT.MACHINE,256);
+  assert.equal(UTSNAME_LAYOUT.RESERVED,320);
+});
+
+test("ABI stage 0: ABI limits are reasonable",()=>{
+  assert.equal(ABI_LIMITS.NAME_MAX,255);
+  assert.equal(ABI_LIMITS.PATH_MAX,1024);
+  assert.equal(ABI_LIMITS.FD_MAX,32);
+  assert.equal(ABI_LIMITS.ARG_MAX,256);
+  assert.equal(ABI_LIMITS.ENV_MAX,256);
+  assert.equal(ABI_LIMITS.MAX_PROCESSES,256);
+});
+
+test("ABI stage 0: Assembly constants match host JS constants",()=>{
+  const inc=generateAssemblyConstants();
+  assert.ok(inc.length>500,"generated Assembly constants are too short");
+
+  // verify that each JS SYSCALL entry appears exactly once in the generated .inc
+  for(const [name,number] of Object.entries(SYSCALLS)){
+    const expected=`SYS_${name}, 0x${number.toString(16)}`;
+    const needle=`.equ SYS_${name},`;
+    const found=inc.split("\n").filter(line=>line.trim().startsWith(needle));
+    assert.equal(found.length,1,`syscall ${name} should appear exactly once in .inc`);
+    assert.ok(found[0].includes(expected),
+      `${name} .inc line mismatch: ${found[0].trim()} vs expected ${expected}`);
+  }
+
+  // verify ERRNO entries
+  for(const [name,number] of Object.entries(ERRNO)){
+    const found=inc.split("\n").filter(line=>line.includes(`.equ ${name},`));
+    assert.equal(found.length,1,`errno ${name} should appear exactly once`);
+  }
+
+  // verify struct sizes
+  for(const layoutName of ["TIMESPEC","STAT","DIRENT","PROCESS_INFO","DEBUG_REGS","SYSINFO","UTSNAME"]){
+    const byteline=inc.split("\n").find(line=>
+      line.includes(`.equ ${layoutName}_BYTES,`));
+    assert.ok(byteline,`${layoutName}_BYTES missing from .inc`);
+  }
+
+  // verify enum constants
+  assert.ok(inc.includes(".equ O_RDONLY, 0"));
+  assert.ok(inc.includes(".equ SEEK_SET, 0"));
+  assert.ok(inc.includes(".equ REGULAR, 0"));
+  assert.ok(inc.includes(".equ READY, 0"));
+  assert.ok(inc.includes(".equ PROTECTED_ISA_VERSION, 3"));
+  assert.ok(inc.includes(".equ PROTECTED_FEATURE, 1"));
+  assert.ok(inc.includes(".equ EXC_SYSCALL, 32"));
+  assert.ok(inc.includes(".equ CONTEXT_FIXED_BYTES, 224"));
+});
+
+test("ABI stage 0: SYSCALL_ARG_SPECS covers all defined syscalls",()=>{
+  const withSpecs=Object.keys(SYSCALL_ARG_SPECS).map(Number);
+  for(const number of Object.values(SYSCALLS)){
+    assert.ok(withSpecs.includes(number),
+      `syscall 0x${number.toString(16)} has no argument spec`);
+  }
+});
+
+test("ABI stage 0: OPEN_FLAGS, SEEK_WHENCE, INODE_TYPES, PROCESS_STATES are complete",()=>{
+  assert.equal(OPEN_FLAGS.O_RDONLY,0);
+  assert.equal(OPEN_FLAGS.O_WRONLY,1);
+  assert.equal(OPEN_FLAGS.O_RDWR,2);
+  assert.equal(OPEN_FLAGS.O_CREAT,4);
+  assert.equal(OPEN_FLAGS.O_TRUNC,8);
+  assert.equal(OPEN_FLAGS.O_APPEND,16);
+
+  assert.equal(SEEK_WHENCE.SEEK_SET,0);
+  assert.equal(SEEK_WHENCE.SEEK_CUR,1);
+  assert.equal(SEEK_WHENCE.SEEK_END,2);
+
+  assert.equal(INODE_TYPES.REGULAR,0);
+  assert.equal(INODE_TYPES.DIRECTORY,1);
+  assert.equal(INODE_TYPES.DEVICE,2);
+
+  assert.equal(PROCESS_STATES.READY,0);
+  assert.equal(PROCESS_STATES.RUNNING,1);
+  assert.equal(PROCESS_STATES.SLEEPING,2);
+  assert.equal(PROCESS_STATES.STOPPED,3);
+  assert.equal(PROCESS_STATES.ZOMBIE,4);
+  assert.equal(PROCESS_STATES.FAULTED,5);
 });
 
 test("linking examples produce static TEXT and dynamic DATA programs",()=>{

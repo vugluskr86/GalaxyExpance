@@ -6,7 +6,7 @@ import { PixelOS } from "./os.js";
 import {
   CONTEXT_FLAGS,CONTEXT_LAYOUT,PROTECTED_EXCEPTIONS,PROTECTED_FEATURE,
   PROTECTED_ISA_VERSION,PROTECTED_OPCODES,IVT_LAYOUT,MEMORY_PERMISSIONS,
-  PROCESS_MEMORY_LAYOUT,
+  PROCESS_MEMORY_LAYOUT,PROCESS_INFO_LAYOUT,SYSINFO_LAYOUT,
   SYSCALL_ERRORS,SYSCALLS,contextFrameBytes
 } from "./protected-mode.js";
 
@@ -462,15 +462,52 @@ export class CPU {
           this.system?.yield?.();this.requestYield=true;return ok(0);
         case SYSCALLS.SPAWN: {
           const name=this.userText(this.r.B,this.r.C);
-          const pid=this.system?.procExec?.(name);
+          const credentials=this.r.D===0?null:
+            {uid:this.r.D&0xffff,gid:(this.r.D>>>16)&0x7fff};
+          const pid=this.system?.procExec?.(name,credentials);
+          return pid===undefined||pid<0?fail(SYSCALL_ERRORS.NOT_FOUND):ok(pid);
+        }
+        case SYSCALLS.SPAWN_FD: {
+          const name=this.userText(this.r.B,this.r.C);
+          const decode=shift=>{
+            const encoded=(this.r.D>>>shift)&0xff;
+            return encoded?encoded-1:null;
+          };
+          const pid=this.system?.procExec?.(name,null,
+            {stdin:decode(0),stdout:decode(8),stderr:decode(16)});
           return pid===undefined||pid<0?fail(SYSCALL_ERRORS.NOT_FOUND):ok(pid);
         }
         case SYSCALLS.WAIT: {
           if(!this.system?.procWait)return fail();
-          const result=this.system?.procWait?.(this.r.A);
-          return result===undefined?fail(SYSCALL_ERRORS.BUSY):ok(result);
+          const result=this.system.procWait(this.r.B);
+          if(!result)return fail(SYSCALL_ERRORS.BUSY);
+          if(this.r.C){
+            const at=this.userRange(this.r.C,4,"write");
+            this.view.setInt32(at,result.status|0,true);
+          }
+          return ok(result.pid);
         }
         case SYSCALLS.GETPID: return ok(this.system?.pid?.()||0);
+        case SYSCALLS.GETPPID: return ok(this.system?.ppid?.()||0);
+        case SYSCALLS.GETUID: return ok(this.system?.uid?.()||0);
+        case SYSCALLS.GETGID: return ok(this.system?.gid?.()||0);
+        case SYSCALLS.SETUID:
+          return this.system?.setuid?.(this.r.B)?ok(0):fail(SYSCALL_ERRORS.PERMISSION);
+        case SYSCALLS.SETGID:
+          return this.system?.setgid?.(this.r.B)?ok(0):fail(SYSCALL_ERRORS.PERMISSION);
+        case SYSCALLS.SETSID:
+          return this.system?.setsid?.()!==false?ok(this.system?.pid?.()||0):fail(SYSCALL_ERRORS.PERMISSION);
+        case SYSCALLS.EXEC: {
+          const name=this.userText(this.r.B,this.r.C);
+          return this.system?.procReplace?.(name)?ok(0):fail(SYSCALL_ERRORS.NOT_FOUND);
+        }
+        case SYSCALLS.PROCESS_INFO: {
+          const info=this.system?.procInfo?.(this.r.B);
+          if(!info)return fail(SYSCALL_ERRORS.NOT_FOUND);
+          const size=Math.min(info.length,Math.max(0,this.r.D));
+          this.bytes.set(info.subarray(0,size),this.userRange(this.r.C,size,"write"));
+          return ok(size);
+        }
         case SYSCALLS.KILL:
           return this.system?.procKill?.(this.r.A)?ok(0):fail(SYSCALL_ERRORS.NOT_FOUND);
         case SYSCALLS.PROCESS_LIST: {
@@ -481,12 +518,12 @@ export class CPU {
         }
         case SYSCALLS.ALLOC: {
           if(!this.system?.memAlloc)return fail();
-          const address=this.system?.memAlloc?.(this.r.A);
+          const address=this.system?.memAlloc?.(this.r.B);
           return address===undefined||address<0?fail(SYSCALL_ERRORS.IO):ok(address);
         }
         case SYSCALLS.FREE:
           if(!this.system?.memFree)return fail();
-          return this.system?.memFree?.(this.r.A)?ok(0):fail(SYSCALL_ERRORS.INVALID);
+          return this.system?.memFree?.(this.r.B)?ok(0):fail(SYSCALL_ERRORS.INVALID);
         case SYSCALLS.MEM_INFO: {
           const info=this.system?.memInfo?.()||{free:0,total:this.r.ULIMIT};
           return ok(info.free,info.total);
@@ -498,6 +535,10 @@ export class CPU {
           return ok(size);
         }
         case SYSCALLS.READ: {
+          if(this.system?.vfs?.sysRead){
+            const result=this.system.vfs.sysRead(this.r.B,this.r.C,this.r.D,this);
+            Object.assign(this.r,result);return result;
+          }
           const name=this.userText(this.r.B,this.r.C),data=this.system?.fsRead?.(name);
           if(!data)return fail(SYSCALL_ERRORS.NOT_FOUND);
           const size=Math.min(data.length,Math.max(0,this.r.A));
@@ -505,6 +546,10 @@ export class CPU {
           return ok(size,this.r.B,this.r.C);
         }
         case SYSCALLS.WRITE: {
+          if(this.system?.vfs?.sysWrite){
+            const result=this.system.vfs.sysWrite(this.r.B,this.r.C,this.r.D,this);
+            Object.assign(this.r,result);return result;
+          }
           const name=this.userText(this.r.B,this.r.C),size=Math.max(0,this.r.A);
           const at=this.userRange(this.r.D,size);
           this.system?.fsWrite?.(name,this.bytes.slice(at,at+size));
@@ -514,13 +559,115 @@ export class CPU {
           const name=this.userText(this.r.B,this.r.C);
           return this.system?.fsDelete?.(name)?ok(0):fail(SYSCALL_ERRORS.NOT_FOUND);
         }
-        case SYSCALLS.OPEN:
-        case SYSCALLS.CLOSE: return fail();
+        case SYSCALLS.DUP: {
+          const result=this.system?.vfs?.sysDup?.(this.r.B,this);
+          return result?ok(result.A,result.B,result.C):fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+        }
+        case SYSCALLS.DUP2: {
+          const result=this.system?.vfs?.sysDup2?.(this.r.B,this.r.C,this);
+          return result?ok(result.A,result.B,result.C):fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+        }
+        case SYSCALLS.OPEN: {
+          const result=this.system?.vfs?.sysOpen?.(this.r.B,this.r.C,this.r.D,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.CLOSE: {
+          const result=this.system?.vfs?.sysClose?.(this.r.B,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.SEEK: {
+          const result=this.system?.vfs?.sysSeek?.(this.r.B,this.r.C,this.r.D,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.STAT: {
+          const result=this.system?.vfs?.sysStat?.(this.r.B,this.r.C,this.r.D,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.READDIR: {
+          const result=this.system?.vfs?.sysReaddir?.(this.r.B,this.r.C,this.r.D,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.MKDIR: {
+          const result=this.system?.vfs?.sysMkdir?.(this.r.B,this.r.C,this.r.D,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.UNLINK: {
+          const result=this.system?.vfs?.sysUnlink?.(this.r.B,this.r.C,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.RENAME: {
+          const newOffset=this.r.D&0xffff,newLen=(this.r.D>>>16)&0xffff;
+          const result=this.system?.vfs?.sysRename?.(
+            this.r.B,this.r.C,this.r.B+newOffset,newLen,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.CHMOD: {
+          const result=this.system?.vfs?.sysChmod?.(this.r.B,this.r.C,this.r.D,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.CHOWN: {
+          const result=this.system?.vfs?.sysChown?.(this.r.B,this.r.C,this.r.D>>16,this.r.D&0xffff,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.GETCWD: {
+          const result=this.system?.vfs?.sysGetcwd?.(this.r.B,this.r.C,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.CHDIR: {
+          const result=this.system?.vfs?.sysChdir?.(this.r.B,this.r.C,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
         case SYSCALLS.IPC_SEND:
           this.system?.ipcSend?.(this.r.A,this.r.B);return ok(0);
         case SYSCALLS.IPC_RECV: {
           const message=this.system?.ipcReceive?.();
           return message?ok(message.from,Number(message.data)||0):fail(SYSCALL_ERRORS.BUSY);
+        }
+        case SYSCALLS.ENV_SET: {
+          const keyLen=this.r.D&0xffff,valueLen=(this.r.D>>>16)&0xffff;
+          const key=this.userText(this.r.B,keyLen);
+          if(valueLen===0){
+            const separator=key.indexOf("=");
+            if(separator>=0)
+              return this.system?.envSet?.(key.slice(0,separator),key.slice(separator+1))
+                ?ok(0):fail(SYSCALL_ERRORS.PERMISSION);
+            return this.system?.envUnset?.(key)?ok(0):fail(SYSCALL_ERRORS.PERMISSION);
+          }
+          const value=this.userText(this.r.C,valueLen);
+          return this.system?.envSet?.(key,value)?ok(0):fail(SYSCALL_ERRORS.PERMISSION);
+        }
+        case SYSCALLS.ENV_GET: {
+          const keyLen=this.r.D&0xffff,capacity=(this.r.D>>>16)&0xffff;
+          const value=this.system?.envGet?.(this.userText(this.r.B,keyLen));
+          if(value===undefined)return fail(SYSCALL_ERRORS.NOT_FOUND);
+          const data=textEncoder.encode(value),size=Math.min(data.length,capacity);
+          this.bytes.set(data.subarray(0,size),this.userRange(this.r.C,size,"write"));
+          return ok(size);
+        }
+        case SYSCALLS.LINK: {
+          const newOffset=this.r.D&0xffff,newLen=(this.r.D>>>16)&0xffff;
+          const result=this.system?.vfs?.sysLink?.(
+            this.r.B,this.r.C,this.r.B+newOffset,newLen,this);
+          if(!result)return fail();
+          Object.assign(this.r,result);return result;
+        }
+        case SYSCALLS.ENV_LIST: {
+          const data=this.system?.envList?.()||new Uint8Array();
+          const size=Math.min(data.length,Math.max(0,this.r.C));
+          this.bytes.set(data.subarray(0,size),this.userRange(this.r.B,size,"write"));
+          return ok(size);
         }
         case SYSCALLS.TTY_READ: {
           const line=this.terminal?.readLine?.();
@@ -552,6 +699,22 @@ export class CPU {
         }
         case SYSCALLS.SLEEP:
           this.system?.sleep?.(this.r.A);return ok(0);
+        case SYSCALLS.SYSINFO: {
+          const info=this.system?.sysInfo?.();
+          if(!info)return fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+          const at=this.userRange(this.r.B,SYSINFO_LAYOUT.bytes,"write");
+          const out=new Uint8Array(SYSINFO_LAYOUT.bytes),view=new DataView(out.buffer);
+          view.setUint32(SYSINFO_LAYOUT.UPTIME_SEC,info.uptimeSec>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.UPTIME_NSEC,info.uptimeNsec>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.TOTAL_RAM,info.totalRam>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.FREE_RAM,info.freeRam>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.TOTAL_DRIVE,info.totalDrive>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.FREE_DRIVE,info.freeDrive>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.PROCESSES,info.processes>>>0,true);
+          view.setUint32(SYSINFO_LAYOUT.CPU_THREADS,info.cpuThreads>>>0,true);
+          this.bytes.set(out,at);
+          return ok(0);
+        }
         case SYSCALLS.GFX_PIXEL:
           this.terminal?.pixel(this.r.A,this.r.B,this.terminal?.fg);return ok(0);
         case SYSCALLS.GFX_LINE:
@@ -593,6 +756,7 @@ export class CPU {
       throw new CPUFault(PROTECTED_EXCEPTIONS.PRIVILEGE_FAULT,number,
         "SYSCALL can only be issued from user mode");
     this.dispatchFault(new CPUFault(PROTECTED_EXCEPTIONS.SYSCALL,number,"system call"),returnPC);
+    if(this.system?.kernelManagedSyscalls)return null;
     const frame=this.r.KSP,result=this.executeSystemCall(number);
     this.view.setInt32(frame+CONTEXT_LAYOUT.A,result.A,true);
     this.view.setInt32(frame+CONTEXT_LAYOUT.B,result.B,true);
@@ -915,6 +1079,40 @@ export class CPU {
           this.requireKernel();this.r.IE=false;break;
         case "STI":
           this.requireKernel();this.r.IE=true;break;
+        case "KGET_FAULT":
+          this.requireKernel();this.r.A=this.setZ(this.r.FAULT_ADDR|0);break;
+        case "KGET_ARG": {
+          this.requireKernel();
+          const index=n(0),offset=[
+            CONTEXT_LAYOUT.A,CONTEXT_LAYOUT.B,CONTEXT_LAYOUT.C,CONTEXT_LAYOUT.D
+          ][index];
+          if(offset===undefined)
+            throw new CPUFault(PROTECTED_EXCEPTIONS.INVALID_OPCODE,index,"invalid syscall argument index");
+          this.r.A=this.setZ(this.view.getInt32(this.r.KSP+offset,true));
+          break;
+        }
+        case "KCALL_HOST": {
+          this.requireKernel();
+          if(this.r.CAUSE!==PROTECTED_EXCEPTIONS.SYSCALL)
+            throw new CPUFault(PROTECTED_EXCEPTIONS.PRIVILEGE_FAULT,this.r.CAUSE,
+              "KCALL_HOST outside syscall trap");
+          const result=this.executeSystemCall(this.r.FAULT_ADDR);
+          Object.assign(this.r,result);this.setZ(result.A);break;
+        }
+        case "SYSRET": {
+          this.requireKernel();
+          if(this.r.CAUSE!==PROTECTED_EXCEPTIONS.SYSCALL)
+            throw new CPUFault(PROTECTED_EXCEPTIONS.INVALID_IRET,this.r.KSP,
+              "SYSRET outside syscall trap");
+          const frame=this.r.KSP;
+          for(const [name,offset] of Object.entries({
+            A:CONTEXT_LAYOUT.A,B:CONTEXT_LAYOUT.B,C:CONTEXT_LAYOUT.C,D:CONTEXT_LAYOUT.D
+          }))this.view.setInt32(frame+offset,this.r[name]|0,true);
+          const flags=this.view.getInt32(frame+CONTEXT_LAYOUT.FLAGS,true);
+          this.view.setInt32(frame+CONTEXT_LAYOUT.FLAGS,
+            this.r.A===0?flags|CONTEXT_FLAGS.Z:flags&~CONTEXT_FLAGS.Z,true);
+          this.interruptReturn();break;
+        }
         case "HALT": halted=true; break;
       }
       } catch(error){
@@ -963,6 +1161,38 @@ export class ComputerRuntime {
           .map(s=>`${s.name.toUpperCase()}: ${this.computer.slots[s.id]?.name || "пусто"}`)
       ],
       pid:()=>context?.pid||0,
+      ppid:()=>context?.process?.ppid||0,
+      uid:()=>context?.process?.uid||0,
+      gid:()=>context?.process?.gid||0,
+      setuid:uid=>{
+        const process=context?.process;if(!process)return false;
+        if(process.euid!==0&&uid!==process.uid)return false;
+        process.euid=uid|0;return true;
+      },
+      setgid:gid=>{
+        const process=context?.process;if(!process||process.euid!==0)return false;
+        process.gid=gid|0;process.egid=gid|0;return true;
+      },
+      setsid:()=>{
+        const process=context?.process;if(!process)return false;
+        process.pgid=process.pid;return true;
+      },
+      envSet:(key,value)=>{
+        const process=context?.process;
+        if(!process||!/^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(key))return false;
+        process.env||=Object.create(null);
+        if(Object.keys(process.env).length>=32&&!Object.hasOwn(process.env,key))return false;
+        process.env[key]=String(value).slice(0,255);return true;
+      },
+      envGet:key=>context?.process?.env?.[key],
+      envUnset:key=>{
+        const process=context?.process;
+        if(!process?.env||!Object.hasOwn(process.env,key))return false;
+        delete process.env[key];return true;
+      },
+      envList:()=>textEncoder.encode(Object.entries(context?.process?.env||{})
+        .sort(([left],[right])=>left.localeCompare(right))
+        .map(([key,value])=>`${key}=${value}`).join("\n")),
       ipcSend:(to,data)=>context?.os?.processes.send(context.pid,to,data),
       ipcReceive:()=>context?.os?.processes.receive(context.pid),
       fsList:()=>textEncoder.encode(this.computer.memory.list().map(f=>f.name).join("\n")),
@@ -973,14 +1203,82 @@ export class ComputerRuntime {
       },
       fsWrite:(name,data)=>this.computer.memory.saveBinary(name,data),
       fsDelete:name=>{const exists=!!this.computer.memory.get(name);if(exists)this.computer.memory.delete(name);return exists;},
-      procExec:name=>{
+      procExec:(name,credentials=null,spawnOptions=null)=>{
         const file=this.computer.memory.get(name);if(!file?.data)return -1;
-        return context?.os?.processes.spawn(name,file.data).pid||-1;
+        if(credentials&&context?.process?.euid!==0)return -1;
+        const inheritedFDs=context?.process?.machine?.cpu?._vfs?.clone?.()||null;
+        if(inheritedFDs&&spawnOptions){
+          for(const [key,target] of [["stdin",0],["stdout",1],["stderr",2]]){
+            const source=spawnOptions[key];
+            if(source!==null&&source!==undefined)inheritedFDs.dup(source,target);
+          }
+        }
+        return context?.os?.processes.spawn(name,file.data,
+          {parentPid:context?.pid||0,pgid:context?.process?.pgid,
+            fdTable:inheritedFDs,...(credentials||{})}).pid||-1;
       },
-      procList:()=>textEncoder.encode((context?.os?.processes.processes||[])
-        .map(p=>`${p.pid} ${p.state} ${p.name}`).join("\n")),
+      procReplace:name=>{
+        const file=this.computer.memory.get(name);if(!file?.data||!context?.process)return false;
+        context.os.processes.exec(context.pid,name,file.data);return true;
+      },
+      procExit:status=>context?.os?.processes.exit(context.pid,status),
+      procWait:pid=>context?.os?.processes.wait(context.pid,pid),
+      procInfo:pid=>{
+        const process=context?.os?.processes.processes.find(item=>item.pid===pid);
+        if(!process)return null;
+        const data=new Uint8Array(PROCESS_INFO_LAYOUT.bytes),view=new DataView(data.buffer);
+        const state={ready:0,running:1,sleeping:2,stopped:3,zombie:4,faulted:5}[process.state]??5;
+        view.setUint32(PROCESS_INFO_LAYOUT.PID,process.pid>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.PPID,process.ppid>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.UID,(process.euid??process.uid??0)>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.GID,(process.egid??process.gid??0)>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.STATE,state,true);
+        view.setInt32(PROCESS_INFO_LAYOUT.EXIT_STATUS,process.exitCode??0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.TICKS,process.ticks>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.PREEMPTIONS,process.preemptions>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.MEMORY_BYTES,process.memory?.size>>>0||0,true);
+        const started=Math.max(0,process.startTime||0);
+        view.setUint32(PROCESS_INFO_LAYOUT.START_TIME_SEC,Math.floor(started/1000)>>>0,true);
+        view.setUint32(PROCESS_INFO_LAYOUT.START_TIME_NSEC,
+          Math.floor((started%1000)*1e6)>>>0,true);
+        data.set(textEncoder.encode(String(process.name||"").slice(0,63)),
+          PROCESS_INFO_LAYOUT.COMMAND);
+        return data;
+      },
+      procList:()=>{
+        const processes=[...(context?.os?.processes.processes||[])]
+          .sort((a,b)=>(b.ticks-a.ticks)||(a.pid-b.pid));
+        const data=new Uint8Array(processes.length*4),view=new DataView(data.buffer);
+        processes.forEach((process,index)=>view.setUint32(index*4,process.pid>>>0,true));
+        return data;
+      },
       procKill:pid=>context?.os?.processes.kill(pid)||false,
+      memAlloc:size=>{
+        if(!context?.os||!context?.pid||size<=0)return -1;
+        try{return context.os.memory.allocate(size,context.pid).start;}
+        catch{return -1;}
+      },
+      memFree:address=>{
+        const block=context?.os?.memory.blocks.find(item=>
+          item.pid===context?.pid&&item.start===address&&item!==context?.process?.memory);
+        if(!block)return false;
+        context.os.memory.freeBlock(block);return true;
+      },
       memInfo:()=>({free:context?.os?.memory.freeBytes()||0,total:context?.os?.memory.size||this.ramBytes})
+      ,sysInfo:()=>{
+        const os=context?.os,now=Date.now(),started=os?.startTime||now;
+        const totalDrive=(this.parts.drive?.stats.capacityKb||0)*1024;
+        const storage=os?.vfs?.fs?.storageInfo?.();
+        return {
+          uptimeSec:Math.max(0,Math.floor((now-started)/1000)),uptimeNsec:0,
+          totalRam:os?.memory.size||this.ramBytes,
+          freeRam:os?.memory.freeBytes()||0,
+          totalDrive:storage?.totalBytes||totalDrive,
+          freeDrive:storage?.freeBytes??totalDrive,
+          processes:os?.processes.processes.length||0,
+          cpuThreads:this.threads
+        };
+      }
     };
   }
   run(source, terminal=null){
@@ -1070,6 +1368,7 @@ export class ComputerRuntime {
     const machine={cpu,program,output,protected:isProtected,layout,
       resume:(maxSteps=100000,options={preempt:true})=>cpu.run(program,maxSteps,false,options)};
     if(context?.process){
+      if(context.process.fdTable)cpu._vfs=context.process.fdTable;
       context.process.protected=isProtected;
       context.process.layout=layout;
     }

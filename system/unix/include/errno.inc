@@ -1,0 +1,32 @@
+; Auto-generated errno codes — do not edit manually.
+; === Errno ===
+.equ OK, 0
+.equ EPERM, 1
+.equ ENOENT, 2
+.equ ESRCH, 3
+.equ EINTR, 4
+.equ EIO, 5
+.equ ENXIO, 6
+.equ E2BIG, 7
+.equ ENOEXEC, 8
+.equ EBADF, 9
+.equ ECHILD, 10
+.equ EAGAIN, 11
+.equ ENOMEM, 12
+.equ EACCES, 13
+.equ EFAULT, 14
+.equ EBUSY, 16
+.equ EEXIST, 17
+.equ EXDEV, 18
+.equ ENOTDIR, 20
+.equ EISDIR, 21
+.equ EINVAL, 22
+.equ ENFILE, 23
+.equ EMFILE, 24
+.equ ENOSPC, 28
+.equ ESPIPE, 29
+.equ EROFS, 30
+.equ EPIPE, 32
+.equ ENAMETOOLONG, 36
+.equ ENOSYS, 38
+.equ ENOTEMPTY, 39

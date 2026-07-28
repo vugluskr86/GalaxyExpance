@@ -12,23 +12,56 @@ export class MemoryManager {
     if(start+size>this.size)throw new Error("OS: недостаточно оперативной памяти");
     const block={start,size,pid};this.blocks.push(block);return block;
   }
+  freeBlock(target){this.blocks=this.blocks.filter(block=>block!==target);}
   free(pid){this.blocks=this.blocks.filter(block=>block.pid!==pid);}
   freeBytes(){return this.size-this.blocks.reduce((sum,b)=>sum+b.size,0);}
 }
 
 export class ProcessManager {
   constructor(os){
-    this.os=os;this.nextPid=1;this.processes=[];this.scheduled=false;
+    this.os=os;this.nextPid=1;this.freePids=[];this.processes=[];this.scheduled=false;
     this.cursor=0;this.quantum=1000;
   }
-  spawn(name,binary){
+  allocatePid(){
+    if(this.freePids.length)return this.freePids.shift();
+    return this.nextPid++;
+  }
+  spawn(name,binary,{parentPid=0,pgid=null,autoReap=parentPid===0,
+    uid=null,gid=null,euid=null,egid=null,fdTable=null}={}){
     const executable=this.os.linker.loadExecutable(binary);
     const descriptor=this.os.runtime.assembler.decodeBinary(executable);
-    const pid=this.nextPid++,memory=this.os.memory.allocate(executable.length,pid);
-    const process={pid,name,state:"ready",memory,messages:[],binary:executable,output:[],
+    const pid=this.allocatePid();
+    let memory;
+    try{memory=this.os.memory.allocate(executable.length,pid);}
+    catch(error){this.freePids.push(pid);this.freePids.sort((a,b)=>a-b);throw error;}
+    const parent=this.processes.find(item=>item.pid===parentPid);
+    const realUid=uid??parent?.uid??0,realGid=gid??parent?.gid??0;
+    const process={pid,ppid:parentPid,pgid:pgid??(parentPid||pid),name,
+      uid:realUid,gid:realGid,
+      euid:euid??(uid!==null?realUid:parent?.euid??realUid),
+      egid:egid??(gid!==null?realGid:parent?.egid??realGid),
+      state:"ready",memory,messages:[],binary:executable,output:[],
       protected:!!(descriptor.featureFlags&PROTECTED_FEATURE),layout:null,cause:0,faultAddress:0,
-      context:null,preemptions:0};
+      context:null,preemptions:0,ticks:0,startTime:Date.now(),exitCode:null,
+      pendingEvents:[],autoReap,
+      fdTable,
+      env:{...(parent?.env||{})}};
     this.processes.push(process);this.schedule();return process;
+  }
+  exec(pid,name,binary){
+    const process=this.processes.find(item=>item.pid===pid);
+    if(!process)throw new Error(`процесс ${pid} не найден`);
+    // Validate and reserve the replacement before touching the old image.
+    const executable=this.os.linker.loadExecutable(binary);
+    const descriptor=this.os.runtime.assembler.decodeBinary(executable);
+    const replacement=this.os.memory.allocate(executable.length,-pid);
+    this.os.memory.freeBlock(process.memory);
+    replacement.pid=pid;
+    Object.assign(process,{name,binary:executable,memory:replacement,machine:null,
+      protected:!!(descriptor.featureFlags&PROTECTED_FEATURE),layout:null,
+      context:null,cause:0,faultAddress:0,state:"ready",exitCode:null});
+    this.schedule();
+    return process;
   }
   schedule(delay=0){
     if(this.scheduled)return;this.scheduled=true;
@@ -59,6 +92,7 @@ export class ProcessManager {
         process.context.restored=true;
       }
       const result=process.machine.resume(this.quantum);
+      process.ticks+=result.steps||0;
       process.output=process.machine.output;
       if(result.preempted){
         const cpu=process.machine.cpu,isTimer=process.machine.protected&&
@@ -78,18 +112,57 @@ export class ProcessManager {
         process.faultAddress=process.machine.cpu.r.FAULT_ADDR;
         process.error=`CPU fault ${process.cause} at ${process.faultAddress}`;
         process.exitCode=128+process.cause;
-        this.os.memory.free(process.pid);
+        this.terminate(process,128+process.cause,"faulted");
       }else if(result.yielded)process.state="ready";
-      else{process.state="exited";process.exitCode=0;this.os.memory.free(process.pid);}
-    }catch(error){process.state="failed";process.error=error.message;process.exitCode=1;}
-    if(process.state==="failed")this.os.memory.free(process.pid);
+      else this.terminate(process,process.exitCode??0,"zombie");
+    }catch(error){
+      process.error=error.message;
+      this.terminate(process,1,"faulted");
+    }
     if(this.processes.some(p=>p.state==="ready"))this.schedule(process.state==="ready"?50:0);
   }
-  kill(pid){
+  terminate(process,status,state="zombie"){
+    if(["zombie","faulted"].includes(process.state)&&process.cleaned)return;
+    process.exitCode=status|0;
+    process.state=process.autoReap?(state==="faulted"?"faulted":"exited"):state;
+    process.cleaned=true;
+    this.os.memory.freeBlock(process.memory);
+    process.machine?.cpu?._vfs?.closeAll?.();
+    for(const child of this.processes.filter(item=>item.ppid===process.pid))
+      child.ppid=1;
+    const parent=this.processes.find(item=>item.pid===process.ppid);
+    if(parent)parent.pendingEvents.push({type:"CHLD",pid:process.pid,status:process.exitCode});
+  }
+  exit(pid,status=0){
+    const process=this.processes.find(item=>item.pid===pid);
+    if(!process)return false;
+    this.terminate(process,status,"zombie");return true;
+  }
+  wait(parentPid,targetPid=-1){
+    const child=this.processes.find(item=>item.ppid===parentPid&&
+      (targetPid===-1||item.pid===targetPid)&&
+      ["zombie","faulted"].includes(item.state));
+    if(!child)return null;
+    const result={pid:child.pid,status:child.exitCode,state:child.state};
+    this.reap(child);return result;
+  }
+  reap(process){
+    const index=this.processes.indexOf(process);
+    if(index<0)return false;
+    this.processes.splice(index,1);
+    this.freePids.push(process.pid);this.freePids.sort((a,b)=>a-b);
+    return true;
+  }
+  kill(pid,event="KILL"){
     const p=this.processes.find(x=>x.pid===pid);
     if(!p)return false;
-    if(p.state==="ready"){p.state="killed";this.os.memory.free(p.pid);return true;}
-    return false;
+    p.pendingEvents.push({type:event});
+    if(event==="KILL"||event==="TERM"){
+      this.terminate(p,event==="KILL"?137:143,"zombie");
+      if(p.autoReap)p.state="killed";
+      return true;
+    }
+    return true;
   }
   send(from,to,data){
     const target=this.processes.find(p=>p.pid===to);
@@ -102,6 +175,7 @@ export class ProcessManager {
 export class PixelOS {
   constructor(computer,runtime,terminal){
     this.computer=computer;this.runtime=runtime;this.terminal=terminal;
+    this.startTime=Date.now();
     this.memory=new MemoryManager(runtime.ramBytes);
     this.processes=new ProcessManager(this);
     this.compiler=new AssemblyCompiler();

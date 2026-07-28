@@ -1,0 +1,43 @@
+{
+  "format": "PCOS-ROOT-1",
+  "directories": [
+    {"path": "/etc", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/root", "mode": "0700", "uid": 0, "gid": 0},
+    {"path": "/home", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/home/guest", "mode": "0750", "uid": 1000, "gid": 100},
+    {"path": "/bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/sbin", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr/src", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr/src/pcos", "mode": "0755", "uid": 0, "gid": 0}
+  ],
+  "files": [
+    {"source": "etc/passwd", "path": "/etc/passwd", "mode": "0644", "uid": 0, "gid": 0},
+    {"source": "etc/group", "path": "/etc/group", "mode": "0644", "uid": 0, "gid": 0},
+    {"source": "etc/shadow", "path": "/etc/shadow", "mode": "0600", "uid": 0, "gid": 0},
+    {"source": "etc/init.conf", "path": "/etc/init.conf", "mode": "0644", "uid": 0, "gid": 0},
+    {"source": "etc/fstab", "path": "/etc/fstab", "mode": "0644", "uid": 0, "gid": 0},
+    {"source": "etc/motd", "path": "/etc/motd", "mode": "0644", "uid": 0, "gid": 0},
+    {"source": "build/init.bin", "path": "/sbin/init.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/logger.bin", "path": "/sbin/logger.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/login.bin", "path": "/bin/login.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/passwd.bin", "path": "/bin/passwd.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/sh.bin", "path": "/bin/sh.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/ls.bin", "path": "/bin/ls.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/cat.bin", "path": "/bin/cat.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/grep.bin", "path": "/bin/grep.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/cp.bin", "path": "/bin/cp.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/mv.bin", "path": "/bin/mv.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/mkdir.bin", "path": "/bin/mkdir.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/rm.bin", "path": "/bin/rm.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/link.bin", "path": "/bin/link.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/chown.bin", "path": "/bin/chown.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/chgrp.bin", "path": "/bin/chgrp.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/user.bin", "path": "/bin/user.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/find.bin", "path": "/bin/find.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/top.bin", "path": "/bin/top.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/env.bin", "path": "/bin/env.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/make.bin", "path": "/bin/make.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "Makefile", "path": "/usr/src/pcos/Makefile", "mode": "0644", "uid": 0, "gid": 0}
+  ]
+}
