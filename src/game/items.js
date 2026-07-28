@@ -1,4 +1,5 @@
 import { ComputerMemory } from "./computer.js";
+import { ComputerRuntime } from "./cpu.js";
 
 /** Абстракция предмета.
  *
@@ -16,7 +17,16 @@ export const SLOTS = [
   { id:"scoop",  name:"Захват",       icon:"◇" },
   { id:"computer", name:"Борт. компьютер", icon:"◈" }
 ];
-export const SLOT_RU = Object.fromEntries(SLOTS.map(s => [s.id, s.name]));
+export const COMPUTER_SLOTS = [
+  { id:"gpu", name:"GPU", icon:"▦" },
+  { id:"cpu", name:"CPU", icon:"◆" },
+  { id:"ram", name:"RAM", icon:"▥" },
+  { id:"drive", name:"DRIVE", icon:"▤" },
+  { id:"peripheral1", name:"Периферия 1", icon:"○" },
+  { id:"peripheral2", name:"Периферия 2", icon:"○" },
+  { id:"peripheral3", name:"Периферия 3", icon:"○" }
+];
+export const SLOT_RU = Object.fromEntries([...SLOTS, ...COMPUTER_SLOTS].map(s => [s.id, s.name]));
 
 export const RATING_ORDER = ["E","D","C","B","A"];
 
@@ -73,9 +83,45 @@ export const CATALOG = [
 
   /* ---------- бортовые компьютеры ---------- */
   { id:"comp_basic", slot:"computer", cls:3, rating:"C", name:"МК-1 «Пролог»",
-    mass:1.8, price:450000, stats:{ ramKb:32 } },
+    mass:1.4, price:450000, slots: COMPUTER_SLOTS,
+    defaults:{ gpu:"gpu_text", cpu:"cpu_single", ram:"ram_8", drive:"drive_magnetic" } },
   { id:"comp_adv",   slot:"computer", cls:5, rating:"A", name:"МК-2П «Алгол»",
-    mass:2.4, price:1200000, stats:{ ramKb:128 } }
+    mass:1.7, price:1200000, slots: COMPUTER_SLOTS,
+    defaults:{ gpu:"gpu_graphics", cpu:"cpu_quad", ram:"ram_4096", drive:"drive_crystal" } },
+
+  /* ---------- компоненты компьютера ---------- */
+  { id:"gpu_text", slot:"gpu", cls:1, rating:"D", name:"GPU «Литера»",
+    mass:0.08, price:18000, stats:{ output:"text" } },
+  { id:"gpu_graphics", slot:"gpu", cls:2, rating:"B", name:"GPU «Спектр»",
+    mass:0.16, price:92000, stats:{ output:"graphics" } },
+  { id:"cpu_single", slot:"cpu", cls:1, rating:"D", name:"CPU «Такт-1»",
+    mass:0.05, price:24000, stats:{ threads:1 } },
+  { id:"cpu_dual", slot:"cpu", cls:2, rating:"C", name:"CPU «Такт-2»",
+    mass:0.08, price:68000, stats:{ threads:2 } },
+  { id:"cpu_quad", slot:"cpu", cls:3, rating:"A", name:"CPU «Такт-4»",
+    mass:0.12, price:210000, stats:{ threads:4 } },
+  { id:"ram_8", slot:"ram", cls:1, rating:"E", name:"RAM ОЗУ-8",
+    mass:0.04, price:8000, stats:{ capacityKb:8 } },
+  { id:"ram_32", slot:"ram", cls:2, rating:"C", name:"RAM ОЗУ-32",
+    mass:0.06, price:36000, stats:{ capacityKb:32 } },
+  { id:"ram_64", slot:"ram", cls:3, rating:"A", name:"RAM ОЗУ-64",
+    mass:0.08, price:110000, stats:{ capacityKb:64 } },
+  { id:"ram_128", slot:"ram", cls:4, rating:"S", name:"RAM ОЗУ-128",
+    mass:0.12, price:300000, stats:{ capacityKb:128 } },
+  { id:"ram_256", slot:"ram", cls:4, rating:"S", name:"RAM ОЗУ-256",
+    mass:0.12, price:300000, stats:{ capacityKb:256 } },
+  { id:"ram_512", slot:"ram", cls:4, rating:"S", name:"RAM ОЗУ-512",
+    mass:0.12, price:300000, stats:{ capacityKb:512 } },
+  { id:"ram_1024", slot:"ram", cls:4, rating:"S", name:"RAM ОЗУ-1024",
+    mass:0.12, price:300000, stats:{ capacityKb:1024 } },
+  { id:"ram_4096", slot:"ram", cls:4, rating:"S", name:"RAM ОЗУ-4096",
+    mass:0.12, price:300000, stats:{ capacityKb:4096 } },
+  { id:"drive_magnetic", slot:"drive", cls:1, rating:"E", name:"Магнитный диск МД-32",
+    mass:0.30, price:12000, stats:{ driveType:"magnetic", capacityKb:32 } },
+  { id:"drive_chip", slot:"drive", cls:2, rating:"C", name:"Чип памяти ЧП-128",
+    mass:0.08, price:74000, stats:{ driveType:"chip", capacityKb:128 } },
+  { id:"drive_crystal", slot:"drive", cls:3, rating:"A", name:"Кристалл памяти КР-512",
+    mass:0.04, price:360000, stats:{ driveType:"crystal", capacityKb:512 } }
 ];
 
 export const byId = id => CATALOG.find(d => d.id === id) || null;
@@ -85,18 +131,49 @@ export const bySlot = slot => CATALOG.filter(d => d.slot === slot);
 export class Item {
   constructor(defId, qty = 1){
     this.def = byId(defId);
+    if (!this.def) throw new Error("Неизвестный предмет: " + defId);
     this.qty = qty;
-    if (this.slot === "computer"){
-      this.memory = new ComputerMemory(this.stats.ramKb || 32);
+    this.slots = {};
+    for (const slot of this.def.slots || []){
+      const defaultId = this.def.defaults?.[slot.id];
+      this.slots[slot.id] = defaultId ? new Item(defaultId) : null;
     }
+    if (this.slot === "drive"){
+      this.storage = new ComputerMemory(this.stats.capacityKb);
+    }
+    if (this.slot === "computer") this.runtime = new ComputerRuntime(this);
   }
   get id(){ return this.def.id; }
   get slot(){ return this.def.slot; }
   get name(){ return this.def.name; }
-  get mass(){ return this.def.mass*this.qty; }
+  get mass(){
+    const fitted = Object.values(this.slots).reduce((sum, item) => sum + (item?.mass || 0), 0);
+    return (this.def.mass + fitted)*this.qty;
+  }
   get tag(){ return this.def.cls + this.def.rating; }
   get stats(){ return this.def.stats || {}; }
-  clone(qty){ return new Item(this.def.id, qty ?? this.qty); }
+  get slotDefs(){ return this.def.slots || []; }
+  get memory(){ return this.slots.drive?.storage || null; }
+  accepts(item){ return !!item && Object.hasOwn(this.slots, item.slot); }
+  install(item){
+    if (!this.accepts(item)) return null;
+    const old = this.slots[item.slot];
+    this.slots[item.slot] = item;
+    return old;
+  }
+  uninstall(slot){
+    if (!Object.hasOwn(this.slots, slot)) return null;
+    const old = this.slots[slot];
+    this.slots[slot] = null;
+    return old;
+  }
+  clone(qty){
+    const copy = new Item(this.def.id, qty ?? this.qty);
+    for (const slot of this.slotDefs){
+      copy.slots[slot.id] = this.slots[slot.id]?.clone() || null;
+    }
+    return copy;
+  }
 }
 export const makeItem = (id, qty = 1) => new Item(id, qty);
 
@@ -105,7 +182,16 @@ export function itemStatLines(def){
   const s = def.stats || {};
   const out = [];
   if (def.slot === "computer"){
-    out.push("память " + s.ramKb + " КБ");
+    out.push("слоты GPU · CPU · RAM · DRIVE · периферия ×3");
+  } else if (def.slot === "gpu"){
+    out.push("вывод: " + (s.output === "graphics" ? "графика" : "текст"));
+  } else if (def.slot === "cpu"){
+    out.push("потоки " + s.threads);
+  } else if (def.slot === "ram"){
+    out.push("оперативная память " + s.capacityKb + " КБ");
+  } else if (def.slot === "drive"){
+    const types = { magnetic:"магнитный диск", chip:"чип", crystal:"кристалл" };
+    out.push("тип: " + types[s.driveType], "память " + s.capacityKb + " КБ");
   } else if (def.slot === "hull"){
     out.push("трюм " + s.cargo + " т", "экипаж " + s.crew, "прочность " + s.hullInt);
   } else if (def.slot === "engine"){

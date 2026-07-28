@@ -1,4 +1,4 @@
-import { SLOTS, SLOT_RU, itemStatLines, makeItem } from "../game/items.js";
+import { SLOTS, SLOT_RU, itemStatLines } from "../game/items.js";
 import { FloatingItem } from "../game/inventory.js";
 import { primaryState } from "../game/physics.js";
 import { fmtDv, fmtMass, fmtSpeed, fmtTime, fmtDist, DU_M } from "../game/units.js";
@@ -14,6 +14,7 @@ export class OutfitScene {
     this.crumb = "Корабль";
     this.slot = "engine";        // выбранный слот
     this.sel = null;             // выбранный предмет инвентаря
+    this.editingItem = null;     // предмет, чьи внутренние слоты сейчас открыты
     this.msg = "";
   }
   get prop(){ return this.sys.playerShip?.prop; }
@@ -116,6 +117,32 @@ export class OutfitScene {
     const it = p?.uninstall(slot);
     if (it){ p.inventory.add(it); this.msg = "снято: " + it.name; }
   }
+  installInto(host, item){
+    const p = this.prop;
+    if (!p || !host?.accepts(item)) return;
+    p.inventory.remove(item);
+    const old = host.install(item);
+    if (old) p.inventory.add(old);
+    this.msg = host.name + ": установлен " + item.name;
+  }
+  uninstallFrom(host, slot){
+    const item = host?.uninstall(slot);
+    if (item){
+      this.prop.inventory.add(item);
+      this.msg = host.name + ": снят " + item.name;
+    }
+  }
+  editItem(item){
+    this.editingItem = item;
+    this.crumb = "Корабль › " + item.name;
+    this.msg = "";
+  }
+  closeItemEditor(){
+    this.editingItem = null;
+    this.crumb = "Корабль";
+    this.msg = "";
+    this.mgr?.onChange?.();
+  }
   /** Перенос груза между трюмом и инвентарём (инвентарь = ручная кладь). */
   stow(item){
     const p = this.prop;
@@ -156,11 +183,77 @@ export class OutfitScene {
         "<br>захват: " + (p.scoop ? p.scoop.name : "не установлен")
     };
   }
-  primary(){ return { label:"← в полёт", run: () => this.mgr.pop() }; }
+  primary(){
+    return this.editingItem
+      ? { label:"← к слотам корабля", run: () => this.closeItemEditor() }
+      : { label:"← в полёт", run: () => this.mgr.pop() };
+  }
+
+  itemEditorSpec(host){
+    const p = this.prop;
+    if (!p || !host) return [];
+    const spec = [
+      { kind:"sect", label:"Слоты · " + host.name },
+      { kind:"rows", items: host.slotDefs.map(s => {
+        const it = host.slots[s.id];
+        return {
+          tag: it ? it.tag : "—",
+          label: s.name,
+          note: it ? it.name : "пусто",
+          sub: it ? itemStatLines(it.def).join(" · ") : null,
+          actions: it ? [
+            { label:"Снять", run:() => this.uninstallFrom(host, s.id) },
+            { label:"Выбросить", warn:true, run:() => {
+              const x = host.uninstall(s.id);
+              if (x) this.dropToSpace(x);
+            } }
+          ] : []
+        };
+      })}
+    ];
+
+    if (host.slot === "computer" && host.memory){
+      spec.push({ kind:"action", label:"Включить компьютер", run:() => {
+        try {
+          const terminal=window._pixelCosmosTerminal || null;
+          host.runtime.boot(terminal);
+          terminal?.canvas?.focus();
+          this.msg = "BIOS: операционная система загружена";
+        } catch (err){ this.msg = err.message; }
+      } });
+      spec.push({ kind:"action", label:"Программировать", run:() => openComputerEditor(host) });
+    }
+
+    const components = p.inventory.items.filter(it => host.accepts(it));
+    spec.push({ kind:"sect", label:"Комплектующие из инвентаря" });
+    spec.push({
+      kind:"rows",
+      empty:"нет совместимых комплектующих в инвентаре",
+      items: components.map(it => ({
+        tag: it.tag,
+        label: it.name,
+        note: SLOT_RU[it.slot],
+        sub: itemStatLines(it.def).join(" · "),
+        actions:[
+          { label:"Установить", run:() => this.installInto(host, it) },
+          { label:"Выбросить", warn:true, run:() => {
+            p.inventory.remove(it);
+            this.dropToSpace(it);
+          } }
+        ]
+      }))
+    });
+    return spec;
+  }
 
   panelSpec(){
     const p = this.prop;
     if (!p) return [];
+    if (this.editingItem){
+      const stillInstalled = Object.values(p.slots).includes(this.editingItem);
+      if (!stillInstalled){ this.closeItemEditor(); }
+      else return this.itemEditorSpec(this.editingItem);
+    }
     const spec = [];
 
     /* --- слоты --- */
@@ -168,8 +261,8 @@ export class OutfitScene {
     spec.push({ kind:"rows", items: SLOTS.map(s => {
       const it = p.slots[s.id];
       const acts = [];
-      if (s.id === "computer" && it){
-        acts.push({ label:"Программировать", run:() => openComputerEditor(it) });
+      if (it?.slotDefs.length){
+        acts.push({ label:"Редактировать", run:() => this.editItem(it) });
       }
       if (it && s.id !== "hull"){
         acts.push({ label:"Снять", run:() => this.uninstall(s.id) });
@@ -188,6 +281,9 @@ export class OutfitScene {
         run: () => { this.slot = s.id; this.sel = null; }
       };
     })});
+
+    /* Внутренние слоты открываются отдельной кнопкой «Редактировать». */
+    const computer = p.slots.computer;
 
     /* --- совместимые модули из инвентаря --- */
     const compat = p.inventory.bySlot(this.slot);
@@ -211,9 +307,13 @@ export class OutfitScene {
         label: it.name + (it.qty > 1 ? " ×" + it.qty : ""),
         note: it.mass.toFixed(1) + " т",
         actions: [
-          ...(it.slot !== "cargo"
+          ...(it.slot !== "cargo" && Object.hasOwn(p.slots, it.slot)
               ? [{ label:"Установить", run:() => this.installFromInv(it) }]
-              : [{ label:"В трюм", run:() => this.stow(it) }]),
+              : it.slot === "cargo"
+              ? [{ label:"В трюм", run:() => this.stow(it) }]
+              : computer?.accepts(it)
+              ? [{ label:"В компьютер", run:() => this.installInto(computer, it) }]
+              : []),
           { label:"Выбросить", warn:true, run:() => {
               p.inventory.remove(it); this.dropToSpace(it); } }
         ]

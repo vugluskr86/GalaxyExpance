@@ -12,11 +12,19 @@ body{
 h1{font-size:22px; letter-spacing:6px; text-transform:uppercase; color:var(--accent); margin-bottom:4px; text-align:center;}
 .sub{color:var(--muted); font-size:12px; margin-bottom:24px; letter-spacing:2px; text-align:center;}
 .layout{display:flex; gap:24px; flex-wrap:wrap; justify-content:center; align-items:flex-start; width:100%; max-width:1020px;}
+.screens{width:560px; max-width:100%; display:flex; flex-direction:column; gap:12px;}
 .stage{position:relative; width:560px; max-width:100%; aspect-ratio:1/1;
   background:#04050c; border:2px solid var(--line); border-radius:6px; overflow:hidden;}
 #scene{position:absolute; inset:0; width:100%; height:100%; z-index:2;
   image-rendering:pixelated; image-rendering:crisp-edges; cursor:crosshair; touch-action:none;}
 #labels{position:absolute; inset:0; width:100%; height:100%; z-index:3; pointer-events:none;}
+.terminal-frame{width:560px; max-width:100%; border:2px solid var(--line); border-radius:6px;
+  overflow:hidden; background:#020604;}
+.terminal-title{height:28px; padding:7px 10px; color:var(--muted); font-size:10px;
+  letter-spacing:2px; text-transform:uppercase; border-bottom:1px solid var(--line);}
+#computerTerminal{display:block; width:100%; aspect-ratio:1/1; background:#000;
+  outline:none; cursor:crosshair;}
+#computerTerminal:focus{box-shadow:inset 0 0 0 2px var(--accent);}
 .nameplate{position:absolute; z-index:4; left:0; right:0; top:10px; text-align:center;
   font-size:13px; letter-spacing:3px; color:var(--accent); text-transform:uppercase; pointer-events:none;}
 .nameplate small{display:block; color:var(--muted); font-size:10px; letter-spacing:2px; margin-top:3px; text-transform:none;}
@@ -72,17 +80,46 @@ button.big:hover{background:var(--accent); color:#1a1300;}
 .tooltip b{color:var(--accent); font-weight:normal;}
 
 /* --- редактор программ борткомпьютера --- */
+.editor-panel{
+  position:relative; background:var(--panel); border:2px solid var(--line); border-radius:6px;
+  padding:12px; min-height:300px; width:560px; max-width:100%;
+}
+.editor-header{
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:11px; color:var(--muted); letter-spacing:1px;
+  border-bottom:1px solid var(--line); padding-bottom:6px; margin-bottom:8px;
+}
+.editor-close{
+  width:24px; height:24px; padding:0; font-size:16px; line-height:16px;
+  border:0; background:transparent; color:var(--muted); cursor:pointer;
+}
+.editor-close:hover{color:var(--accent);}
+.editor-body{display:flex; gap:12px; min-width:0;}
+.editor-file-row{display:flex; gap:4px; margin-bottom:3px; width:100%; min-width:0;}
+.editor-file-row button:first-child{flex:1; display:block; text-align:left; padding:5px 8px; font-size:11px;
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  background:var(--panel2); color:var(--text); border:2px solid var(--line); border-radius:4px; cursor:pointer;}
+.editor-file-row button:first-child:hover{border-color:var(--accent); color:var(--accent);}
+.editor-del{width:26px; height:26px; padding:0; font-size:14px; line-height:14px;
+  border:2px solid var(--line); background:var(--panel2); color:var(--muted);
+  border-radius:4px; cursor:pointer; flex-shrink:0;}
+.editor-del:hover{color:#ff5c4d; border-color:#ff5c4d;}
+
 .editor-layout{
   display:flex; gap:12px; margin-top:12px;
   background:var(--panel); border:2px solid var(--line); border-radius:6px;
   padding:12px; width:560px; max-width:100%; min-height:280px;
 }
-.editor-left{flex:1; display:flex; flex-direction:column; gap:8px;}
-.editor-right{width:210px; flex-shrink:0; display:flex; flex-direction:column; gap:6px;}
-.editor-toolbar{display:flex; gap:6px; align-items:center;}
-.editor-filename{flex:1; background:var(--panel2); color:var(--text);
+.editor-left{flex:1; min-width:0; display:flex; flex-direction:column; gap:8px;}
+.editor-right{width:190px; min-width:0; flex-shrink:0; display:flex; flex-direction:column; gap:6px;}
+.editor-toolbar{display:flex; gap:4px; align-items:center; min-width:0;}
+.editor-filename{flex:1; min-width:0; background:var(--panel2); color:var(--text);
   border:1px solid var(--line); border-radius:4px; padding:6px 8px;
   font-family:inherit; font-size:12px;}
+.editor-toolbtn{width:30px; height:30px; flex:0 0 30px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center; font-size:15px;
+  line-height:1; letter-spacing:0;}
+.editor-toolbtn-run{color:var(--accent); border-color:var(--accent);}
 .editor-code{flex:1; background:var(--panel2); color:var(--text);
   border:1px solid var(--line); border-radius:4px; padding:8px;
   font-family:"Consolas","Courier New",monospace; font-size:12px;
@@ -91,8 +128,12 @@ button.big:hover{background:var(--accent); color:#1a1300;}
 .editor-info{font-size:11px; color:var(--muted); letter-spacing:1px;
   border-bottom:1px solid var(--line); padding-bottom:6px;}
 .editor-list{flex:1; overflow-y:auto; max-height:200px;}
-.editor-list button{display:block; width:100%; text-align:left; margin-bottom:3px;
-  padding:5px 8px; font-size:11px;}
+
+@media (max-width:620px){
+  .editor-body{flex-direction:column;}
+  .editor-right{width:100%;}
+  .editor-list{max-height:160px;}
+}
 
 /* --- игровая консоль --- */
 .console-panel{

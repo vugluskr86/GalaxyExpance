@@ -10,14 +10,20 @@
 <h1>Pixel Cosmos</h1>
 <div class="sub">кластер галактик → галактика → система → тело · всё из одного зерна</div>
 <div class="layout">
-  <div class="stage">
-    <canvas id="scene"></canvas>
-    <canvas id="labels"></canvas>
-    <div class="nameplate"><span id="npTitle">—</span><small id="npInfo">—</small></div>
-    <button id="btnBack" class="stagebtn hidden">← назад</button>
-    <button id="btnZin" class="stagebtn">+</button>
-    <button id="btnFit" class="stagebtn">Обзор</button>
-    <button id="btnZout" class="stagebtn">−</button>
+  <div class="screens">
+    <div class="stage">
+      <canvas id="scene"></canvas>
+      <canvas id="labels"></canvas>
+      <div class="nameplate"><span id="npTitle">—</span><small id="npInfo">—</small></div>
+      <button id="btnBack" class="stagebtn hidden">← назад</button>
+      <button id="btnZin" class="stagebtn">+</button>
+      <button id="btnFit" class="stagebtn">Обзор</button>
+      <button id="btnZout" class="stagebtn">−</button>
+    </div>
+    <div class="terminal-frame">
+      <div class="terminal-title">Бортовой терминал · кликните для ввода</div>
+      <canvas id="computerTerminal" width="560" height="560" tabindex="0"></canvas>
+    </div>
   </div>
   <div class="panel" id="panel"></div>
 </div>

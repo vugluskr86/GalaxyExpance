@@ -1,3 +1,6 @@
+import { DEFAULT_OS_ASM } from "./bios.js";
+import { Assembler } from "./cpu.js";
+
 /** Бортовой компьютер корабля: хранилище программ с ограничением по RAM (КБ).
  *  Размер программы считается как длина кода в байтах (UTF-8). */
 const enc = new TextEncoder();
@@ -7,11 +10,29 @@ export class ComputerMemory {
     this.ramKb = ramKb;           // максимальный объём, КБ
     this.programs = [];           // [{ name, code, size }]
     // предустановленные программы
-    this.programs.push(this._encode("hello.bas", `rem "Привет, капитан!"\nprint "Pixel Cosmos v1.0"\nprint "Бортовой компьютер МК-1 готов."`));
+    this.programs.push(this._encode("hello.asm", `; Pixel Cosmos ASM
+.protected
+PRINT "Привет, капитан!"
+LOAD_A 6
+LOAD_B 7
+MUL_A_B
+PRINT "6 × 7 ="
+PRINT_A
+VSET V0, 1, 2, 3, 4
+LOAD_F 2
+VSCALE_V0
+PRINT_V V0
+HALT`));
+    this.programs.push(this._encode("os.asm", DEFAULT_OS_ASM));
+    this.programs.push(this._binary("os.bin",new Assembler().assembleBinary(DEFAULT_OS_ASM)));
   }
   _encode(name, code){
     const size = enc.encode(code).length;
     return { name, code, size };
+  }
+  _binary(name, data){
+    const bytes=data instanceof Uint8Array ? data : new Uint8Array(data);
+    return {name,data:new Uint8Array(bytes),size:bytes.length};
   }
   /** Суммарный размер всех программ в байтах. */
   totalBytes(){
@@ -37,6 +58,15 @@ export class ComputerMemory {
     }
     if (old){ old.code = code; old.size = newSize; }
     else this.programs.push(this._encode(name, code));
+    return null;
+  }
+  saveBinary(name,data){
+    const binary=this._binary(name,data);
+    const old=this.programs.find(p=>p.name===name);
+    const oldSize=old?.size || 0;
+    if(this.totalBytes()-oldSize+binary.size>this.ramKb*1024)return "Недостаточно места на DRIVE";
+    if(old)Object.assign(old,binary);
+    else this.programs.push(binary);
     return null;
   }
   /** Удалить программу по имени. */

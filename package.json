@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test",
     "preview": "vite preview",
     "deploy": "npm run build && git add docs/ && git commit -m \"Deploy to GitHub Pages\" && git push"
   },

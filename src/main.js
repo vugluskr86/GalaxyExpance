@@ -1,10 +1,14 @@
 import { SceneManager } from "./scenes/manager.js";
 import { ClusterScene } from "./scenes/cluster.js";
 import { Cluster } from "./gen/cluster.js";
+import { GalaxyScene } from "./scenes/galaxy.js";
+import { SystemScene } from "./scenes/system.js";
+import { Galaxy } from "./gen/galaxy.js";
 import { Panel } from "./ui/panel.js";
 import { attachInput } from "./core/input.js";
 import { settings, warpStep } from "./ui/settings.js";
 import { toggleConsole } from "./game/console.js";
+import { ComputerTerminal } from "./game/terminal.js";
 
 const SCR = 420;
 const scene = document.getElementById("scene");
@@ -15,6 +19,7 @@ const lbl = document.getElementById("labels");
 const lctx = lbl.getContext("2d");
 const dpr = Math.min(2, window.devicePixelRatio || 1);
 const ctx = { scene, sctx, lbl, lctx, SCR, LW: 560 };
+window._pixelCosmosTerminal = new ComputerTerminal(document.getElementById("computerTerminal"));
 
 function sizeLabels(){
   const rect = lbl.parentElement.getBoundingClientRect();
@@ -29,7 +34,36 @@ window.addEventListener("resize", sizeLabels);
 const mgr = new SceneManager(ctx);
 window._pixelCosmosMgr = mgr;
 new Panel(document.getElementById("panel"), mgr);
-mgr.push(new ClusterScene(new Cluster(31337)));
+
+/** Поместить игрока в случайную систему со старта. */
+function startInSystem(){
+  const seed = Math.floor(Math.random() * 0xFFFFFFFF);
+  const cluster = new Cluster(seed);
+  const galDef = cluster.galaxies[Math.floor(Math.random() * cluster.galaxies.length)];
+  const galaxy = new Galaxy(galDef.def);
+  const star = galaxy.beacons[Math.floor(Math.random() * galaxy.beacons.length)];
+  if (!star) return;
+
+  const gscene = new GalaxyScene(galDef);
+  const sys = new SystemScene(galaxy, star);
+
+  mgr.push(new ClusterScene(cluster));
+  mgr.push(gscene);
+  mgr.push(sys);
+
+  /* выбрать случайную планету или спутник */
+  if (sys.S && sys.S.planets.length){
+    const pi = Math.floor(Math.random() * sys.S.planets.length);
+    const p = sys.S.planets[pi];
+    const useMoon = p.moonList.length > 0 && Math.random() > 0.5;
+    const sel = useMoon
+      ? { kind: "moon", i: pi, j: Math.floor(Math.random() * p.moonList.length) }
+      : { kind: "planet", i: pi, j: 0 };
+    sys.sel = sel;
+    sys.playerShip?.fsdTo(sel, sys.orbitAlt);
+  }
+}
+startInSystem();
 
 /* тултип характеристик планет */
 const tooltip = document.createElement("div");

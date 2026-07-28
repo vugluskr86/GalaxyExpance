@@ -23,7 +23,7 @@ export class Propulsion {
       engine: makeItem(engineId),
       tank:   makeItem(tankId),
       scoop:  scoopId ? makeItem(scoopId) : null,
-      computer: null
+      computer: makeItem("comp_adv"),
     };
     this.fuel = this.slots.tank.stats.cap;
     this.throttle = 0;
@@ -78,7 +78,7 @@ export class Propulsion {
 
   /* ---------- массы ---------- */
   get moduleMass(){
-    return Object.values(this.slots).reduce((s, it) => s + (it ? it.def.mass : 0), 0);
+    return Object.values(this.slots).reduce((s, it) => s + (it ? it.mass : 0), 0);
   }
   get cargoMass(){ return this.cargo.massTotal; }
   get cargoCap(){ return this.hull.cargo; }

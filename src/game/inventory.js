@@ -81,6 +81,9 @@ export class FloatingItem {
 export function starterInventory(){
   return new Inventory([
     makeItem("eng_lite"), makeItem("tank_s"), makeItem("scoop_basic"),
+    makeItem("gpu_graphics"), makeItem("cpu_dual"),
+    makeItem("ram_32"), makeItem("ram_64"),
+    makeItem("drive_chip"), makeItem("drive_crystal"),
     makeItem("ore_fe", 4), makeItem("probe", 1)
   ]);
 }

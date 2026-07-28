@@ -1,0 +1,1923 @@
+; Self-hosted PCOB v2 linker.
+; Базовый статический путь: проверить объект и извлечь разрешённый PCVM payload.
+
+object_buffer: .equ 8192
+second_object_buffer: .equ 32768
+filename_buffer: .equ 4096
+output_name: .string "a.bin"
+dynamic_name: .string "a.dyn"
+object_size: .dword 0
+second_object_size: .dword 0
+line_length: .dword 0
+payload_size: .dword 0
+symbol_count: .dword 0
+relocation_count: .dword 0
+symbol_cursor: .dword 0
+dynamic_start: .equ 49152
+dynamic_cursor: .dword 49159
+validation_base: .dword 0
+validation_size: .dword 0
+validation_payload: .dword 0
+validation_symbols: .dword 0
+validation_relocations: .dword 0
+main_symbol_start: .dword 0
+main_symbol_count: .dword 0
+library_symbol_start: .dword 0
+library_symbol_count: .dword 0
+main_relocation_start: .dword 0
+main_relocation_count: .dword 0
+library_relocation_start: .dword 0
+library_relocation_count: .dword 0
+main_text_count: .dword 0
+library_text_count: .dword 0
+main_data_extent: .dword 0
+library_data_extent: .dword 0
+relocation_scan_cursor: .dword 0
+relocation_scan_remaining: .dword 0
+relocation_instruction_limit: .dword 0
+relocation_index_scratch: .dword 0
+relocation_limit_scratch: .dword 0
+relocation_payload_start: .dword 0
+relocation_record: .dword 0
+relocation_operand_index: .dword 0
+relocation_operand_address: .dword 0
+instruction_scan_cursor: .dword 0
+instruction_scan_target: .dword 0
+operand_scan_remaining: .dword 0
+relocation_target_type: .dword 0
+relocation_target_hash: .dword 0
+relocation_local_start: .dword 0
+relocation_local_count: .dword 0
+relocation_local_text_base: .dword 0
+relocation_provider_text_base: .dword 0
+relocation_local_data_base: .dword 0
+relocation_provider_data_base: .dword 0
+relocation_active_base: .dword 0
+resolve_source: .dword 0
+resolve_remaining: .dword 0
+resolve_provider_start: .dword 0
+resolve_provider_count: .dword 0
+resolve_provider_cursor: .dword 0
+resolve_provider_remaining: .dword 0
+resolve_hash: .dword 0
+static_cursor: .dword 0
+static_main_text_end: .dword 0
+static_library_text_end: .dword 0
+static_scan_remaining: .dword 0
+static_operand_remaining: .dword 0
+data_scan_cursor: .dword 0
+data_scan_remaining: .dword 0
+data_scan_extent: .dword 0
+data_scan_address: .dword 0
+append_source_cursor: .dword 0
+append_remaining: .dword 0
+append_data_base: .dword 0
+append_length: .dword 0
+append_copy_source: .dword 0
+main_segment_count: .dword 0
+library_segment_count: .dword 0
+static_main_text_start: .dword 0
+static_library_text_start: .dword 0
+
+.org dynamic_start
+dynamic_header: .byte 0x50, 0x43, 0x44, 0x4c, 2
+.word 2
+
+TERM_MODE text
+PRINT "Pixel Linker ASM 0.1"
+PRINT "Введите имя PCOB v2:"
+
+read_name:
+LOAD_B filename_buffer
+LOAD_C 128
+TTY_READLINE
+JZ wait_input
+
+LOAD_B line_length
+STORE32_A_B
+MOV_C_A
+LOAD_B filename_buffer
+LOAD_D 0
+STR_TOKEN
+JZ wait_input
+MOV_C_A
+LOAD_D object_buffer
+FS_READ
+JZ read_error
+LOAD_B object_size
+STORE32_A_B
+MOV_D_A
+LOAD_B object_buffer
+MOV_A_D
+CALL validate_pcob
+; Сохранить symbol table первого объекта.
+LOAD_B validation_payload
+LOAD32_A_B
+MOV_B_A
+LOAD_D 8205
+ADD_B_D
+MOV_A_B
+LOAD_B main_symbol_start
+STORE32_A_B
+LOAD_B validation_symbols
+LOAD32_A_B
+LOAD_B main_symbol_count
+STORE32_A_B
+LOAD_B validation_symbols
+LOAD32_A_B
+LOAD_B 16
+MUL_A_B
+MOV_D_A
+LOAD_B main_symbol_start
+LOAD32_A_B
+MOV_B_A
+ADD_B_D
+MOV_A_B
+LOAD_B main_relocation_start
+STORE32_A_B
+LOAD_B validation_relocations
+LOAD32_A_B
+LOAD_B main_relocation_count
+STORE32_A_B
+; PCVM v2/v3 instructionCount.
+LOAD_B 8209
+LOAD8_A_B
+LOAD_D 3
+CMP_A_D
+JZ main_count_v3
+LOAD_B 8210
+JMP main_count_read
+main_count_v3:
+LOAD_B 8212
+main_count_read:
+MOV_C_B
+LOAD8_A_B
+MOV_D_A
+MOV_B_C
+INC_B
+LOAD8_A_B
+LOAD_B 256
+MUL_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B main_text_count
+STORE32_A_B
+
+; Второе имя в той же строке включает динамический multi-object режим.
+LOAD_B line_length
+LOAD32_A_B
+MOV_C_A
+LOAD_B filename_buffer
+LOAD_D 1
+STR_TOKEN
+JZ validate_static
+MOV_C_A
+LOAD_D second_object_buffer
+FS_READ
+JZ read_error
+LOAD_B second_object_size
+STORE32_A_B
+MOV_D_A
+LOAD_B second_object_buffer
+MOV_A_D
+CALL validate_pcob
+LOAD_B validation_payload
+LOAD32_A_B
+MOV_B_A
+LOAD_D 32781
+ADD_B_D
+MOV_A_B
+LOAD_B library_symbol_start
+STORE32_A_B
+LOAD_B validation_symbols
+LOAD32_A_B
+LOAD_B library_symbol_count
+STORE32_A_B
+LOAD_B validation_symbols
+LOAD32_A_B
+LOAD_B 16
+MUL_A_B
+MOV_D_A
+LOAD_B library_symbol_start
+LOAD32_A_B
+MOV_B_A
+ADD_B_D
+MOV_A_B
+LOAD_B library_relocation_start
+STORE32_A_B
+LOAD_B validation_relocations
+LOAD32_A_B
+LOAD_B library_relocation_count
+STORE32_A_B
+LOAD_B 32785
+LOAD8_A_B
+LOAD_D 3
+CMP_A_D
+JZ library_count_v3
+LOAD_B 32786
+JMP library_count_read
+library_count_v3:
+LOAD_B 32788
+library_count_read:
+MOV_C_B
+LOAD8_A_B
+MOV_D_A
+MOV_B_C
+INC_B
+LOAD8_A_B
+LOAD_B 256
+MUL_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B library_text_count
+STORE32_A_B
+
+; Вычислить выровненный размер DATA каждого модуля. Он задаёт dataBase
+; следующего объекта и используется при применении ABS_DATA relocation.
+LOAD_B main_text_count
+LOAD32_A_B
+MOV_D_A
+LOAD_B 8205
+MOV_A_D
+CALL measure_data_extent
+LOAD_B main_data_extent
+STORE32_A_B
+
+LOAD_B library_text_count
+LOAD32_A_B
+MOV_D_A
+LOAD_B 32781
+MOV_A_D
+CALL measure_data_extent
+LOAD_B library_data_extent
+STORE32_A_B
+
+LOAD_B main_relocation_start
+LOAD32_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+LOAD_B main_relocation_count
+LOAD32_A_B
+LOAD_B relocation_scan_remaining
+STORE32_A_B
+LOAD_B main_text_count
+LOAD32_A_B
+LOAD_B relocation_instruction_limit
+STORE32_A_B
+LOAD_A 8205
+LOAD_B relocation_payload_start
+STORE32_A_B
+CALL validate_relocation_table
+
+LOAD_B library_relocation_start
+LOAD32_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+LOAD_B library_relocation_count
+LOAD32_A_B
+LOAD_B relocation_scan_remaining
+STORE32_A_B
+LOAD_B library_text_count
+LOAD32_A_B
+LOAD_B relocation_instruction_limit
+STORE32_A_B
+LOAD_A 32781
+LOAD_B relocation_payload_start
+STORE32_A_B
+CALL validate_relocation_table
+
+; Проверить target и section каждой relocation основного модуля.
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+LOAD_B library_symbol_start
+LOAD32_A_B
+LOAD_B resolve_provider_start
+STORE32_A_B
+LOAD_B library_symbol_count
+LOAD32_A_B
+LOAD_B resolve_provider_count
+STORE32_A_B
+LOAD_B main_relocation_start
+LOAD32_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+LOAD_B main_relocation_count
+LOAD32_A_B
+LOAD_B relocation_scan_remaining
+STORE32_A_B
+LOAD_B resolve_source
+LOAD32_A_B
+LOAD_B relocation_local_start
+STORE32_A_B
+LOAD_B resolve_remaining
+LOAD32_A_B
+LOAD_B relocation_local_count
+STORE32_A_B
+LOAD_A 0
+LOAD_B relocation_local_text_base
+STORE32_A_B
+LOAD_B main_text_count
+LOAD32_A_B
+LOAD_B relocation_provider_text_base
+STORE32_A_B
+LOAD_A 0
+LOAD_B relocation_local_data_base
+STORE32_A_B
+LOAD_B main_data_extent
+LOAD32_A_B
+LOAD_B relocation_provider_data_base
+STORE32_A_B
+LOAD_A 8205
+LOAD_B relocation_payload_start
+STORE32_A_B
+CALL validate_relocation_targets
+
+; И relocation библиотеки относительно её locals и exports main.
+LOAD_B library_symbol_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B library_symbol_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B resolve_provider_start
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B resolve_provider_count
+STORE32_A_B
+LOAD_B library_relocation_start
+LOAD32_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+LOAD_B library_relocation_count
+LOAD32_A_B
+LOAD_B relocation_scan_remaining
+STORE32_A_B
+LOAD_B resolve_source
+LOAD32_A_B
+LOAD_B relocation_local_start
+STORE32_A_B
+LOAD_B resolve_remaining
+LOAD32_A_B
+LOAD_B relocation_local_count
+STORE32_A_B
+LOAD_B main_text_count
+LOAD32_A_B
+LOAD_B relocation_local_text_base
+STORE32_A_B
+LOAD_A 0
+LOAD_B relocation_provider_text_base
+STORE32_A_B
+LOAD_B main_data_extent
+LOAD32_A_B
+LOAD_B relocation_local_data_base
+STORE32_A_B
+LOAD_A 0
+LOAD_B relocation_provider_data_base
+STORE32_A_B
+LOAD_A 32781
+LOAD_B relocation_payload_start
+STORE32_A_B
+CALL validate_relocation_targets
+
+; Разрешить imports в обе стороны до создания контейнера.
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+LOAD_B library_symbol_start
+LOAD32_A_B
+LOAD_B resolve_provider_start
+STORE32_A_B
+LOAD_B library_symbol_count
+LOAD32_A_B
+LOAD_B resolve_provider_count
+STORE32_A_B
+CALL resolve_import_table
+
+LOAD_B library_symbol_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B library_symbol_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B resolve_provider_start
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B resolve_provider_count
+STORE32_A_B
+CALL resolve_import_table
+
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+LOAD_B library_symbol_start
+LOAD32_A_B
+LOAD_B resolve_provider_start
+STORE32_A_B
+LOAD_B library_symbol_count
+LOAD32_A_B
+LOAD_B resolve_provider_count
+STORE32_A_B
+CALL reject_duplicate_exports
+
+; Третий аргумент включает статическую multi-object сборку:
+; main.obj library.obj --static
+LOAD_B line_length
+LOAD32_A_B
+MOV_C_A
+LOAD_B filename_buffer
+LOAD_D 2
+STR_TOKEN
+JZ emit_dynamic
+MOV_C_A
+STR_HASH
+LOAD_D 1749566501
+CMP_A_D
+JZ emit_static_multi
+LOAD_D -857619164
+CMP_A_D
+JZ emit_dynamic
+JMP invalid_link_mode
+
+validate_static:
+
+; magic "PCOB"
+LOAD_B object_buffer
+LOAD8_A_B
+LOAD_D 0x50
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 0x43
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 0x4f
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 0x42
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 2
+CMP_A_D
+JNZ format_error
+
+; payloadSize:u32 по offset 5.
+LOAD_B 8197
+LOAD32_A_B
+JZ format_error
+LOAD_B payload_size
+STORE32_A_B
+
+LOAD_B 8201
+LOAD8_A_B
+LOAD_B symbol_count
+STORE32_A_B
+LOAD_B 8202
+LOAD8_A_B
+LOAD_B 256
+MUL_A_B
+MOV_D_A
+LOAD_B symbol_count
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B symbol_count
+STORE32_A_B
+LOAD_B 8203
+LOAD8_A_B
+LOAD_B relocation_count
+STORE32_A_B
+LOAD_B 8204
+LOAD8_A_B
+LOAD_B 256
+MUL_A_B
+MOV_D_A
+LOAD_B relocation_count
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B relocation_count
+STORE32_A_B
+
+; expected = 13 + payload + symbols*16 + relocations*16.
+LOAD_B symbol_count
+LOAD32_A_B
+LOAD_B 16
+MUL_A_B
+MOV_D_A
+LOAD_B relocation_count
+LOAD32_A_B
+LOAD_B 16
+MUL_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+MOV_D_A
+LOAD_B payload_size
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+LOAD_B 13
+ADD_A_B
+MOV_D_A
+LOAD_B object_size
+LOAD32_A_B
+CMP_A_D
+JNZ format_error
+
+; symbolCursor = object + 13 + payloadSize.
+LOAD_B payload_size
+LOAD32_A_B
+MOV_B_A
+LOAD_D 8205
+ADD_B_D
+MOV_A_B
+LOAD_B symbol_cursor
+STORE32_A_B
+
+; Проверить, что в однообъектном режиме не осталось UND import.
+validate_symbols:
+LOAD_B symbol_count
+LOAD32_A_B
+JZ symbols_valid
+DEC_A
+STORE32_A_B
+LOAD_B symbol_cursor
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 4
+ADD_B_D
+LOAD32_A_B
+JNZ next_symbol
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B 1
+AND_A_B
+JNZ unresolved_import
+next_symbol:
+MOV_B_C
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B symbol_cursor
+STORE32_A_B
+JMP validate_symbols
+
+symbols_valid:
+
+; Однообъектная статическая линковка тоже обязана применить локальные
+; relocation. Ранее этот путь только копировал payload и оставлял
+; placeholder 0 в JMP/JZ/JNZ/CALL и адресах DATA.
+LOAD_B main_relocation_start
+LOAD32_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+LOAD_B main_relocation_count
+LOAD32_A_B
+LOAD_B relocation_scan_remaining
+STORE32_A_B
+LOAD_B main_text_count
+LOAD32_A_B
+LOAD_B relocation_instruction_limit
+STORE32_A_B
+LOAD_A 8205
+LOAD_B relocation_payload_start
+STORE32_A_B
+CALL validate_relocation_table
+
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+LOAD_A 0
+LOAD_B resolve_provider_start
+STORE32_A_B
+LOAD_B resolve_provider_count
+STORE32_A_B
+LOAD_B main_relocation_start
+LOAD32_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+LOAD_B main_relocation_count
+LOAD32_A_B
+LOAD_B relocation_scan_remaining
+STORE32_A_B
+LOAD_B main_symbol_start
+LOAD32_A_B
+LOAD_B relocation_local_start
+STORE32_A_B
+LOAD_B main_symbol_count
+LOAD32_A_B
+LOAD_B relocation_local_count
+STORE32_A_B
+LOAD_A 0
+LOAD_B relocation_local_text_base
+STORE32_A_B
+LOAD_B relocation_provider_text_base
+STORE32_A_B
+LOAD_B relocation_local_data_base
+STORE32_A_B
+LOAD_B relocation_provider_data_base
+STORE32_A_B
+LOAD_A 8205
+LOAD_B relocation_payload_start
+STORE32_A_B
+CALL validate_relocation_targets
+
+; payload начинается по offset 13. FS_WRITE: A=size, B=name, C=nameLen, D=data.
+LOAD_B payload_size
+LOAD32_A_B
+LOAD_D 8205
+LOAD_B output_name
+LOAD_C 5
+FS_WRITE
+PRINT "Создан a.bin (PCVM v2)"
+HALT
+
+wait_input:
+YIELD
+JMP read_name
+
+read_error:
+PRINT "Ошибка чтения PCOB"
+HALT
+
+format_error:
+PRINT "Ошибка формата PCOB v2"
+HALT
+
+unresolved_import:
+PRINT "Ошибка: объект содержит неразрешённый import"
+HALT
+
+duplicate_export:
+PRINT "Ошибка: повторный export"
+HALT
+
+invalid_relocation:
+PRINT "Ошибка: неизвестный тип relocation"
+HALT
+
+invalid_link_mode:
+PRINT "Ошибка: ожидается --static или --dynamic"
+HALT
+
+relocation_section_error:
+PRINT "Ошибка: relocation указывает на неверную секцию"
+HALT
+
+relocation_bounds_error:
+PRINT "Ошибка: relocation вне секции TEXT"
+HALT
+
+relocation_operand_error:
+PRINT "Ошибка: relocation указывает на неверный operand"
+HALT
+
+; B = адрес объекта, A = размер. Полная проверка границ PCOB v2.
+validate_pcob:
+MOV_D_A
+MOV_A_B
+LOAD_B validation_base
+STORE32_A_B
+MOV_A_D
+LOAD_B validation_size
+STORE32_A_B
+LOAD_B validation_base
+LOAD32_A_B
+MOV_B_A
+MOV_C_B
+LOAD8_A_B
+LOAD_D 0x50
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 0x43
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 0x4f
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 0x42
+CMP_A_D
+JNZ format_error
+INC_B
+LOAD8_A_B
+LOAD_D 2
+CMP_A_D
+JNZ format_error
+MOV_B_C
+
+; payloadSize по base+5.
+LOAD_D 5
+ADD_B_D
+LOAD32_A_B
+LOAD_B validation_payload
+STORE32_A_B
+
+; symbolCount u16.
+LOAD_B validation_base
+LOAD32_A_B
+MOV_B_A
+LOAD_D 9
+ADD_B_D
+LOAD8_A_B
+LOAD_B validation_symbols
+STORE32_A_B
+LOAD_B validation_base
+LOAD32_A_B
+MOV_B_A
+LOAD_D 10
+ADD_B_D
+LOAD8_A_B
+LOAD_B 256
+MUL_A_B
+MOV_D_A
+LOAD_B validation_symbols
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B validation_symbols
+STORE32_A_B
+
+; relocationCount u16.
+LOAD_B validation_base
+LOAD32_A_B
+MOV_B_A
+LOAD_D 11
+ADD_B_D
+LOAD8_A_B
+LOAD_B validation_relocations
+STORE32_A_B
+LOAD_B validation_base
+LOAD32_A_B
+MOV_B_A
+LOAD_D 12
+ADD_B_D
+LOAD8_A_B
+LOAD_B 256
+MUL_A_B
+MOV_D_A
+LOAD_B validation_relocations
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B validation_relocations
+STORE32_A_B
+
+; expected = 13 + payload + symbols*16 + relocations*16.
+LOAD_B validation_symbols
+LOAD32_A_B
+LOAD_B 16
+MUL_A_B
+MOV_D_A
+LOAD_B validation_relocations
+LOAD32_A_B
+LOAD_B 16
+MUL_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+MOV_D_A
+LOAD_B validation_payload
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+LOAD_B 13
+ADD_A_B
+MOV_D_A
+LOAD_B validation_size
+LOAD32_A_B
+CMP_A_D
+JNZ format_error
+RET
+
+; Проверить все import-флаги source table по export-флагам provider table.
+resolve_import_table:
+resolve_import_next:
+LOAD_B resolve_remaining
+LOAD32_A_B
+JZ resolve_import_done
+DEC_A
+STORE32_A_B
+LOAD_B resolve_source
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B 1
+AND_A_B
+JZ resolve_import_advance
+
+; Сохранить hash текущего import.
+MOV_B_C
+LOAD32_A_B
+LOAD_B resolve_hash
+STORE32_A_B
+LOAD_B resolve_provider_start
+LOAD32_A_B
+LOAD_B resolve_provider_cursor
+STORE32_A_B
+LOAD_B resolve_provider_count
+LOAD32_A_B
+LOAD_B resolve_provider_remaining
+STORE32_A_B
+
+resolve_provider_next:
+LOAD_B resolve_provider_remaining
+LOAD32_A_B
+JZ unresolved_import
+DEC_A
+STORE32_A_B
+LOAD_B resolve_provider_cursor
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B 2
+AND_A_B
+JZ resolve_provider_advance
+MOV_B_C
+LOAD32_A_B
+MOV_D_A
+LOAD_B resolve_hash
+LOAD32_A_B
+CMP_A_D
+JZ resolve_import_advance
+
+resolve_provider_advance:
+MOV_B_C
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B resolve_provider_cursor
+STORE32_A_B
+JMP resolve_provider_next
+
+resolve_import_advance:
+LOAD_B resolve_source
+LOAD32_A_B
+MOV_B_A
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B resolve_source
+STORE32_A_B
+JMP resolve_import_next
+
+resolve_import_done:
+RET
+
+reject_duplicate_exports:
+duplicate_export_source_next:
+LOAD_B resolve_remaining
+LOAD32_A_B
+JZ duplicate_export_done
+DEC_A
+STORE32_A_B
+LOAD_B resolve_source
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B 2
+AND_A_B
+JZ duplicate_export_source_advance
+MOV_B_C
+LOAD32_A_B
+LOAD_B resolve_hash
+STORE32_A_B
+LOAD_B resolve_provider_start
+LOAD32_A_B
+LOAD_B resolve_provider_cursor
+STORE32_A_B
+LOAD_B resolve_provider_count
+LOAD32_A_B
+LOAD_B resolve_provider_remaining
+STORE32_A_B
+
+duplicate_export_provider_next:
+LOAD_B resolve_provider_remaining
+LOAD32_A_B
+JZ duplicate_export_source_advance
+DEC_A
+STORE32_A_B
+LOAD_B resolve_provider_cursor
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B 2
+AND_A_B
+JZ duplicate_export_provider_advance
+MOV_B_C
+LOAD32_A_B
+MOV_D_A
+LOAD_B resolve_hash
+LOAD32_A_B
+CMP_A_D
+JZ duplicate_export
+
+duplicate_export_provider_advance:
+MOV_B_C
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B resolve_provider_cursor
+STORE32_A_B
+JMP duplicate_export_provider_next
+
+duplicate_export_source_advance:
+LOAD_B resolve_source
+LOAD32_A_B
+MOV_B_A
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B resolve_source
+STORE32_A_B
+JMP duplicate_export_source_next
+
+duplicate_export_done:
+RET
+
+validate_relocation_table:
+validate_relocation_next:
+LOAD_B relocation_scan_remaining
+LOAD32_A_B
+JZ validate_relocation_done
+DEC_A
+STORE32_A_B
+LOAD_B relocation_scan_cursor
+LOAD32_A_B
+MOV_C_A
+LOAD_B relocation_record
+MOV_A_C
+STORE32_A_B
+MOV_B_C
+LOAD32_A_B
+LOAD_B relocation_index_scratch
+STORE32_A_B
+LOAD_B relocation_instruction_limit
+LOAD32_A_B
+LOAD_B relocation_limit_scratch
+STORE32_A_B
+validate_relocation_index:
+LOAD_B relocation_index_scratch
+LOAD32_A_B
+JZ validate_relocation_index_ok
+DEC_A
+STORE32_A_B
+LOAD_B relocation_limit_scratch
+LOAD32_A_B
+JZ relocation_bounds_error
+DEC_A
+STORE32_A_B
+JMP validate_relocation_index
+validate_relocation_index_ok:
+LOAD_B relocation_record
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 4
+ADD_B_D
+LOAD32_A_B
+LOAD_B relocation_operand_index
+STORE32_A_B
+CALL locate_relocation_operand
+LOAD_B relocation_record
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 8
+ADD_B_D
+LOAD32_A_B
+LOAD_D 1
+CMP_A_D
+JZ validate_relocation_advance
+LOAD_D 2
+CMP_A_D
+JNZ invalid_relocation
+validate_relocation_advance:
+MOV_B_C
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+JMP validate_relocation_next
+validate_relocation_done:
+RET
+
+; B = PCVM payload. Возвращает B = начало instruction stream.
+; v2 header = 7 bytes, v3 header = 9 bytes.
+pcvm_text_start:
+MOV_C_B
+LOAD_D 4
+ADD_B_D
+LOAD8_A_B
+LOAD_D 3
+CMP_A_D
+MOV_B_C
+JZ pcvm_text_start_v3
+LOAD_A 7
+MOV_D_A
+ADD_B_D
+RET
+pcvm_text_start_v3:
+; Protected feature должен присутствовать для v3 payload self-hosted toolchain.
+MOV_B_C
+LOAD_D 5
+ADD_B_D
+LOAD8_A_B
+LOAD_B 1
+AND_A_B
+JZ format_error
+LOAD_A 9
+MOV_D_A
+MOV_B_C
+ADD_B_D
+RET
+
+locate_relocation_operand:
+LOAD_B relocation_payload_start
+LOAD32_A_B
+MOV_B_A
+MOV_C_B
+LOAD_D 4
+ADD_B_D
+LOAD8_A_B
+LOAD_D 3
+CMP_A_D
+MOV_B_C
+JZ locate_relocation_v3
+LOAD_D 7
+ADD_B_D
+JMP locate_relocation_start_ready
+locate_relocation_v3:
+LOAD_D 9
+ADD_B_D
+locate_relocation_start_ready:
+MOV_A_B
+LOAD_B instruction_scan_cursor
+STORE32_A_B
+LOAD_B relocation_record
+LOAD32_A_B
+MOV_B_A
+LOAD32_A_B
+LOAD_B instruction_scan_target
+STORE32_A_B
+
+locate_instruction_next:
+LOAD_B instruction_scan_target
+LOAD32_A_B
+JZ locate_instruction_found
+DEC_A
+STORE32_A_B
+LOAD_B instruction_scan_cursor
+LOAD32_A_B
+MOV_B_A
+INC_B
+LOAD8_A_B
+MOV_D_A
+INC_B
+MOV_C_B
+MOV_A_D
+LOAD_B operand_scan_remaining
+STORE32_A_B
+MOV_A_C
+LOAD_B instruction_scan_cursor
+STORE32_A_B
+locate_skip_operands:
+LOAD_B operand_scan_remaining
+LOAD32_A_B
+JZ locate_instruction_advance
+DEC_A
+STORE32_A_B
+LOAD_B instruction_scan_cursor
+LOAD32_A_B
+MOV_B_A
+CALL skip_encoded_operand
+MOV_A_B
+LOAD_B instruction_scan_cursor
+STORE32_A_B
+JMP locate_skip_operands
+
+locate_instruction_advance:
+; cursor уже у следующей инструкции.
+JMP locate_instruction_next
+
+locate_instruction_found:
+LOAD_B instruction_scan_cursor
+LOAD32_A_B
+MOV_B_A
+INC_B
+LOAD8_A_B
+LOAD_B relocation_limit_scratch
+STORE32_A_B
+LOAD_B relocation_operand_index
+LOAD32_A_B
+LOAD_B relocation_index_scratch
+STORE32_A_B
+locate_operand_bound_loop:
+LOAD_B relocation_index_scratch
+LOAD32_A_B
+JZ locate_operand_bound_done
+DEC_A
+STORE32_A_B
+LOAD_B relocation_limit_scratch
+LOAD32_A_B
+JZ relocation_operand_error
+DEC_A
+STORE32_A_B
+JMP locate_operand_bound_loop
+locate_operand_bound_done:
+LOAD_B relocation_limit_scratch
+LOAD32_A_B
+JZ relocation_operand_error
+
+; Найти начало выбранного operand.
+LOAD_B instruction_scan_cursor
+LOAD32_A_B
+MOV_B_A
+INC_B
+INC_B
+MOV_A_B
+LOAD_B instruction_scan_cursor
+STORE32_A_B
+LOAD_B relocation_operand_index
+LOAD32_A_B
+LOAD_B operand_scan_remaining
+STORE32_A_B
+locate_operand_next:
+LOAD_B operand_scan_remaining
+LOAD32_A_B
+JZ locate_operand_slot
+DEC_A
+STORE32_A_B
+LOAD_B instruction_scan_cursor
+LOAD32_A_B
+MOV_B_A
+CALL skip_encoded_operand
+MOV_A_B
+LOAD_B instruction_scan_cursor
+STORE32_A_B
+JMP locate_operand_next
+locate_operand_slot:
+LOAD_B instruction_scan_cursor
+LOAD32_A_B
+MOV_B_A
+LOAD8_A_B
+JNZ relocation_operand_error
+INC_B
+MOV_A_B
+LOAD_B relocation_operand_address
+STORE32_A_B
+RET
+
+; B указывает на type operand; вернуть B после operand.
+skip_encoded_operand:
+LOAD8_A_B
+INC_B
+JZ skip_numeric_operand
+LOAD_D 1
+CMP_A_D
+JNZ relocation_operand_error
+LOAD8_A_B
+MOV_D_A
+INC_B
+LOAD8_A_B
+JNZ relocation_operand_error
+INC_B
+ADD_B_D
+RET
+skip_numeric_operand:
+LOAD_D 8
+ADD_B_D
+RET
+
+validate_relocation_targets:
+relocation_target_next:
+LOAD_B relocation_scan_remaining
+LOAD32_A_B
+JZ relocation_targets_done
+DEC_A
+STORE32_A_B
+LOAD_B relocation_scan_cursor
+LOAD32_A_B
+MOV_C_A
+LOAD_B relocation_record
+MOV_A_C
+STORE32_A_B
+CALL locate_relocation_operand
+LOAD_B relocation_record
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 8
+ADD_B_D
+LOAD32_A_B
+LOAD_B relocation_target_type
+STORE32_A_B
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B relocation_target_hash
+STORE32_A_B
+LOAD_B relocation_local_start
+LOAD32_A_B
+LOAD_B resolve_source
+STORE32_A_B
+LOAD_B relocation_local_count
+LOAD32_A_B
+LOAD_B resolve_remaining
+STORE32_A_B
+
+relocation_local_next:
+LOAD_B resolve_remaining
+LOAD32_A_B
+JZ relocation_provider_begin
+DEC_A
+STORE32_A_B
+LOAD_B resolve_source
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD32_A_B
+MOV_D_A
+LOAD_B relocation_target_hash
+LOAD32_A_B
+CMP_A_D
+JNZ relocation_local_advance
+MOV_B_C
+LOAD_D 4
+ADD_B_D
+LOAD32_A_B
+JZ relocation_provider_begin
+MOV_D_A
+LOAD_B relocation_target_type
+LOAD32_A_B
+CMP_A_D
+JNZ relocation_section_error
+LOAD_B relocation_target_type
+LOAD32_A_B
+LOAD_D 1
+CMP_A_D
+JZ relocation_use_local_text_base
+LOAD_B relocation_local_data_base
+LOAD32_A_B
+JMP relocation_local_base_ready
+relocation_use_local_text_base:
+LOAD_B relocation_local_text_base
+LOAD32_A_B
+relocation_local_base_ready:
+LOAD_B relocation_active_base
+STORE32_A_B
+MOV_B_C
+LOAD_D 8
+ADD_B_D
+LOAD32_A_B
+CALL patch_relocation_value
+JMP relocation_target_advance
+
+relocation_local_advance:
+MOV_B_C
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B resolve_source
+STORE32_A_B
+JMP relocation_local_next
+
+relocation_provider_begin:
+LOAD_B resolve_provider_start
+LOAD32_A_B
+LOAD_B resolve_provider_cursor
+STORE32_A_B
+LOAD_B resolve_provider_count
+LOAD32_A_B
+LOAD_B resolve_provider_remaining
+STORE32_A_B
+
+relocation_provider_next:
+LOAD_B resolve_provider_remaining
+LOAD32_A_B
+JZ unresolved_import
+DEC_A
+STORE32_A_B
+LOAD_B resolve_provider_cursor
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD_D 12
+ADD_B_D
+LOAD32_A_B
+LOAD_B 2
+AND_A_B
+JZ relocation_provider_advance
+MOV_B_C
+LOAD32_A_B
+MOV_D_A
+LOAD_B relocation_target_hash
+LOAD32_A_B
+CMP_A_D
+JNZ relocation_provider_advance
+MOV_B_C
+LOAD_D 4
+ADD_B_D
+LOAD32_A_B
+MOV_D_A
+LOAD_B relocation_target_type
+LOAD32_A_B
+CMP_A_D
+JNZ relocation_section_error
+LOAD_B relocation_target_type
+LOAD32_A_B
+LOAD_D 1
+CMP_A_D
+JZ relocation_use_provider_text_base
+LOAD_B relocation_provider_data_base
+LOAD32_A_B
+JMP relocation_provider_base_ready
+relocation_use_provider_text_base:
+LOAD_B relocation_provider_text_base
+LOAD32_A_B
+relocation_provider_base_ready:
+LOAD_B relocation_active_base
+STORE32_A_B
+MOV_B_C
+LOAD_D 8
+ADD_B_D
+LOAD32_A_B
+CALL patch_relocation_value
+JMP relocation_target_advance
+
+relocation_provider_advance:
+MOV_B_C
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B resolve_provider_cursor
+STORE32_A_B
+JMP relocation_provider_next
+
+relocation_target_advance:
+LOAD_B relocation_scan_cursor
+LOAD32_A_B
+MOV_B_A
+LOAD_D 16
+ADD_B_D
+MOV_A_B
+LOAD_B relocation_scan_cursor
+STORE32_A_B
+JMP relocation_target_next
+
+relocation_targets_done:
+RET
+
+patch_relocation_value:
+MOV_D_A
+LOAD_B relocation_active_base
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+ITOF
+LOAD_B relocation_operand_address
+LOAD32_A_B
+MOV_B_A
+STORE64_FA_B
+RET
+
+; Найти первый байт после TEXT в PCVM.
+; Вход: B = начало payload, A = instructionCount. Выход: B = конец TEXT.
+find_static_text_end:
+PUSH_A
+CALL pcvm_text_start
+MOV_C_B
+POP_A
+LOAD_B static_scan_remaining
+STORE32_A_B
+MOV_B_C
+static_instruction_next:
+MOV_C_B
+LOAD_B static_scan_remaining
+LOAD32_A_B
+JZ static_text_end_found
+DEC_A
+STORE32_A_B
+MOV_B_C
+INC_B
+LOAD8_A_B
+INC_B
+MOV_C_B
+LOAD_B static_operand_remaining
+STORE32_A_B
+MOV_B_C
+static_instruction_operand:
+MOV_C_B
+LOAD_B static_operand_remaining
+LOAD32_A_B
+JZ static_instruction_done
+DEC_A
+STORE32_A_B
+MOV_B_C
+CALL skip_encoded_operand
+JMP static_instruction_operand
+static_instruction_done:
+MOV_B_C
+JMP static_instruction_next
+static_text_end_found:
+MOV_B_C
+RET
+
+; Измерить DATA address space PCVM. Сегменты assembler записывает в порядке
+; возрастания адресов, поэтому extent равен концу последней записи.
+; Вход: B = payload, A = instructionCount. Выход: A = align4(extent).
+measure_data_extent:
+CALL find_static_text_end
+LOAD8_A_B
+MOV_D_A
+INC_B
+LOAD8_A_B
+JNZ format_error
+INC_B
+MOV_C_B
+MOV_A_D
+LOAD_B data_scan_remaining
+STORE32_A_B
+LOAD_A 0
+LOAD_B data_scan_extent
+STORE32_A_B
+MOV_B_C
+measure_data_next:
+MOV_C_B
+LOAD_B data_scan_remaining
+LOAD32_A_B
+JZ measure_data_done
+DEC_A
+STORE32_A_B
+MOV_B_C
+LOAD32_A_B
+MOV_D_A
+LOAD_B data_scan_address
+STORE32_A_B
+MOV_B_C
+LOAD_D 4
+ADD_B_D
+LOAD8_A_B
+MOV_D_A
+INC_B
+LOAD8_A_B
+JNZ format_error
+INC_B
+MOV_C_B
+LOAD_B data_scan_address
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B data_scan_extent
+STORE32_A_B
+MOV_B_C
+ADD_B_D
+JMP measure_data_next
+measure_data_done:
+MOV_B_C
+LOAD_B data_scan_extent
+LOAD32_A_B
+LOAD_B 3
+ADD_A_B
+LOAD_B -4
+AND_A_B
+RET
+
+; Добавить DATA records одного PCVM в статический выход.
+; append_source_cursor указывает на первую record после segmentCount.
+append_static_segments:
+append_static_next:
+LOAD_B append_remaining
+LOAD32_A_B
+JZ append_static_done
+DEC_A
+STORE32_A_B
+
+; address:u32 + dataBase -> output.
+LOAD_B append_source_cursor
+LOAD32_A_B
+MOV_C_A
+MOV_B_C
+LOAD32_A_B
+MOV_D_A
+LOAD_B append_data_base
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+MOV_D_A
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+STORE32_A_B
+LOAD_D 4
+ADD_B_D
+MOV_A_B
+LOAD_B static_cursor
+STORE32_A_B
+MOV_B_C
+LOAD_D 4
+ADD_B_D
+MOV_A_B
+LOAD_B append_source_cursor
+STORE32_A_B
+
+; length:u16, затем сами bytes.
+LOAD_B append_source_cursor
+LOAD32_A_B
+MOV_B_A
+LOAD8_A_B
+MOV_D_A
+LOAD_B append_length
+STORE32_A_B
+LOAD_B append_source_cursor
+LOAD32_A_B
+MOV_B_A
+INC_B
+LOAD8_A_B
+JNZ format_error
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_C_A
+LOAD_B append_length
+LOAD32_A_B
+MOV_B_C
+STORE16_A_B
+LOAD_D 2
+ADD_B_D
+MOV_A_B
+LOAD_B static_cursor
+STORE32_A_B
+
+LOAD_B append_source_cursor
+LOAD32_A_B
+MOV_B_A
+LOAD_D 2
+ADD_B_D
+MOV_A_B
+LOAD_B append_copy_source
+STORE32_A_B
+LOAD_B append_source_cursor
+STORE32_A_B
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_C_A
+LOAD_B append_length
+LOAD32_A_B
+MOV_D_A
+LOAD_B append_copy_source
+LOAD32_A_B
+MOV_B_A
+MEM_COPY
+
+; Продвинуть оба курсора на length.
+LOAD_B append_source_cursor
+LOAD32_A_B
+MOV_B_A
+LOAD_B append_length
+LOAD32_A_B
+MOV_C_A
+LOAD_B append_source_cursor
+LOAD32_A_B
+MOV_B_A
+ADD_B_C
+MOV_A_B
+LOAD_B append_source_cursor
+STORE32_A_B
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_B_A
+LOAD_B append_length
+LOAD32_A_B
+MOV_C_A
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_B_A
+ADD_B_C
+MOV_A_B
+LOAD_B static_cursor
+STORE32_A_B
+JMP append_static_next
+append_static_done:
+RET
+
+; Статическая сборка двух модулей без DATA-сегментов.
+; Relocation уже применены validate_relocation_targets.
+emit_static_multi:
+LOAD_B 8205
+CALL pcvm_text_start
+MOV_A_B
+LOAD_B static_main_text_start
+STORE32_A_B
+
+LOAD_B 32781
+CALL pcvm_text_start
+MOV_A_B
+LOAD_B static_library_text_start
+STORE32_A_B
+
+LOAD_B main_text_count
+LOAD32_A_B
+MOV_D_A
+LOAD_B 8205
+MOV_A_D
+CALL find_static_text_end
+MOV_A_B
+LOAD_B static_main_text_end
+STORE32_A_B
+
+LOAD_B library_text_count
+LOAD32_A_B
+MOV_D_A
+LOAD_B 32781
+MOV_A_D
+CALL find_static_text_end
+MOV_A_B
+LOAD_B static_library_text_end
+STORE32_A_B
+
+; Выпустить единый PCVM v3 protected header, затем оба потока инструкций.
+LOAD_B 8205
+LOAD_D 4
+LOAD_C dynamic_start
+MEM_COPY
+LOAD_A 3
+LOAD_B dynamic_start
+LOAD_D 4
+ADD_B_D
+STORE8_A_B
+LOAD_A 1
+INC_B
+STORE8_A_B
+LOAD_A 0
+INC_B
+STORE8_A_B
+INC_B
+STORE8_A_B
+INC_B
+STORE8_A_B
+LOAD_A dynamic_start
+LOAD_B 9
+ADD_A_B
+LOAD_B static_cursor
+STORE32_A_B
+
+LOAD_B static_main_text_end
+LOAD32_A_B
+LOAD_B static_main_text_start
+LOAD32_A_B
+MOV_D_A
+LOAD_B static_main_text_end
+LOAD32_A_B
+SUB_A_D
+MOV_D_A
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_C_A
+LOAD_B static_main_text_start
+LOAD32_A_B
+MOV_B_A
+MEM_COPY
+MOV_A_C
+MOV_B_D
+ADD_A_B
+LOAD_B static_cursor
+STORE32_A_B
+
+LOAD_B static_library_text_end
+LOAD32_A_B
+LOAD_B static_library_text_start
+LOAD32_A_B
+MOV_D_A
+LOAD_B static_library_text_end
+LOAD32_A_B
+SUB_A_D
+MOV_D_A
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_C_A
+LOAD_B static_library_text_start
+LOAD32_A_B
+MOV_B_A
+MEM_COPY
+MOV_A_C
+MOV_B_D
+ADD_A_B
+LOAD_B static_cursor
+STORE32_A_B
+
+; Исправить объединённый instructionCount в заголовке.
+LOAD_B main_text_count
+LOAD32_A_B
+MOV_D_A
+LOAD_B library_text_count
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+LOAD_B dynamic_start
+LOAD_D 7
+ADD_B_D
+STORE8_A_B
+LOAD_A 0
+INC_B
+STORE8_A_B
+
+; Объединённый segmentCount.
+LOAD_B static_main_text_end
+LOAD32_A_B
+MOV_B_A
+LOAD8_A_B
+LOAD_B main_segment_count
+STORE32_A_B
+LOAD_B static_library_text_end
+LOAD32_A_B
+MOV_B_A
+LOAD8_A_B
+LOAD_B library_segment_count
+STORE32_A_B
+LOAD_B main_segment_count
+LOAD32_A_B
+MOV_D_A
+LOAD_B library_segment_count
+LOAD32_A_B
+MOV_B_D
+ADD_A_B
+MOV_D_A
+LOAD_B static_cursor
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+STORE16_A_B
+LOAD_D 2
+ADD_B_D
+MOV_A_B
+LOAD_B static_cursor
+STORE32_A_B
+
+; DATA main копируется без сдвига.
+LOAD_B static_main_text_end
+LOAD32_A_B
+MOV_B_A
+LOAD_D 2
+ADD_B_D
+MOV_A_B
+LOAD_B append_source_cursor
+STORE32_A_B
+LOAD_B main_segment_count
+LOAD32_A_B
+LOAD_B append_remaining
+STORE32_A_B
+LOAD_A 0
+LOAD_B append_data_base
+STORE32_A_B
+CALL append_static_segments
+
+; DATA библиотеки получает base после выровненного extent main.
+LOAD_B static_library_text_end
+LOAD32_A_B
+MOV_B_A
+LOAD_D 2
+ADD_B_D
+MOV_A_B
+LOAD_B append_source_cursor
+STORE32_A_B
+LOAD_B library_segment_count
+LOAD32_A_B
+LOAD_B append_remaining
+STORE32_A_B
+LOAD_B main_data_extent
+LOAD32_A_B
+LOAD_B append_data_base
+STORE32_A_B
+CALL append_static_segments
+
+LOAD_B static_cursor
+LOAD32_A_B
+LOAD_D dynamic_start
+SUB_A_D
+LOAD_D dynamic_start
+LOAD_B output_name
+LOAD_C 5
+FS_WRITE
+PRINT "Создан a.bin (статический PCVM v3)"
+HALT
+
+emit_dynamic:
+; [size:u32, object bytes] × 2 после заголовка PCDL v2.
+LOAD_B object_size
+LOAD32_A_B
+MOV_D_A
+LOAD_B dynamic_cursor
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+STORE32_A_B
+LOAD_D 4
+ADD_B_D
+MOV_C_B
+LOAD_B object_size
+LOAD32_A_B
+MOV_D_A
+LOAD_B object_buffer
+MEM_COPY
+MOV_B_C
+ADD_B_D
+MOV_A_B
+LOAD_B dynamic_cursor
+STORE32_A_B
+
+LOAD_B second_object_size
+LOAD32_A_B
+MOV_D_A
+LOAD_B dynamic_cursor
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+STORE32_A_B
+LOAD_D 4
+ADD_B_D
+MOV_C_B
+LOAD_B second_object_size
+LOAD32_A_B
+MOV_D_A
+LOAD_B second_object_buffer
+MEM_COPY
+MOV_B_C
+ADD_B_D
+MOV_A_B
+LOAD_B dynamic_cursor
+STORE32_A_B
+
+LOAD_B dynamic_cursor
+LOAD32_A_B
+LOAD_B dynamic_start
+SUB_A_B
+LOAD_D dynamic_start
+LOAD_B dynamic_name
+LOAD_C 5
+FS_WRITE
+PRINT "Создан a.dyn (PCDL v2)"
+HALT

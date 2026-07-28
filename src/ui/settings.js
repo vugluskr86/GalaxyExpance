@@ -3,7 +3,7 @@ export const WARP = [0, 1, 5, 25, 100, 1000, 10000, 100000];
 
 export const settings = {
   dust: 0.7,
-  lod: 1,
+  lod: 2,
   rot: 0.01,
   twinkle: true,
   labels: true,
