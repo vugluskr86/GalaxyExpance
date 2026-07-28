@@ -1445,7 +1445,7 @@ test("bootstrap assembler pass emits opcode stream on DRIVE",()=>{
     [0x50,0x43,0x56,0x4d,3]);
   const generationTwoProgram=assembler.decodeBinary(secondGenerationAssembler);
   assert.deepEqual(generationTwoProgram.dataWrites.map(segment=>segment.address),
-    [4096,98304,1310720,5376]);
+    [4096,131072,1310720,5376]);
 
   const generationTwoTerminal=new ComputerTerminal(),generationTwoFiles=new Map();
   generationTwoTerminal.lineQueue.push("generation-two.asm");

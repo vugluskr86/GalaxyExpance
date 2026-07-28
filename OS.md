@@ -1023,6 +1023,28 @@ utilities в правильном порядке. Добавь clean image build
 userland. После этого bootstrap test пересобирает assembler/linker и ОС.
 ```
 
+### Состояние Prompt 10
+
+Статус: **частично выполнено, bootstrap toolchain замкнут**.
+
+- `make.bin` разбирает `-f`, `-n`, target, переменные и continuation,
+  сравнивает timestamps, прекращает сборку при ошибке и запускает рецепты
+  только через `/bin/sh` внутри PCVM;
+- отсутствующая зависимость собирается отдельным `/bin/make`, поэтому
+  агрегатные цели обходят граф без host command dispatch;
+- системный Makefile содержит libc, kernel, init, shell, userland и цели
+  `toolchain/bootstrap`;
+- устранено перекрытие 64-КиБ source workspace с выходным PCVM payload
+  self-hosted assembler;
+- bootstrap-тест реально запускает `linker2.bin`, затем собирает
+  `assembler3.bin` и `linker3.bin` исключительно посредством
+  `assembler2.bin + linker2.bin`; третье поколение собирает и исполняет
+  контрольную программу.
+
+До полного критерия всей ОС остаётся integration-тест установленного
+staging tree, который запускает сам `/bin/make bootstrap` и проверяет
+пересборку всех kernel/init/userland файлов, а не только toolchain.
+
 ## Prompt 11 — vi.bin
 
 ```text

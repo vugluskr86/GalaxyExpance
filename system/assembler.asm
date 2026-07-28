@@ -311,7 +311,7 @@ opcode_table_end: .zero 0
 .align 4
 source_cursor: .dword 0
 source_end: .dword 0
-output_cursor: .dword 98313
+output_cursor: .dword 131081
 token_hash: .dword 0
 operands_left: .dword 0
 instruction_count: .dword 0
@@ -340,7 +340,10 @@ segment_emit_cursor: .dword 0
 segment_emit_remaining: .dword 0
 symbol_table: .equ 6144
 symbol_table_end: .equ 32768
-output_start: .equ 98304
+; Keep the encoded PCVM image outside the 64 KiB source workspace
+; (workspace starts at 65536). Large self-hosted sources such as linker.asm
+; otherwise overwrite the PCVM header and corrupt relocation operands.
+output_start: .equ 131072
 object_start: .equ 1310720
 object_cursor: .dword 1310733
 output_name: .string "a.obj"
@@ -1447,7 +1450,7 @@ data_emitted:
 ; Пропатчить instructionCount в заголовке.
 LOAD_B instruction_count
 LOAD32_A_B
-LOAD_B 98311
+LOAD_B 131079
 STORE16_A_B
 
 ; Завершить бинарный объект PCOB v2 вокруг временного PCVM payload.

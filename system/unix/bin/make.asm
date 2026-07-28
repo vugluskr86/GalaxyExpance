@@ -497,10 +497,12 @@ LOAD32_A_B
 MOV_B_A
 STR_TOKEN
 JZ make_dep_done
-LOAD_B make_dep_len
-STORE32_A_B
+MOV_C_A
 MOV_A_B
 LOAD_B make_dep_ptr
+STORE32_A_B
+MOV_A_C
+LOAD_B make_dep_len
 STORE32_A_B
 ; Self-dependency is the minimal cycle and is rejected deterministically.
 LOAD_B make_target_len
@@ -533,6 +535,10 @@ CALL libc_stat
 LOAD_D -1
 CMP_A_D
 JNZ make_dep_has_stat
+; A missing dependency may itself be a Makefile target. Build it in a child
+; make process so every process keeps a small, bounded parser state.
+CALL make_build_dependency
+JNZ make_dependency_failed
 LOAD_A 1
 LOAD_B make_rebuild
 STORE32_A_B
@@ -582,6 +588,121 @@ LOAD32_A_B
 RET
 make_no_recipe_needed:
 LOAD_A 0
+RET
+
+make_dependency_failed:
+JMP make_error
+
+; Build ARGS="make -f <file> <dependency>" and execute /bin/make.
+; The child repeats the same bounded algorithm, providing a real dependency
+; walk without using host commands.
+make_build_dependency:
+LOAD_A 0
+LOAD_B make_child_args_len
+STORE32_A_B
+LOAD_B make_child_prefix
+LOAD_D 8
+CALL make_child_append
+LOAD_B make_file_ptr
+LOAD32_A_B
+PUSH_A
+LOAD_B make_file_len
+LOAD32_A_B
+MOV_D_A
+POP_A
+MOV_B_A
+CALL make_child_append
+LOAD_B make_space
+LOAD_D 1
+CALL make_child_append
+LOAD_B make_dep_ptr
+LOAD32_A_B
+PUSH_A
+LOAD_B make_dep_len
+LOAD32_A_B
+MOV_D_A
+POP_A
+MOV_B_A
+CALL make_child_append
+
+LOAD_B make_child_args_len
+LOAD32_A_B
+LOAD_B 65536
+MUL_A_B
+LOAD_B 4
+ADD_A_B
+MOV_D_A
+LOAD_B make_args_key
+LOAD_C make_child_args
+CALL libc_setenv
+LOAD_B make_make_path
+LOAD_C 9
+LOAD_D 0
+CALL libc_spawn
+LOAD_D -1
+CMP_A_D
+JZ make_child_restore_error
+MOV_B_A
+LOAD_C make_child_status
+CALL libc_wait
+LOAD_B make_args_len
+LOAD32_A_B
+LOAD_B 65536
+MUL_A_B
+LOAD_B 4
+ADD_A_B
+MOV_D_A
+LOAD_B make_args_key
+LOAD_C make_args
+CALL libc_setenv
+LOAD_B make_child_status
+LOAD32_A_B
+RET
+make_child_restore_error:
+LOAD_B make_args_len
+LOAD32_A_B
+LOAD_B 65536
+MUL_A_B
+LOAD_B 4
+ADD_A_B
+MOV_D_A
+LOAD_B make_args_key
+LOAD_C make_args
+CALL libc_setenv
+LOAD_A 1
+RET
+
+; B=source, D=length. Append to bounded child argument buffer.
+make_child_append:
+MOV_A_B
+LOAD_B make_child_source
+STORE32_A_B
+MOV_A_D
+LOAD_B make_child_append_len
+STORE32_A_B
+LOAD_B make_child_args_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_child_args
+ADD_B_D
+MOV_C_B
+LOAD_B make_child_append_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_child_source
+LOAD32_A_B
+MOV_B_A
+MEM_COPY
+LOAD_B make_child_args_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_child_append_len
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+LOAD_B make_child_args_len
+STORE32_A_B
 RET
 
 ; Convert $(NAME) to $NAME; shell performs the bounded environment expansion.
@@ -834,15 +955,23 @@ make_dep_len: .dword 0
 make_rebuild: .dword 0
 make_time_diff: .dword 0
 make_status: .dword 0
+make_child_args_len: .dword 0
+make_child_source: .dword 0
+make_child_append_len: .dword 0
+make_child_status: .dword 0
 make_args: .zero 2048
 make_file: .zero 4096
 make_recipe_out: .zero 512
+make_child_args: .zero 512
 make_target_stat: .zero 56
 make_dep_stat_buf: .zero 56
 make_args_key: .string "ARGS"
 make_shell_command_key: .string "SH_COMMAND"
 make_shell_arg: .string "sh"
 make_shell_path: .string "/bin/sh"
+make_make_path: .string "/bin/make"
+make_child_prefix: .string "make -f "
+make_space: .string " "
 make_default_file: .string "Makefile"
 make_empty: .byte 0
 make_newline: .string "\n"
