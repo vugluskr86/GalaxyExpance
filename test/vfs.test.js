@@ -31,7 +31,7 @@ test("InodeFS creates root directory and serializes correctly",()=>{
   const image=fs.serialize();
   assert.equal(image.length,32*512);
   assert.deepEqual(Array.from(image.slice(0,4)),[0x50,0x43,0x46,0x53]);
-  assert.equal(image[4],1);
+  assert.equal(image[4],2);
 
   const fs2=InodeFS.deserialize(image);
   const root2=fs2.readInode(fs.rootId);
@@ -503,6 +503,30 @@ test("VFSKernel rename overwrites existing target",()=>{
   const remaining=fs.dirLookup(root,"new.txt");
   assert.ok(remaining);
   assert.deepEqual(fs.readData(fs.readInode(remaining)),textEncoder.encode("OLD"));
+});
+
+test("PCFS v2 supports more than 64 inodes and reads compatible v1 images",()=>{
+  const large=new InodeFS(1024),root=large.readInode(large.rootId);
+  for(let index=0;index<100;index++){
+    const id=large.allocateInode(INODE_TYPES.REGULAR,0,0,0o644);
+    large.dirAddEntry(root,`f${index}`,id);
+  }
+  assert.equal(large.readDirEntries(large.readInode(large.rootId)).length,100);
+  assert.ok(new DataView(large.serialize().buffer).getUint32(13,true)>8);
+
+  // A small v2 image has the same implicit inode-table size as v1. Re-tag it
+  // and refresh the v1 checksum to exercise the compatibility reader.
+  const legacy=new InodeFS(32).serialize();
+  legacy[4]=1;
+  let hash=0x811c9dc5;
+  for(let index=13;index<legacy.length;index++){
+    // v1 has no inodeBlocks field; these bytes were reserved and must be zero.
+    if(index<17)legacy[index]=0;
+    hash^=legacy[index];
+    hash=Math.imul(hash,0x01000193);
+  }
+  new DataView(legacy.buffer).setUint32(9,hash>>>0,true);
+  assert.equal(InodeFS.deserialize(legacy).readInode(1).type,INODE_TYPES.DIRECTORY);
 });
 
 test("VFSKernel readdir advances the directory cursor",()=>{

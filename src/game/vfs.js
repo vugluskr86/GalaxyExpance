@@ -10,21 +10,26 @@ import { CPUFault } from "./cpu.js";
 const textEncoder=new TextEncoder(),textDecoder=new TextDecoder();
 
 /* ================================================================
- *  Disk image format: PCFS v1
- *  magic "PCFS" (4 bytes), version u8, totalBlocks u32 LE, checksum u32 LE
+ *  Disk image format: PCFS v2
+ *  magic "PCFS" (4 bytes), version u8, totalBlocks u32 LE, checksum u32 LE,
+ *  inodeBlocks u32 LE. Version 1 remains readable with its implicit table.
  *  checksum = FNV-1a хеш всех bytes после checksum поля.
  *  Blocks: blockSize=512, block 0 — суперблок, block 1+ — inode/data.
  * ================================================================ */
 const PCFS_MAGIC=[0x50,0x43,0x46,0x53]; // "PCFS"
-const PCFS_VERSION=1;
+const PCFS_VERSION=2;
 const BLOCK_SIZE=512;
 const SUPERBLOCK_BYTES=4+1+4+4;
 const INODES_PER_BLOCK=Math.floor(BLOCK_SIZE/64);
 
-function inodeTableBlocks(blockCount){
+function inodeTableBlocksV1(blockCount){
   // The inode table is a fixed region. Growing it after data was allocated
   // would make later inode slots overlap file contents.
   return Math.max(1,Math.min(8,Math.floor((blockCount-1)/4)));
+}
+
+function inodeTableBlocksV2(blockCount){
+  return Math.max(1,Math.min(64,Math.floor((blockCount-1)/4)));
 }
 
 function fnv1a32(bytes,start=0,length=bytes.length){
@@ -118,6 +123,7 @@ export class InodeFS {
     this.buffer=new ArrayBuffer(this.blocks*BLOCK_SIZE);
     this.bytes=new Uint8Array(this.buffer);
     this.view=new DataView(this.buffer);
+    this.inodeBlocks=inodeTableBlocksV2(this.blocks);
     this.nextInode=1;
     this.allocateSuperblock();
     this.rootId=this.allocateInode(INODE_TYPES.DIRECTORY,0,0,0o755);
@@ -133,8 +139,9 @@ export class InodeFS {
       throw new Error("invalid PCFS image: bad size");
     for(let i=0;i<4;i++)if(bytes[i]!==PCFS_MAGIC[i])
       throw new Error("invalid PCFS magic");
-    if(bytes[4]!==PCFS_VERSION)
-      throw new Error(`unsupported PCFS version ${bytes[4]}`);
+    const version=bytes[4];
+    if(version!==1&&version!==PCFS_VERSION)
+      throw new Error(`unsupported PCFS version ${version}`);
     const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.length);
     const totalBlocks=view.getUint32(5,true);
     if(totalBlocks!==Math.floor(bytes.length/BLOCK_SIZE))
@@ -151,9 +158,12 @@ export class InodeFS {
     fs.bytes=new Uint8Array(fs.buffer);
     fs.view=new DataView(fs.buffer);
     fs.bytes.set(bytes);
+    fs.inodeBlocks=version===1?inodeTableBlocksV1(totalBlocks):view.getUint32(13,true);
+    if(fs.inodeBlocks<1||fs.inodeBlocks>=totalBlocks)
+      throw new Error("invalid PCFS image: inode table size");
     // find root inode
     let rootId=0,maxInode=0;
-    const tableBlocks=inodeTableBlocks(totalBlocks);
+    const tableBlocks=fs.inodeBlocks;
     for(let block=1;block<=tableBlocks;block++){
       for(let i=0;i<INODES_PER_BLOCK;i++){
         const at=block*BLOCK_SIZE+i*64;
@@ -175,6 +185,7 @@ export class InodeFS {
     this.bytes[4]=PCFS_VERSION;
     this.view.setUint32(5,this.blocks,true);
     this.view.setUint32(9,0,true);
+    this.view.setUint32(13,this.inodeBlocks,true);
   }
 
   updateSuperblockChecksum(){
@@ -207,7 +218,7 @@ export class InodeFS {
 
   /** Allocate a free inode slot. Returns inode id. */
   allocateInode(type,uid,gid,mode){
-    const maxInode=inodeTableBlocks(this.blocks)*INODES_PER_BLOCK;
+    const maxInode=this.inodeBlocks*INODES_PER_BLOCK;
     for(let id=1;id<=maxInode;id++){
       if(id>=this.nextInode)this.nextInode=id+1;
       const offset=this.inodeOffset(id);
@@ -240,7 +251,7 @@ export class InodeFS {
 
   allocateBlocks(count){
     if(count===0)return 0;
-    const tableEnd=1+inodeTableBlocks(this.blocks);
+    const tableEnd=1+this.inodeBlocks;
     const used=new Set();
     for(let id=1;id<this.nextInode;id++){
       const inode=this.readInode(id);
@@ -260,7 +271,7 @@ export class InodeFS {
   }
 
   storageInfo(){
-    const tableBlocks=inodeTableBlocks(this.blocks),used=new Set();
+    const tableBlocks=this.inodeBlocks,used=new Set();
     for(let id=1;id<this.nextInode;id++){
       const inode=this.readInode(id);
       if(!inode?.dataBlock)continue;

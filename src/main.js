@@ -3,12 +3,13 @@ import { ClusterScene } from "./scenes/cluster.js";
 import { Cluster } from "./gen/cluster.js";
 import { GalaxyScene } from "./scenes/galaxy.js";
 import { SystemScene } from "./scenes/system.js";
-import { Galaxy } from "./gen/galaxy.js";
+import { Galaxy, SECT } from "./gen/galaxy.js";
 import { Panel } from "./ui/panel.js";
 import { attachInput } from "./core/input.js";
 import { settings, warpStep } from "./ui/settings.js";
 import { toggleConsole } from "./game/console.js";
 import { ComputerTerminal } from "./game/terminal.js";
+import { WorldSave, loadWorld } from "./game/savegame.js";
 
 const SCR = 420;
 const scene = document.getElementById("scene");
@@ -37,22 +38,29 @@ new Panel(document.getElementById("panel"), mgr);
 
 /** Поместить игрока в случайную систему со старта. */
 function startInSystem(){
-  const seed = Math.floor(Math.random() * 0xFFFFFFFF);
+  const world=loadWorld();
+  const seed = world?.data.clusterSeed ?? Math.floor(Math.random() * 0xFFFFFFFF);
   const cluster = new Cluster(seed);
-  const galDef = cluster.galaxies[Math.floor(Math.random() * cluster.galaxies.length)];
+  const galaxyIndex=world?.data.galaxyIndex ?? Math.floor(Math.random() * cluster.galaxies.length);
+  const galDef = cluster.galaxies[galaxyIndex] || cluster.galaxies[0];
   const galaxy = new Galaxy(galDef.def);
-  const star = galaxy.beacons[Math.floor(Math.random() * galaxy.beacons.length)];
+  const savedStar=world?.data.location?.star;
+  const sector=savedStar&&galaxy.sectorStars(Math.floor(savedStar.x/SECT),Math.floor(savedStar.y/SECT));
+  const special=[...galaxy.quasars,galaxy.smbhObj()].filter(Boolean);
+  const star=special.find(candidate=>candidate.kind===savedStar?.kind&&candidate.x===savedStar?.x&&candidate.y===savedStar?.y) || galaxy.beacons.find(candidate=>candidate.x===savedStar?.x&&candidate.y===savedStar?.y) || (sector||[]).find(candidate=>candidate.x===savedStar?.x&&candidate.y===savedStar?.y) || galaxy.beacons[Math.floor(Math.random() * galaxy.beacons.length)];
   if (!star) return;
+  const game=world||new WorldSave({clusterSeed:seed,galaxyIndex});
+  game.data.clusterSeed=seed;game.data.galaxyIndex=galaxyIndex;game.restorePlayer();
 
-  const gscene = new GalaxyScene(galDef);
-  const sys = new SystemScene(galaxy, star);
+  const gscene = new GalaxyScene(galDef,game);
+  const sys = new SystemScene(galaxy, star,{world:game});
 
-  mgr.push(new ClusterScene(cluster));
+  mgr.push(new ClusterScene(cluster,game));
   mgr.push(gscene);
   mgr.push(sys);
 
   /* выбрать случайную планету или спутник */
-  if (sys.S && sys.S.planets.length){
+  if (!world && sys.S && sys.S.planets.length){
     const pi = Math.floor(Math.random() * sys.S.planets.length);
     const p = sys.S.planets[pi];
     const useMoon = p.moonList.length > 0 && Math.random() > 0.5;
@@ -62,6 +70,9 @@ function startInSystem(){
     sys.sel = sel;
     sys.playerShip?.fsdTo(sel, sys.orbitAlt);
   }
+  const persist=()=>{const active=[...mgr.stack].reverse().find(scene=>scene instanceof SystemScene);if(active)game.capture(active,game.data.galaxyIndex);game.persist();};
+  window.addEventListener("beforeunload",persist,{once:true});
+  document.addEventListener("visibilitychange",()=>{if(document.hidden)persist();});
 }
 startInSystem();
 
@@ -104,7 +115,7 @@ document.getElementById("btnZout").addEventListener("click", () => mgr.current?.
 
 /* --- клавиатура: пилотирование и ускорение времени --- */
 const FLIGHT_CODES = new Set([
-  "KeyW","KeyA","KeyS","KeyD","KeyX","KeyZ","KeyC","KeyF","KeyH","KeyM","KeyN",
+  "KeyW","KeyA","KeyS","KeyD","KeyX","KeyZ","KeyC","KeyF","KeyH","KeyM","KeyN","Space","Digit1","Digit2","Digit3","Digit4","Digit5",
   "KeyT","KeyG","KeyB","ShiftLeft","ControlLeft"
 ]);
 document.addEventListener("keydown", e => {
@@ -157,6 +168,7 @@ function loop(nowMs){
   document.getElementById("btnZin").classList.toggle("hidden", hideZoom);
   document.getElementById("btnZout").classList.toggle("hidden", hideZoom);
   document.getElementById("btnFit").classList.toggle("hidden", hideZoom);
+  document.querySelector(".nameplate").classList.toggle("hidden", cname === "OutfitScene");
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

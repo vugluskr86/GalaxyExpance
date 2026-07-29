@@ -1,5 +1,6 @@
 import { AssemblyCompiler, Linker } from "./toolchain.js";
 import { CONTEXT_LAYOUT,PROTECTED_EXCEPTIONS,PROTECTED_FEATURE } from "./protected-mode.js";
+import {InodeFS,ProcessFDTable,VFSKernel} from "./vfs.js";
 
 export class MemoryManager {
   constructor(size){this.size=size;this.blocks=[];}
@@ -27,7 +28,7 @@ export class ProcessManager {
     return this.nextPid++;
   }
   spawn(name,binary,{parentPid=0,pgid=null,autoReap=parentPid===0,
-    uid=null,gid=null,euid=null,egid=null,fdTable=null}={}){
+    uid=null,gid=null,euid=null,egid=null,fdTable=null,env=null}={}){
     const executable=this.os.linker.loadExecutable(binary);
     const descriptor=this.os.runtime.assembler.decodeBinary(executable);
     const pid=this.allocatePid();
@@ -44,8 +45,8 @@ export class ProcessManager {
       protected:!!(descriptor.featureFlags&PROTECTED_FEATURE),layout:null,cause:0,faultAddress:0,
       context:null,preemptions:0,ticks:0,startTime:Date.now(),exitCode:null,
       pendingEvents:[],autoReap,
-      fdTable,
-      env:{...(parent?.env||{})}};
+      fdTable:fdTable||(this.os.fs?new ProcessFDTable(this.os.fs,this.os.cwd||this.os.fs.readInode(this.os.fs.rootId)):null),
+      env:{...(parent?.env||{}),...(env||{})}};
     this.processes.push(process);this.schedule();return process;
   }
   exec(pid,name,binary){
@@ -84,6 +85,7 @@ export class ProcessManager {
     if(!process)return;
     process.state="running";
     try{
+      this.os.vfs?.setCredentials(process);
       process.machine ||= this.os.runtime.createMachine(process.binary,this.os.terminal,
         {pid:process.pid,os:this.os,process});
       if(process.context?.pendingIret){
@@ -128,6 +130,7 @@ export class ProcessManager {
     process.cleaned=true;
     this.os.memory.freeBlock(process.memory);
     process.machine?.cpu?._vfs?.closeAll?.();
+    this.os.persistFs();
     for(const child of this.processes.filter(item=>item.ppid===process.pid))
       child.ppid=1;
     const parent=this.processes.find(item=>item.pid===process.ppid);
@@ -177,17 +180,33 @@ export class PixelOS {
     this.computer=computer;this.runtime=runtime;this.terminal=terminal;
     this.startTime=Date.now();
     this.memory=new MemoryManager(runtime.ramBytes);
+    this.fs=null;this.vfs=null;
+    if(runtime.storage?.pcfsImage){
+      try{this.fs=InodeFS.deserialize(runtime.storage.pcfsImage);this.vfs=new VFSKernel(this.fs,{uid:0,gid:0});}
+      catch(error){terminal?.print(`PCFS: ${error.message}`);}
+    }
+    this.cwd=this.fs?.readInode(this.fs.rootId)||null;
     this.processes=new ProcessManager(this);
     this.compiler=new AssemblyCompiler();
     this.linker=new Linker(runtime.assembler);
     this.unsubscribe=terminal?.onLine?.(line=>this.execute(line));
-    terminal?.setPrompt?.("pcos$ ");
-    terminal?.print("Shell готова. help — список команд.");
+    terminal?.setPrompt?.(this.fs?"pcos:/# ":"pcos$ ");
+    terminal?.print(this.fs?"PCOS: установленный PCFS подключён. help — список команд.":"Shell готова. help — список команд.");
   }
   stop(){this.unsubscribe?.();this.terminal?.setPrompt?.("");}
   print(value){this.terminal?.print(value);}
+  get storage(){return this.runtime.storage || this.computer.memory;}
+  persistFs(){if(this.fs&&this.storage)this.storage.pcfsImage=this.fs.serialize();}
+  cwdPath(){return this.fs&&this.cwd?this.vfs._inodePath(this.cwd.id):"/";}
+  updatePrompt(){this.terminal?.setPrompt?.(this.fs?`pcos:${this.cwdPath()}# `:"pcos$ ");}
   file(name){
-    const file=this.computer.memory?.get(name);
+    if(this.fs){
+      const path=String(name||"");
+      const inode=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
+      if(!inode)throw new Error(`файл ${name} не найден`);
+      return {name:path,data:this.fs.readData(inode),size:inode.size};
+    }
+    const file=this.storage?.get(name);
     if(!file)throw new Error(`файл ${name} не найден`);
     return file;
   }
@@ -195,15 +214,30 @@ export class PixelOS {
     const args=line.trim().match(/"[^"]*"|\S+/g)||[],cmd=(args.shift()||"").toLowerCase();
     try{
       if(!cmd)return;
-      if(cmd==="help")this.print("help ls ps mem run kill send recv asm link time clear");
-      else if(cmd==="ls")for(const f of this.computer.memory.list())this.print(`${f.name}  ${f.size} Б`);
+      if(cmd==="help")this.print("help ls cd ps mem run kill send recv asm link time clear");
+      else if(cmd==="ls"){
+        if(this.fs){
+          const path=args[0]||".",directory=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
+          if(!directory)throw new Error(`каталог ${path} не найден`);
+          for(const entry of this.fs.readDirEntries(directory)){
+            const inode=this.fs.readInode(entry.inode);this.print(`${entry.name}${inode?.type===1?"/":""}  ${inode?.size||0} Б`);
+          }
+        }else for(const f of this.storage.list())this.print(`${f.name}  ${f.size} Б`);
+      }
+      else if(cmd==="cd"){
+        if(!this.fs)throw new Error("cd доступна после загрузки установленного PCFS");
+        const path=args[0]||"/",directory=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
+        if(!directory)throw new Error(`каталог ${path} не найден`);
+        if(directory.type!==1)throw new Error(`${path}: не каталог`);
+        this.cwd=directory;this.updatePrompt();
+      }
       else if(cmd==="ps")for(const p of this.processes.processes)this.print(`${p.pid}  ${p.state}  ${p.name}`);
       else if(cmd==="mem")this.print(`RAM: ${this.memory.freeBytes()}/${this.memory.size} Б свободно`);
       else if(cmd==="time")this.print(new Date().toLocaleString("ru-RU"));
       else if(cmd==="clear")this.terminal.clear();
       else if(cmd==="run"){
         const file=this.file(args[0]);if(!file.data)throw new Error("нужен бинарный файл");
-        const p=this.processes.spawn(file.name,file.data);this.print(`PID ${p.pid} запущен`);
+        const p=this.processes.spawn(file.name,file.data,{env:{ARGS:[file.name,...args.slice(1)].join(" "),PATH:"/bin"}});this.print(`PID ${p.pid} запущен`);
       }else if(cmd==="kill")this.print(this.processes.kill(Number(args[0]))?"остановлен":"процесс не найден или уже выполняется");
       else if(cmd==="send"){this.processes.send(0,Number(args[0]),args.slice(1).join(" "));this.print("отправлено");}
       else if(cmd==="recv"){const m=this.processes.receive(Number(args[0]));this.print(m?`${m.from}: ${m.data}`:"очередь пуста");}
@@ -212,15 +246,19 @@ export class PixelOS {
         const out=args[1]||args[0].replace(/\.asm$/i,".obj");
         const userSource=/^\.protected\s*$/mi.test(source.code)
           ? source.code : `.protected\n${source.code}`;
-        const err=this.computer.memory.saveBinary(out,this.compiler.compile(userSource,args[0]));
+        const err=this.storage.saveBinary(out,this.compiler.compile(userSource,args[0]));
         if(err)throw new Error(err);this.print(`создан ${out}`);
       }else if(cmd==="link"){
         const dynamic=args.includes("--dynamic"),clean=args.filter(a=>a!=="--dynamic");
         const out=clean.shift();if(!out)throw new Error("link <out.bin> <a.obj>... [--dynamic]");
         const objects=clean.map(name=>this.file(name).data);
         const binary=this.linker.link(objects,{dynamic});
-        const err=this.computer.memory.saveBinary(out,binary);if(err)throw new Error(err);
+        const err=this.storage.saveBinary(out,binary);if(err)throw new Error(err);
         this.print(`создан ${out} (${dynamic?"dynamic":"static"})`);
+      }else if(this.fs){
+        const file=this.file(`/bin/${cmd}.bin`);
+        const p=this.processes.spawn(cmd,file.data,{env:{ARGS:[cmd,...args].join(" "),PATH:"/bin"}});
+        this.print(`PID ${p.pid} запущен`);
       }else this.print(`команда не найдена: ${cmd}`);
     }catch(error){this.print("error: "+error.message);}
     this.terminal?.renderText?.();

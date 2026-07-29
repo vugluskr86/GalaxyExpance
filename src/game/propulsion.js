@@ -5,7 +5,7 @@
  *  сохранён — Ship и сцены продолжают читать prop.engine.thrust и т.д. */
 
 import { G0, DU_M } from "./units.js";
-import { makeItem, byId, bySlot } from "./items.js";
+import { makeItem, byId, bySlot, SLOTS, itemSlotFor } from "./items.js";
 import { Inventory, starterInventory } from "./inventory.js";
 
 /* Совместимость: прежние экспорты собираются из каталога. */
@@ -23,10 +23,15 @@ export class Propulsion {
       engine: makeItem(engineId),
       tank:   makeItem(tankId),
       scoop:  scoopId ? makeItem(scoopId) : null,
-      computer: makeItem("comp_adv"),
+      shield: null,
+      droid: null,
+      reactor: makeItem("reactor_mk2"),
+      weapon1: null, weapon2: null, weapon3: null, weapon4: null, weapon5: null,
+      computer: makeItem("comp_expand"),
     };
     this.fuel = this.slots.tank.stats.cap;
     this.throttle = 0;
+    this.activeWeaponSlot = "weapon1";
     this.inventory = starterInventory();
     this.cargo = new Inventory([]);       // то, что лежит в трюме корабля
     this.scooping = false;
@@ -55,21 +60,68 @@ export class Propulsion {
     return it ? { id:it.id, name:it.name, mass:it.def.mass, tag:it.tag, ...it.stats } : null;
   }
 
+  get hullStats(){ return this.slots.hull?.stats || {}; }
+  get slotDefs(){
+    const stats=this.hullStats,weapons=Math.max(1,Math.min(5,stats.weaponSlots||1));
+    return SLOTS.filter(slot=>{
+      if(slot.id==="scoop")return stats.scoopSlot!==false;
+      if(slot.id==="shield")return stats.shieldSlot!==false;
+      if(slot.id==="droid")return stats.droidSlot!==false;
+      if(slot.id.startsWith("weapon"))return Number(slot.id.slice(6))<=weapons;
+      return true;
+    });
+  }
+  slotAvailable(slot){ return this.slotDefs.some(def=>def.id===slot); }
+  itemType(slot){ return itemSlotFor(slot); }
+  accepts(item){ return !!item&&this.slotDefs.some(slot=>this.itemType(slot.id)===item.slot); }
+  get weapons(){ return this.slotDefs.filter(slot=>slot.id.startsWith("weapon")).map(slot=>this.slots[slot.id]).filter(Boolean); }
+  get weapon(){ return this.weapons[0] || null; }
+  get activeWeapon(){ return this.slots[this.activeWeaponSlot] || this.weapon; }
+  get shield(){ return this.slots.shield || null; }
+  get droid(){ return this.slots.droid || null; }
+  get reactor(){ return this.slots.reactor || null; }
+  tickWeapons(dt){
+    for(const weapon of this.weapons)weapon.cooldownLeft=Math.max(0,(weapon.cooldownLeft||0)-Math.max(0,dt));
+  }
+  tickSystems(dt){
+    const shield=this.shield,reactor=this.reactor;
+    if(!shield)return;
+    shield.charge ??= shield.stats.capacity;
+    const power=Math.max(0.25,(reactor?.stats.power||0)/80);
+    shield.charge=Math.min(shield.stats.capacity,shield.charge+shield.stats.regen*power*Math.max(0,dt));
+  }
+  fireWeapon(slot=this.activeWeaponSlot){
+    const weapon=this.slots[slot] || this.weapon,stats=weapon?.stats;
+    if(!weapon||!stats||weapon.cooldownLeft>0)return null;
+    if(stats.ammo>0){
+      weapon.ammoLeft ??= stats.ammo;
+      if(weapon.ammoLeft<=0)return null;
+      weapon.ammoLeft--;
+    }
+    weapon.cooldownLeft=stats.cooldown||0;
+    return { ...stats, id:weapon.id, name:weapon.name };
+  }
+
   setEngine(id){ this.install(makeItem(id)); }
   setTank(id){ this.install(makeItem(id)); }
 
   /* ---------- установка и снятие ---------- */
   /** Ставит предмет в его слот; вытесненный модуль уходит в инвентарь. */
-  install(item){
-    if (!item || !this.slots.hasOwnProperty(item.slot)) return null;
-    const old = this.slots[item.slot];
-    this.slots[item.slot] = item;
+  install(item,preferredSlot=null){
+    if(!item)return null;
+    let slot=preferredSlot;
+    if(item.slot==="weapon"){
+      const available=this.slotDefs.filter(def=>def.id.startsWith("weapon")).map(def=>def.id);
+      if(!available.includes(slot))slot=available.find(id=>!this.slots[id])||available[0];
+    }else slot=item.slot;
+    if(!slot||!this.slots.hasOwnProperty(slot)||!this.slotAvailable(slot)||this.itemType(slot)!==item.slot)return null;
+    const old=this.slots[slot];this.slots[slot]=item;
     if (item.slot === "tank") this.fuel = Math.min(this.fuel, item.stats.cap);
     return old;
   }
   /** Снимает модуль из слота (корпус снять нельзя). */
   uninstall(slot){
-    if (slot === "hull") return null;
+    if (slot === "hull" || !this.slotAvailable(slot)) return null;
     const it = this.slots[slot];
     if (!it) return null;
     this.slots[slot] = null;

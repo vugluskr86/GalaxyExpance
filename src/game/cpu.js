@@ -3,6 +3,7 @@
  *  компилируются в компактное внутреннее представление и исполняются в RAM. */
 import { BIOS_ASM } from "./bios.js";
 import { PixelOS } from "./os.js";
+import { installPCFD } from "./installer.js";
 import {
   CONTEXT_FLAGS,CONTEXT_LAYOUT,PROTECTED_EXCEPTIONS,PROTECTED_FEATURE,
   PROTECTED_ISA_VERSION,PROTECTED_OPCODES,IVT_LAYOUT,MEMORY_PERMISSIONS,
@@ -1134,22 +1135,198 @@ export class CPU {
   }
 }
 
+class BiosSetupSession {
+  constructor(runtime,terminal){
+    this.runtime=runtime;this.terminal=terminal;this.closed=false;this.confirmSave=false;
+    const settings=runtime.computer.firmware.settings;
+    this.draft={...settings};
+    const selected=runtime.bootDevices().findIndex(device=>device.id===settings.bootDevice);
+    this.selected=Math.max(0,selected);
+    this.render();
+  }
+  get devices(){ return this.runtime.bootDevices(); }
+  get dirty(){ return this.draft.bootDevice!==this.runtime.computer.firmware.settings.bootDevice ||
+    this.draft.bootFile!==this.runtime.computer.firmware.settings.bootFile; }
+  render(){
+    const terminal=this.terminal;if(!terminal)return;
+    terminal.setMode?.("text");terminal.setColors?.(0x7ee08a,0x000000);terminal.clear?.();
+    const write=line=>terminal.print?.(line);
+    write("PIXEL COSMOS BIOS SETUP");
+    write("NVRAM: " + this.runtime.computer.firmware.biosSource.length + " B firmware");
+    write("CPU: " + (this.runtime.parts.cpu?.name || "не установлен") +
+      " · " + this.runtime.threads + " поток(а)");
+    write("RAM: " + (this.runtime.parts.ram?.name || "не установлена") +
+      " · " + this.runtime.ramBytes/1024 + " КБ");
+    write("СЛОТЫ:");
+    for(const slot of this.runtime.computer.slotDefs)
+      write(`  ${slot.name}: ${this.runtime.parts[slot.id]?.name || "пусто"}`);
+    write("");write("ЗАГРУЗОЧНЫЙ НОСИТЕЛЬ:");
+    if(!this.devices.length)write("  Нет установленного загрузочного носителя");
+    this.devices.forEach((device,index)=>write(`${index===this.selected?">":" "} ${device.name}`));
+    if(this.confirmSave){
+      write("");write("Сохранить изменения в NVRAM? Enter/Y — да, Esc/N — нет");
+    }else{
+      write("");write("↑/↓ — выбрать · Enter — назначить · Esc — выйти");
+    }
+  }
+  handleKey(key){
+    if(this.closed)return true;
+    const code=key?.code || key?.key;
+    if(this.confirmSave){
+      if(code==="Enter" || key?.key?.toLowerCase()==="y")return this.finish(true);
+      if(code==="Escape" || key?.key?.toLowerCase()==="n")return this.finish(false);
+      return true;
+    }
+    if(code==="ArrowUp" && this.devices.length){
+      this.selected=(this.selected+this.devices.length-1)%this.devices.length;this.render();return true;
+    }
+    if(code==="ArrowDown" && this.devices.length){
+      this.selected=(this.selected+1)%this.devices.length;this.render();return true;
+    }
+    if(code==="Enter"){
+      const device=this.devices[this.selected];if(device)this.draft.bootDevice=device.id;
+      this.render();return true;
+    }
+    if(code==="Escape"){
+      this.confirmSave=true;this.render();
+      return true;
+    }
+    return true;
+  }
+  finish(save){
+    this.closed=true;
+    if(save)this.runtime.computer.firmware.saveSettings(this.draft);
+    this.runtime.biosSession=null;
+    this.runtime.lastBoot=this.runtime.bootFromFirmware(this.terminal);
+    return true;
+  }
+}
+
+/** Interactive front-end for installer.bin. Raw PCFD copying remains an
+ * atomic media operation; this session owns only the user's choices. */
+class InstallerSession {
+  constructor(runtime,terminal,source){
+    this.runtime=runtime;this.terminal=terminal;this.source=source;this.state="target";
+    this.targets=runtime.bootDevices().filter(device=>device.storage!==source.storage);
+    this.selected=0;this.rootPassword="";this.guest=true;this.error="";this.result=null;
+    this.render();
+  }
+  render(){
+    const terminal=this.terminal;if(!terminal)return;
+    terminal.setMode?.("text");terminal.setColors?.(0x7ee08a,0);terminal.clear?.();
+    const write=value=>terminal.print?.(value);
+    write("PCOS INSTALLER 1.0");
+    write(`RAM ${this.runtime.ramBytes/1024} КБ · package ${Math.round((this.source.storage.totalBytes?.()||0)/1024)} КБ`);
+    if(this.state==="target"){
+      write("");write("Выберите target DRIVE (↑/↓, Enter):");
+      if(!this.targets.length)write("  Нет другого установленного накопителя");
+      this.targets.forEach((target,index)=>write(`${index===this.selected?">":" "} ${target.name} · ${target.storage.ramKb} КБ`));
+    }else if(this.state==="root"){
+      write("Введите пароль root (Enter для шаблонного):");write("*".repeat(this.rootPassword.length));
+    }else if(this.state==="guest"){
+      write("Создать учётную запись guest? Y/n");
+    }else if(this.state==="confirm"){
+      write(`Форматировать ${this.targets[this.selected]?.name}? Все данные будут заменены.`);
+      write("Enter — установить, Esc — отмена");
+    }else if(this.state==="done"){
+      write("");write(`Установка завершена: ${this.result.files} файлов, ${this.result.bytes} Б.`);
+      write("PCFS проверен. BIOS настроен на kernel.bin. Esc — перезагрузка.");
+    }else if(this.state==="error"){
+      write("ОШИБКА УСТАНОВКИ: "+this.error);write("Esc — назад к выбору диска");
+    }
+  }
+  handleKey(key){
+    const code=key?.code||key?.key;
+    if(this.state==="target"){
+      if(code==="ArrowUp"&&this.targets.length)this.selected=(this.selected+this.targets.length-1)%this.targets.length;
+      else if(code==="ArrowDown"&&this.targets.length)this.selected=(this.selected+1)%this.targets.length;
+      else if(code==="Enter"&&this.targets.length)this.state="root";
+      this.render();return true;
+    }
+    if(this.state==="root"){
+      if(code==="Enter")this.state="guest";
+      else if(code==="Backspace")this.rootPassword=this.rootPassword.slice(0,-1);
+      else if(key?.key?.length===1&&this.rootPassword.length<64)this.rootPassword+=key.key;
+      this.render();return true;
+    }
+    if(this.state==="guest"){
+      if(code==="KeyN"||key?.key==="n"||key?.key==="N")this.guest=false;
+      if(code==="Enter"||code==="KeyY"||code==="KeyN"||key?.key?.toLowerCase()==="y"||key?.key?.toLowerCase()==="n")this.state="confirm";
+      this.render();return true;
+    }
+    if(this.state==="confirm"){
+      if(code==="Escape"){this.state="target";this.render();return true;}
+      if(code!=="Enter")return true;
+      try{this.result=this.runtime.installFromMedia(this.source,this.targets[this.selected],{rootPassword:this.rootPassword,guest:this.guest});this.state="done";}
+      catch(error){this.error=error.message;this.state="error";}
+      this.render();return true;
+    }
+    if(this.state==="done"&&code==="Escape"){
+      this.runtime.installerSession=null;this.runtime.lastBoot=this.runtime.bootFromFirmware(this.terminal);return true;
+    }
+    if(this.state==="error"&&code==="Escape"){this.state="target";this.render();return true;}
+    return true;
+  }
+}
+
 export class ComputerRuntime {
-  constructor(computer){ this.computer=computer; this.active=0; this.assembler=new Assembler(); }
+  constructor(computer){
+    this.computer=computer;this.active=0;this.assembler=new Assembler();
+    this.activeStorage=null;this.biosSession=null;this.installerSession=null;this._terminal=null;this._unsubscribeKey=null;
+  }
   get parts(){ return this.computer.slots; }
   get threads(){ return this.parts.cpu?.stats.threads || 0; }
   get ramBytes(){ return (this.parts.ram?.stats.capacityKb || 0)*1024; }
   get outputMode(){ return this.parts.gpu?.stats.output || null; }
+  get storage(){ return this.activeStorage || this.computer.memory; }
+  bootDevices(){
+    return this.computer.slotDefs.flatMap(slot=>{
+      const item=this.parts[slot.id];
+      return item?.storage ? [{id:slot.id,name:`${slot.name}: ${item.name}`,item,storage:item.storage}] : [];
+    });
+  }
+  selectedBootDevice(){
+    const devices=this.bootDevices(),selected=this.computer.firmware?.settings?.bootDevice;
+    return devices.find(device=>device.id===selected) ||
+      devices.find(device=>device.storage.installationMedia) || devices[0] || null;
+  }
+  attachTerminal(terminal){
+    if(!terminal || terminal===this._terminal)return;
+    this._unsubscribeKey?.();this._terminal=terminal;
+    this._unsubscribeKey=terminal.onKey?.(key=>{
+      if(this.biosSession)return this.biosSession.handleKey(key);
+      if(this.installerSession)return this.installerSession.handleKey(key);
+      if(key.code==="Delete"){this.openBiosSetup(terminal);return true;}
+      return false;
+    }) || null;
+  }
+  openBiosSetup(terminal=null){
+    this.attachTerminal(terminal);this.os?.stop?.();
+    this.biosSession=new BiosSetupSession(this,terminal);
+    return this.biosSession;
+  }
+  installFromMedia(source,target,{rootPassword="",guest=true}={}){
+    if(this.ramBytes<8192)throw new Error("Installer: требуется не менее 8 КБ RAM");
+    if(!source?.storage?.installerPackage)throw new Error("Installer: PCFD package не найден");
+    if(!target?.storage||target.storage===source.storage)throw new Error("Installer: выберите другой target DRIVE");
+    const result=installPCFD(source.storage.installerPackage,target.storage,{rootPassword,guest});
+    this.computer.firmware.saveSettings({bootDevice:target.id,bootFile:"kernel.bin"});
+    this.activeStorage=target.storage;
+    return result;
+  }
+  runUnattendedInstall(source,target){return this.installFromMedia(source,target,{rootPassword:"root",guest:true});}
   systemServices(context=null){
     const label=item=>item ? `${item.name} [${item.tag}]` : "не установлен";
     return {
       outputMode:this.outputMode,
+      vfs:context?.os?.vfs||null,
       time:()=>new Date().toLocaleString("ru-RU"),
       hardware:()=>[
         `CPU: ${label(this.parts.cpu)} · ${this.threads} поток(а)`,
         `RAM: ${label(this.parts.ram)} · ${this.ramBytes/1024} КБ`,
         `GPU: ${label(this.parts.gpu)} · режим ${this.outputMode || "нет"}`,
-        `DRIVE: ${label(this.parts.drive)} · ${this.parts.drive?.stats.capacityKb || 0} КБ`
+        `DRIVE: ${label(this.parts.drive)} · ${this.parts.drive?.stats.capacityKb || 0} КБ`,
+        `NVRAM: BIOS ${this.computer.firmware?.biosSource.length || 0} Б · boot ${this.selectedBootDevice()?.name || "не выбран"}`
       ],
       slots:()=>this.computer.slotDefs.map(slot=>
         `${slot.name}: ${this.computer.slots[slot.id]?.name || "пусто"}`),
@@ -1182,7 +1359,7 @@ export class ComputerRuntime {
         if(!process||!/^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(key))return false;
         process.env||=Object.create(null);
         if(Object.keys(process.env).length>=32&&!Object.hasOwn(process.env,key))return false;
-        process.env[key]=String(value).slice(0,255);return true;
+        process.env[key]=String(value).slice(0,ABI_LIMITS.ENV_VALUE_MAX-1);return true;
       },
       envGet:key=>context?.process?.env?.[key],
       envUnset:key=>{
@@ -1195,16 +1372,16 @@ export class ComputerRuntime {
         .map(([key,value])=>`${key}=${value}`).join("\n")),
       ipcSend:(to,data)=>context?.os?.processes.send(context.pid,to,data),
       ipcReceive:()=>context?.os?.processes.receive(context.pid),
-      fsList:()=>textEncoder.encode(this.computer.memory.list().map(f=>f.name).join("\n")),
+      fsList:()=>textEncoder.encode(this.storage?.list().map(f=>f.name).join("\n") || ""),
       fsRead:name=>{
-        const file=this.computer.memory.get(name);
+        const file=this.storage?.get(name);
         return file?.data ? new Uint8Array(file.data) :
           file?.code!==undefined ? textEncoder.encode(file.code) : null;
       },
-      fsWrite:(name,data)=>this.computer.memory.saveBinary(name,data),
-      fsDelete:name=>{const exists=!!this.computer.memory.get(name);if(exists)this.computer.memory.delete(name);return exists;},
+      fsWrite:(name,data)=>this.storage ? this.storage.saveBinary(name,data) : "DRIVE не установлен",
+      fsDelete:name=>{const exists=!!this.storage?.get(name);if(exists)this.storage.delete(name);return exists;},
       procExec:(name,credentials=null,spawnOptions=null)=>{
-        const file=this.computer.memory.get(name);if(!file?.data)return -1;
+        const file=this.storage?.get(name);if(!file?.data)return -1;
         if(credentials&&context?.process?.euid!==0)return -1;
         const inheritedFDs=context?.process?.machine?.cpu?._vfs?.clone?.()||null;
         if(inheritedFDs&&spawnOptions){
@@ -1218,7 +1395,7 @@ export class ComputerRuntime {
             fdTable:inheritedFDs,...(credentials||{})}).pid||-1;
       },
       procReplace:name=>{
-        const file=this.computer.memory.get(name);if(!file?.data||!context?.process)return false;
+        const file=this.storage?.get(name);if(!file?.data||!context?.process)return false;
         context.os.processes.exec(context.pid,name,file.data);return true;
       },
       procExit:status=>context?.os?.processes.exit(context.pid,status),
@@ -1374,15 +1551,30 @@ export class ComputerRuntime {
     }
     return machine;
   }
-  boot(terminal=null){
+  bootFromFirmware(terminal=null){
     this.os?.stop?.();
-    const bios=this.runBinary(this.assembler.assembleBinary(BIOS_ASM),terminal);
+    const device=this.selectedBootDevice();
+    this.activeStorage=device?.storage || null;
+    if(!this.storage)throw new Error("BIOS: загрузочный носитель не установлен");
+    const source=this.computer.firmware?.biosSource || BIOS_ASM;
+    const bios=this.runBinary(this.assembler.assembleBinary(source),terminal);
     if (!bios.bootFile) return { bios, os:null };
-    const file=this.computer.memory?.get(bios.bootFile);
-    if (!file) throw new Error(`BIOS: загрузочный файл «${bios.bootFile}» не найден на DRIVE`);
+    const bootFile=this.computer.firmware?.settings?.bootFile || bios.bootFile;
+    const file=this.storage.get(bootFile);
+    if (!file) throw new Error(`BIOS: загрузочный файл «${bootFile}» не найден на ${device?.name || "DRIVE"}`);
     if(!file.data)throw new Error(`BIOS: «${bios.bootFile}» не является бинарным файлом`);
     const os=this.runBinary(file.data,terminal);
+    if(this.storage.installationMedia){
+      this.installerSession=new InstallerSession(this,terminal,device);
+      return {bios,installer:this.installerSession,file:file.name};
+    }
     this.os=new PixelOS(this.computer,this,terminal);
     return { bios, os, kernel:this.os, file:file.name };
+  }
+  boot(terminal=null){
+    this.attachTerminal(terminal);
+    const pendingDelete=terminal?.keys?.findIndex?.(key=>key.code==="Delete") ?? -1;
+    if(pendingDelete>=0){terminal.keys.splice(pendingDelete,1);return {bios:null,os:null,setup:this.openBiosSetup(terminal)};}
+    return this.bootFromFirmware(terminal);
   }
 }

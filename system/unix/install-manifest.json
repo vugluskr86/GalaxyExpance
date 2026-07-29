@@ -9,7 +9,10 @@
     {"path": "/sbin", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/usr", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/usr/src", "mode": "0755", "uid": 0, "gid": 0},
-    {"path": "/usr/src/pcos", "mode": "0755", "uid": 0, "gid": 0}
+    {"path": "/usr/src/pcos", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr/src/pcos/system", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr/src/pcos/system/unix", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr/src/pcos/system/unix/build", "mode": "0755", "uid": 0, "gid": 0}
   ],
   "files": [
     {"source": "etc/passwd", "path": "/etc/passwd", "mode": "0644", "uid": 0, "gid": 0},
@@ -36,8 +39,11 @@
     {"source": "build/user.bin", "path": "/bin/user.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "build/find.bin", "path": "/bin/find.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "build/top.bin", "path": "/bin/top.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/ps.bin", "path": "/bin/ps.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "build/env.bin", "path": "/bin/env.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "build/make.bin", "path": "/bin/make.bin", "mode": "0755", "uid": 0, "gid": 0},
-    {"source": "Makefile", "path": "/usr/src/pcos/Makefile", "mode": "0644", "uid": 0, "gid": 0}
+    {"source": "build/assembler.bin", "path": "/bin/assembler.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/linker.bin", "path": "/bin/linker.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "Makefile", "path": "/usr/src/pcos/system/unix/Makefile", "mode": "0644", "uid": 0, "gid": 0}
   ]
 }

@@ -1,0 +1,992 @@
+{
+  "format": "PCFD",
+  "version": 1,
+  "entries": [
+    {
+      "path": "/.pcfd-directories.json",
+      "size": 645,
+      "checksum": 981285646,
+      "uid": 0,
+      "gid": 0,
+      "mode": 384
+    },
+    {
+      "path": "/bin/assembler.bin",
+      "size": 12835,
+      "checksum": 78806801,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/cat.bin",
+      "size": 13082,
+      "checksum": 2553731425,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/chgrp.bin",
+      "size": 13082,
+      "checksum": 2947865794,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/chown.bin",
+      "size": 13082,
+      "checksum": 2491603935,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/cp.bin",
+      "size": 13082,
+      "checksum": 684785459,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/env.bin",
+      "size": 5997,
+      "checksum": 2191086054,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/find.bin",
+      "size": 13082,
+      "checksum": 1474775690,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/grep.bin",
+      "size": 13082,
+      "checksum": 1062552723,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/link.bin",
+      "size": 13082,
+      "checksum": 2130067718,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/linker.bin",
+      "size": 11244,
+      "checksum": 1190398037,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/login.bin",
+      "size": 8692,
+      "checksum": 1515638725,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/ls.bin",
+      "size": 13082,
+      "checksum": 112473345,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/make.bin",
+      "size": 10549,
+      "checksum": 3735759982,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/mkdir.bin",
+      "size": 13082,
+      "checksum": 2356486483,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/mv.bin",
+      "size": 13082,
+      "checksum": 1258889767,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/passwd.bin",
+      "size": 8247,
+      "checksum": 3120242329,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/ps.bin",
+      "size": 13361,
+      "checksum": 1241007534,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/rm.bin",
+      "size": 13082,
+      "checksum": 1833570922,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/sh.bin",
+      "size": 11650,
+      "checksum": 4129759097,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/top.bin",
+      "size": 6045,
+      "checksum": 2726022087,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/user.bin",
+      "size": 13082,
+      "checksum": 95984858,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/etc/fstab",
+      "size": 62,
+      "checksum": 2415913976,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/etc/group",
+      "size": 28,
+      "checksum": 2913888272,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/etc/init.conf",
+      "size": 169,
+      "checksum": 1081887583,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/etc/motd",
+      "size": 26,
+      "checksum": 1851349545,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/etc/passwd",
+      "size": 73,
+      "checksum": 739806895,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/etc/shadow",
+      "size": 123,
+      "checksum": 23732359,
+      "uid": 0,
+      "gid": 0,
+      "mode": 384
+    },
+    {
+      "path": "/install.conf",
+      "size": 67,
+      "checksum": 124666900,
+      "uid": 0,
+      "gid": 0,
+      "mode": 384
+    },
+    {
+      "path": "/kernel.bin",
+      "size": 4150,
+      "checksum": 1344402069,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/sbin/init.bin",
+      "size": 8488,
+      "checksum": 1209750414,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/sbin/logger.bin",
+      "size": 4068,
+      "checksum": 1635189770,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/usr/src/pcos/system/assembler.asm",
+      "size": 31443,
+      "checksum": 787159565,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/linker.asm",
+      "size": 33042,
+      "checksum": 1329661985,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/assembler.asm",
+      "size": 33000,
+      "checksum": 506889846,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/cat.asm",
+      "size": 65,
+      "checksum": 349834807,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/chgrp.asm",
+      "size": 69,
+      "checksum": 1585081687,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/chown.asm",
+      "size": 69,
+      "checksum": 4049637939,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/cp.asm",
+      "size": 63,
+      "checksum": 394485849,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/env.asm",
+      "size": 4568,
+      "checksum": 3906814817,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/find.asm",
+      "size": 67,
+      "checksum": 1521741201,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/grep.asm",
+      "size": 67,
+      "checksum": 1473928807,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/installer.asm",
+      "size": 238,
+      "checksum": 3993380363,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/link.asm",
+      "size": 67,
+      "checksum": 1283015791,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/linker.asm",
+      "size": 34800,
+      "checksum": 1908344538,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/login.asm",
+      "size": 4568,
+      "checksum": 4214302538,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/ls.asm",
+      "size": 63,
+      "checksum": 1778495853,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/make.asm",
+      "size": 17347,
+      "checksum": 1007666780,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/mkdir.asm",
+      "size": 69,
+      "checksum": 1084248547,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/mv.asm",
+      "size": 63,
+      "checksum": 4053805885,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/passwd.asm",
+      "size": 3432,
+      "checksum": 2431339415,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/ps.asm",
+      "size": 712,
+      "checksum": 2118898240,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/rm.asm",
+      "size": 63,
+      "checksum": 3904455521,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/sh.asm",
+      "size": 15675,
+      "checksum": 1607036873,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/top.asm",
+      "size": 4070,
+      "checksum": 4030762278,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/user.asm",
+      "size": 67,
+      "checksum": 1240554689,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/assembler.bin",
+      "size": 12835,
+      "checksum": 78806801,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/cat.bin",
+      "size": 13082,
+      "checksum": 2553731425,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/chgrp.bin",
+      "size": 13082,
+      "checksum": 2947865794,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/chown.bin",
+      "size": 13082,
+      "checksum": 2491603935,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/cp.bin",
+      "size": 13082,
+      "checksum": 684785459,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/env.bin",
+      "size": 5997,
+      "checksum": 2191086054,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/find.bin",
+      "size": 13082,
+      "checksum": 1474775690,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/grep.bin",
+      "size": 13082,
+      "checksum": 1062552723,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/hello-libc-selfhost.bin",
+      "size": 3957,
+      "checksum": 697498721,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/hello-libc.bin",
+      "size": 4097,
+      "checksum": 3193622042,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/init.bin",
+      "size": 8488,
+      "checksum": 1209750414,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/installer.bin",
+      "size": 78,
+      "checksum": 3961992453,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/kernel.bin",
+      "size": 4150,
+      "checksum": 1344402069,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/link.bin",
+      "size": 13082,
+      "checksum": 2130067718,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/linker.bin",
+      "size": 11244,
+      "checksum": 1190398037,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/logger.bin",
+      "size": 4068,
+      "checksum": 1635189770,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/login.bin",
+      "size": 8692,
+      "checksum": 1515638725,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/ls.bin",
+      "size": 13082,
+      "checksum": 112473345,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/make.bin",
+      "size": 10549,
+      "checksum": 3735759982,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/mkdir.bin",
+      "size": 13082,
+      "checksum": 2356486483,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/mv.bin",
+      "size": 13082,
+      "checksum": 1258889767,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/passwd.bin",
+      "size": 8247,
+      "checksum": 3120242329,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/ps.bin",
+      "size": 13361,
+      "checksum": 1241007534,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/rm.bin",
+      "size": 13082,
+      "checksum": 1833570922,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/sh.bin",
+      "size": 11650,
+      "checksum": 4129759097,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/top.bin",
+      "size": 6045,
+      "checksum": 2726022087,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/user.bin",
+      "size": 13082,
+      "checksum": 95984858,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/etc/fstab",
+      "size": 62,
+      "checksum": 2415913976,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/etc/group",
+      "size": 28,
+      "checksum": 2913888272,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/etc/init.conf",
+      "size": 169,
+      "checksum": 1081887583,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/etc/motd",
+      "size": 26,
+      "checksum": 1851349545,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/etc/passwd",
+      "size": 73,
+      "checksum": 739806895,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/etc/shadow",
+      "size": 123,
+      "checksum": 23732359,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/FILESYSTEM.md",
+      "size": 3264,
+      "checksum": 2588064150,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/abi.inc",
+      "size": 6213,
+      "checksum": 3546585527,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/errno.inc",
+      "size": 535,
+      "checksum": 2892068954,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/inode.inc",
+      "size": 126,
+      "checksum": 3380550830,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/limits.inc",
+      "size": 212,
+      "checksum": 3428959770,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/open_flags.inc",
+      "size": 174,
+      "checksum": 975876806,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/process.inc",
+      "size": 177,
+      "checksum": 2519537461,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/protected.inc",
+      "size": 836,
+      "checksum": 1208114346,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/seek.inc",
+      "size": 128,
+      "checksum": 3897004233,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/structs.inc",
+      "size": 2584,
+      "checksum": 1330512947,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/include/syscall.inc",
+      "size": 1728,
+      "checksum": 2029252292,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/init/init.asm",
+      "size": 11577,
+      "checksum": 1180641185,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/install-manifest.json",
+      "size": 3687,
+      "checksum": 2038735950,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/devices.asm",
+      "size": 201,
+      "checksum": 1285851920,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/entry.asm",
+      "size": 506,
+      "checksum": 2544263279,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/memory.asm",
+      "size": 238,
+      "checksum": 1627688884,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/permissions.asm",
+      "size": 2978,
+      "checksum": 2120950527,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/process.asm",
+      "size": 5957,
+      "checksum": 521629272,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/scheduler.asm",
+      "size": 256,
+      "checksum": 1119025390,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/syscall.asm",
+      "size": 2393,
+      "checksum": 541806927,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/vfs.asm",
+      "size": 147,
+      "checksum": 1327211182,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/crt0.asm",
+      "size": 226,
+      "checksum": 2402891599,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/getopt.asm",
+      "size": 1150,
+      "checksum": 1649778609,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/io.asm",
+      "size": 2141,
+      "checksum": 3949367767,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/path.asm",
+      "size": 1424,
+      "checksum": 2642575123,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/README.md",
+      "size": 743,
+      "checksum": 2033516228,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/shell-parser.asm",
+      "size": 5635,
+      "checksum": 748850725,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/stdlib.asm",
+      "size": 2298,
+      "checksum": 1461333506,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/string.asm",
+      "size": 2535,
+      "checksum": 1333057914,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/syscall.asm",
+      "size": 2700,
+      "checksum": 2304108485,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/userdb.asm",
+      "size": 7873,
+      "checksum": 4263775561,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/lib/utilities.asm",
+      "size": 21934,
+      "checksum": 1793483891,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/Makefile",
+      "size": 9324,
+      "checksum": 1096507007,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/sbin/logger.asm",
+      "size": 166,
+      "checksum": 4018409357,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    }
+  ],
+  "requiredBytes": 820179,
+  "bootFile": "kernel.bin"
+}

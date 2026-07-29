@@ -1,5 +1,6 @@
-import { DEFAULT_OS_ASM } from "./bios.js";
+import { BIOS_ASM, DEFAULT_OS_ASM } from "./bios.js";
 import { Assembler } from "./cpu.js";
+import { DEMOSCENE_ASM } from "./demoscene.js";
 
 /** Бортовой компьютер корабля: хранилище программ с ограничением по RAM (КБ).
  *  Размер программы считается как длина кода в байтах (UTF-8). */
@@ -25,6 +26,8 @@ PRINT_V V0
 HALT`));
     this.programs.push(this._encode("os.asm", DEFAULT_OS_ASM));
     this.programs.push(this._binary("os.bin",new Assembler().assembleBinary(DEFAULT_OS_ASM)));
+    this.programs.push(this._encode("demoscene.asm", DEMOSCENE_ASM));
+    this.programs.push(this._binary("demoscene.bin",new Assembler().assembleBinary(DEMOSCENE_ASM)));
   }
   _encode(name, code){
     const size = enc.encode(code).length;
@@ -73,5 +76,26 @@ HALT`));
   delete(name){
     const idx = this.programs.findIndex(p => p.name === name);
     if (idx >= 0) this.programs.splice(idx, 1);
+  }
+}
+
+/**
+ * Энергонезависимая память корпуса. Она намеренно отделена от носителей:
+ * смена диска не сбрасывает порядок загрузки и не заменяет прошивку.
+ */
+export class ComputerFirmware {
+  constructor({biosSource=BIOS_ASM,bootDevice=null,bootFile="os.bin"}={}){
+    this.biosSource=String(biosSource);
+    this.settings={bootDevice,bootFile};
+  }
+  saveSettings(settings){
+    this.settings={
+      bootDevice:settings?.bootDevice ?? null,
+      bootFile:String(settings?.bootFile || "os.bin")
+    };
+  }
+  replaceBios(source){
+    if(typeof source!=="string" || !source.trim())throw new Error("BIOS не может быть пустым");
+    this.biosSource=source;
   }
 }

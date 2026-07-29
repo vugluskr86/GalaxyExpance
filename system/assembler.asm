@@ -326,6 +326,7 @@ current_opcode: .dword 0
 operand_index: .dword 0
 relocation_cursor: .dword 393216
 relocation_count: .dword 0
+relocation_symbol_section: .dword 0
 relocation_table: .equ 393216
 relocation_table_end: .equ 425984
 data_image: .equ 425984
@@ -751,7 +752,7 @@ LOAD_B directive_mode
 LOAD32_A_B
 LOAD_D 1
 CMP_A_D
-JZ duplicate_import
+JZ directive_import_existing
 ; export flag = 2 (импортированный символ экспортировать нельзя).
 MOV_B_C
 LOAD_D 4
@@ -762,6 +763,15 @@ LOAD_D 1
 CMP_A_D
 JZ export_set_flag
 JMP export_imported
+
+; Repeated imports are idempotent in a flattened translation unit. If a
+; previous module has already defined the symbol, the import is satisfied
+; locally; if it is still UND, one import record is sufficient.
+directive_import_existing:
+LOAD_A 0
+LOAD_B pending_label
+STORE32_A_B
+JMP symbol_pass_next
 
 export_set_flag:
 MOV_B_C
@@ -1309,6 +1319,8 @@ MOV_B_C
 LOAD_D 4
 ADD_B_D
 LOAD32_A_B
+LOAD_B relocation_symbol_section
+STORE32_A_B
 LOAD_D 3
 CMP_A_D
 JZ encode_number_payload
@@ -1732,6 +1744,26 @@ LOAD_D 29
 CMP_A_D
 JZ relocation_text
 LOAD_D 30
+CMP_A_D
+JZ relocation_text
+LOAD_D 0
+CMP_A_D
+JZ relocation_load
+LOAD_D 1
+CMP_A_D
+JZ relocation_load
+LOAD_D 2
+CMP_A_D
+JZ relocation_load
+LOAD_D 3
+CMP_A_D
+JZ relocation_load
+LOAD_A 2
+JMP relocation_type_ready
+relocation_load:
+LOAD_B relocation_symbol_section
+LOAD32_A_B
+LOAD_D 1
 CMP_A_D
 JZ relocation_text
 LOAD_A 2

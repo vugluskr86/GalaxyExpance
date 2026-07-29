@@ -23,7 +23,7 @@ export class ComputerTerminal {
     this.fontSize=9; this.lineHeight=11;
     this.col=0; this.row=0; this.lines=[""];
     this.keys=[]; this.mouse={x:0,y:0,buttons:0,wheel:0};
-    this.inputLine="";this.prompt="";this.lineListeners=new Set();this.lineQueue=[];
+    this.inputLine="";this.prompt="";this.lineListeners=new Set();this.keyListeners=new Set();this.lineQueue=[];
     this.recording=false; this.frameCommands=[]; this.frames=[]; this.animationTimer=null;
     this.clear();
     if (canvas) this.bind();
@@ -31,7 +31,11 @@ export class ComputerTerminal {
   bind(){
     const c=this.canvas;
     c.addEventListener("keydown",e=>{
-      this.keys.push({key:e.key,code:e.code,keyCode:e.keyCode || e.key.charCodeAt(0) || 0});
+      const key={key:e.key,code:e.code,keyCode:e.keyCode || e.key.charCodeAt(0) || 0};
+      if([...this.keyListeners].some(listener=>listener(key))){
+        e.preventDefault();e.stopPropagation();return;
+      }
+      this.keys.push(key);
       if(e.ctrlKey&&e.code==="KeyC"){
         this.inputLine="";this.lines.push("");this.lineQueue.push("\x03");
         for(const fn of this.lineListeners)fn("\x03");
@@ -113,6 +117,7 @@ export class ComputerTerminal {
     this.ctx.beginPath(); this.ctx.arc(x,y,r,0,Math.PI*2); this.ctx[fill?"fill":"stroke"]();
   }
   readKey(){ return this.keys.shift() || null; }
+  onKey(listener){ this.keyListeners.add(listener);return()=>this.keyListeners.delete(listener); }
   readWheel(){ const v=this.mouse.wheel; this.mouse.wheel=0; return v; }
   setPrompt(prompt){this.prompt=String(prompt);this.renderText();}
   onLine(listener){this.lineListeners.add(listener);return()=>this.lineListeners.delete(listener);}

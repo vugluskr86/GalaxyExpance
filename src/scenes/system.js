@@ -1,5 +1,5 @@
 import { buildSystem, stepSystem, lightAt, LETTERS, ROM } from "../gen/system.js";
-import { renderPlanetBody } from "../gen/planet.js";
+import { renderPlanetLod } from "../gen/planet.js";
 import { renderStar } from "../gen/star.js";
 import { renderBH } from "../gen/blackhole.js";
 import { CLS } from "../gen/starclass.js";
@@ -21,6 +21,7 @@ import { timeToApo, timeToPeri, timeToNu, pointAt } from "../game/physics.js";
 import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 import { execCommand } from "../game/console.js";
+import { WeaponProjectile } from "../game/weapons.js";
 /** Максимальный зум: планета на весь экран (как на уровне «Тело»). */
 const ZOOM_MAX = 12;
 /** Минимальный зум: вся система видна целиком. */
@@ -31,7 +32,7 @@ const ZOOM_DEFAULT = 0.3;
 const ZOOM_WHEEL_STEP = 1.18;
 
 export class SystemScene {
-  constructor(galaxy, star){
+  constructor(galaxy, star, options={}){
     this.g = galaxy;
     this.star = star;
     this.crumb = "Система";
@@ -43,15 +44,26 @@ export class SystemScene {
     this.nebCvs = this.S.neb ? bakeSystemNebula(this.S.neb) : null;
     /* корабли */
     this.playerShip = this.S.bhOnly ? null : new Ship(this, "#ffd166");
-    this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1);
+    this.agentConfig=options.agentConfig||{};
+    this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1,this.agentConfig);
     this.followShip = false;
     this.zoom = ZOOM_DEFAULT;
     this.cargoField = [];        // контейнеры, брошенные в космос
     this.scoopMsg = "";
     this.nodeStep = 10;          // шаг ручки манёвра, м/с
     this._handles = [];          // экранные ручки узла (KSP-стиль)
+    this.projectiles = [];
+    this.combatMsg = "";
+    this.lockedNpc = null;
+    this.playerOrder = null;
+    this.world = options.world || null;
+    this.world?.restore(this);
   }
   fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = ZOOM_DEFAULT; }
+  configureAgents(config={}){
+    this.agentConfig=config;
+    for(const npc of this.npcs)npc.agent.configure(config[npc.agent.profileId]||config.default||{});
+  }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
   ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
   zoomBy(f){ this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom*f)); }
@@ -67,6 +79,11 @@ export class SystemScene {
   onKey(code, down){
     const sh = this.playerShip;
     if (!sh) return;
+    if(code === "Space"){ if(down)this.fireWeapon(); return; }
+    if(/^Digit[1-5]$/.test(code)){
+      if(down){const slot=`weapon${code.slice(-1)}`;if(sh.prop.slotAvailable(slot))sh.prop.activeWeaponSlot=slot;}
+      return;
+    }
     if (code === "KeyA") sh.ctrl.left = down;
     else if (code === "KeyD") sh.ctrl.right = down;
     else if (code === "KeyW") sh.ctrl.thrust = down;
@@ -85,6 +102,91 @@ export class SystemScene {
     else if (code === "KeyF" && this.sel) sh.fsdTo(this.sel, this.orbitAlt);
     else if (code === "KeyH") this.planTransfer();
     this.mgr.onChange?.();
+  }
+  fireWeapon(){
+    const sh=this.playerShip;
+    if(!sh||sh.mode!=="newton")return;
+    const spec=sh.prop.fireWeapon();
+    if(!spec){this.combatMsg="оружие не готово или боезапас исчерпан";return;}
+    const [sx,sy]=sh.globPos(this);
+    const target=this.lockedNpc?.ship&&!this.lockedNpc.ship.destroyed ? this.lockedNpc.ship : [...this.npcs].filter(n=>!n.ship.destroyed).sort((a,b)=>{
+      const ap=a.ship.globPos(this),bp=b.ship.globPos(this);
+      return Math.hypot(ap[0]-sx,ap[1]-sy)-Math.hypot(bp[0]-sx,bp[1]-sy);
+    })[0]?.ship||null;
+    this.launchWeapon(sh,spec,target);
+    this.combatMsg=spec.name + (spec.ammo>0 ? ` · осталось ${sh.prop.activeWeapon?.ammoLeft}` : " · заряд выпущен");
+    this.mgr.onChange?.();
+  }
+  /** One combat pipeline serves player and NPC weapons, so shields, EMP and
+   * destruction behave identically regardless of who fired the shot. */
+  launchWeapon(source,spec,target=null){
+    this.projectiles.push(new WeaponProjectile(source,spec,target,this));
+  }
+  fireNpcWeapon(npc,target){
+    const ship=npc?.ship;
+    if(!ship||ship.destroyed||ship.mode!=="newton"||ship.empTimer>0||!target||target.destroyed)return false;
+    const spec=ship.prop.fireWeapon();
+    if(!spec)return false;
+    this.launchWeapon(ship,spec,target);
+    npc.agent.state.blackboard.lastShot=spec.weaponType;
+    return true;
+  }
+  lockNpc(npc){
+    this.lockedNpc=npc||null;
+    if(!npc)this.playerOrder=null;
+    this.mgr.onChange?.();
+  }
+  issueNpcOrder(mode){
+    if(!this.lockedNpc||!this.playerShip)return;
+    this.playerOrder={mode,target:this.lockedNpc,distance:22};
+    this.combatMsg=mode==="attack"?"приказ: следовать и атаковать":"приказ: следовать";
+    this.mgr.onChange?.();
+  }
+  updatePlayerOrder(){
+    const order=this.playerOrder,sh=this.playerShip,target=order?.target?.ship;
+    if(!order||!sh||!target||target.destroyed){if(order)this.playerOrder=null;return;}
+    const [sx,sy]=sh.globPos(this),[tx,ty]=target.globPos(this),dx=tx-sx,dy=ty-sy,distance=Math.hypot(dx,dy);
+    if(sh.mode!=="landed"){
+      if(!sh.sameTarget(target.primary))sh.fsdTo(target.primary,Math.max(10,order.distance));
+      else if(sh.mode==="newton"){
+        sh.nose=Math.atan2(dy,dx);
+        sh.ctrl.thrust=distance>order.distance*1.15;
+        sh.prop.throttle=sh.ctrl.thrust?.35:0;
+      }
+    }
+    const weapon=sh.prop.activeWeapon;
+    if(order.mode==="attack"&&weapon&&distance<=weapon.stats.range) this.fireWeapon();
+  }
+  hitNpcAt(mx,my,radius=9){
+    return this.npcs.find(npc=>{
+      const [x,y]=npc.ship.globPos(this);
+      return Math.hypot(this.ssx(x)-mx,this.ssy(y)-my)<=radius;
+    })||null;
+  }
+  updateProjectiles(dt){
+    for(const shot of this.projectiles){
+      if(!shot.update(dt,this)||shot.hit)continue;
+      if(shot.armed>0)continue;
+      const combatants=[this.playerShip,...this.npcs.map(npc=>npc.ship)];
+      for(const target of combatants){
+        if(!target||target===shot.source||target.destroyed)continue;
+        const [tx,ty]=target.globPos(this),distance=Math.hypot(tx-shot.x,ty-shot.y);
+        const radius=shot.spec.splash||3;
+        if(distance>radius)continue;
+        const factor=shot.spec.splash?Math.max(.2,1-distance/radius):1;
+        let damage=shot.spec.damage*factor;
+        const shield=target.prop?.shield;
+        if(shield?.charge>0){const absorbed=Math.min(shield.charge,damage);shield.charge-=absorbed;damage-=absorbed;}
+        target.integrity=(target.integrity??100)-damage;
+        if(shot.spec.emp)target.empTimer=Math.max(target.empTimer||0,shot.spec.emp);
+        target.lastStatus=target.integrity<=0?"корабль уничтожен":(shot.spec.emp?"ЭМИ: системы подавлены":"попадание");
+        if(target.integrity<=0)target.destroyed=true;
+        shot.detonate();break;
+      }
+    }
+    this.projectiles=this.projectiles.filter(shot=>shot.detonating>0||(!shot.hit&&shot.life>0));
+    this.npcs=this.npcs.filter(npc=>!npc.ship.destroyed);
+    if(this.lockedNpc&&!this.npcs.includes(this.lockedNpc)){this.lockedNpc=null;this.playerOrder=null;}
   }
   /** Захват: сбор топлива в короне звезды и подбор контейнеров.
    *  Заправка работает, как в Elite, — на низкой орбите звезды. */
@@ -244,10 +346,12 @@ export class SystemScene {
   }
   update(dt){
     stepSystem(this.S, dt);
+    this.updatePlayerOrder();
     if (this.playerShip) this.playerShip.update(dt, this);
     for(const f of this.cargoField) f.update(dt, this);
     this._scoopAndGrab(dt);
     for(const n of this.npcs) n.update(dt, this);
+    this.updateProjectiles(dt);
     let camTgt = null;
     if (this.followShip && this.playerShip) camTgt = this.playerShip.globPos(this);
     else if (this.follow && this.sel) camTgt = this.posOf(this.sel);
@@ -256,6 +360,8 @@ export class SystemScene {
       this.cam.x += (camTgt[0] - this.cam.x)*k;
       this.cam.y += (camTgt[1] - this.cam.y)*k;
     }
+    this._saveClock=(this._saveClock||0)+dt;
+    if(this.world&&this._saveClock>=8){this.world.capture(this);this.world.persist();this._saveClock=0;}
   }
   drawWorldCircleAt(cx, cy, r, col, skip){
     const { sctx, SCR } = this.ctx;
@@ -367,17 +473,18 @@ export class SystemScene {
       sctx.fillStyle = "#ffffff";
       sctx.fillRect(Math.round(hx)-1, Math.round(hy)-1, 2, 2);
     }
+    const drawBody=(body,x,y)=>{
+      const w=Math.max(1,Math.round(body.C*this.zoom)),X=Math.round(this.ssx(x)-w/2),Y=Math.round(this.ssy(y)-w/2);
+      if(X>w+SCR||Y>w+SCR||X< -w||Y< -w)return;
+      if(w<7){sctx.fillStyle="#8497b8";sctx.fillRect(Math.round(this.ssx(x)),Math.round(this.ssy(y)),w>2?2:1,w>2?2:1);return;}
+      const [lx,ly,lz]=lightAt(x,y),lod=w<52?0:w<168?1:2;
+      const sprite=renderPlanetLod(body,lx,ly,lz,lod);
+      const smooth=sctx.imageSmoothingEnabled;sctx.imageSmoothingEnabled=false;
+      sctx.drawImage(sprite,X,Y,w,w);sctx.imageSmoothingEnabled=smooth;
+    };
     for(const p of S.planets){
-      const [lx, ly, lz] = lightAt(p._x, p._y);
-      renderPlanetBody(p, lx, ly, lz);
-      const w = Math.round(p.C * this.zoom);
-      sctx.drawImage(p.cvs, Math.round(this.ssx(p._x) - w/2), Math.round(this.ssy(p._y) - w/2), w, w);
-      for(const m of p.moonList){
-        const [mlx, mly, mlz] = lightAt(m._x, m._y);
-        renderPlanetBody(m, mlx, mly, mlz);
-        const mw = Math.round(m.C * this.zoom);
-        sctx.drawImage(m.cvs, Math.round(this.ssx(m._x) - mw/2), Math.round(this.ssy(m._y) - mw/2), mw, mw);
-      }
+      drawBody(p,p._x,p._y);
+      for(const m of p.moonList)drawBody(m,m._x,m._y);
     }
     /* SOI выбранного тела */
     if (this.sel && (this.sel.kind === "planet" || this.sel.kind === "moon")){
@@ -453,14 +560,24 @@ export class SystemScene {
       if (X < -6 || Y < -6 || X > SCR+6 || Y > SCR+6) continue;
       f.draw(sctx, X, Y, t);
     }
+    for(const shot of this.projectiles)shot.draw(sctx,(x)=>this.ssx(x),(y)=>this.ssy(y),t);
     /* корабли */
     for(const n of this.npcs){
       const [nx, ny] = n.ship.globPos(this);
-      n.ship.draw(sctx, this.ssx(nx), this.ssy(ny), t);
+      n.ship.draw(sctx, this.ssx(nx), this.ssy(ny), t, this.zoom);
+    }
+    if(this.lockedNpc){
+      const [lx,ly]=this.lockedNpc.ship.globPos(this),X=Math.round(this.ssx(lx)),Y=Math.round(this.ssy(ly));
+      const col=this.playerOrder?.mode==="attack"?"#ff5c4d":"#7ee0ff",r=7;
+      sctx.fillStyle=col;
+      sctx.fillRect(X-r,Y-r,4,1);sctx.fillRect(X-r,Y-r,1,4);
+      sctx.fillRect(X+r-3,Y-r,4,1);sctx.fillRect(X+r,Y-r,1,4);
+      sctx.fillRect(X-r,Y+r,4,1);sctx.fillRect(X-r,Y+r-3,1,4);
+      sctx.fillRect(X+r-3,Y+r,4,1);sctx.fillRect(X+r,Y+r-3,1,4);
     }
     if (sh && sh.mode !== "landed"){
       const [px, py] = sh.globPos(this);
-      sh.draw(sctx, this.ssx(px), this.ssy(py), t);
+      sh.draw(sctx, this.ssx(px), this.ssy(py), t, this.zoom);
     }
     if (this.sel){
       const pos = this.posOf(this.sel);
@@ -610,6 +727,20 @@ export class SystemScene {
     const vCirc = Math.sqrt(els.ps.mu/els.r);
     return h < Math.max(6, els.ps.bodyR*0.35) && els.v < vCirc*1.25;
   }
+  /** A solid planet or moon can be approached for landing.  This is separate
+   * from canLand(), which remains the final flight-safety gate. */
+  canApproachForLanding(sel = this.sel){
+    if (!sel || (sel.kind !== "planet" && sel.kind !== "moon")) return false;
+    const body = this.obj(sel);
+    return !!body && body.type !== "gas";
+  }
+  /** Low, but still clear of the body.  FSD arrival here meets the altitude
+   * requirement of canLand() for generated planets and moons. */
+  landingApproachAlt(sel = this.sel){
+    const ps = primaryState(this, sel);
+    if (!ps) return 2;
+    return Math.max(2, Math.min(5, ps.bodyR*0.25));
+  }
   onTap(mx, my){
     if (this.S.bhOnly) return;
     /* 1. ручка манёвра */
@@ -625,6 +756,8 @@ export class SystemScene {
         return;
       }
     }
+    const npc=this.hitNpcAt(mx,my,10);
+    if(npc){ this.lockNpc(npc); return; }
     const { wx, wy } = this.toWorld(mx, my);
     /* 2. клик по собственной орбите — поставить или перенести узел */
     if (this.tryPlaceNode(wx, wy)) return;
@@ -669,6 +802,16 @@ export class SystemScene {
       name: S.name,
       detail: S.jets ? "квазар: аккреционный диск, джеты и S-звёзды" : "сверхмассивная ЧД: диск и S-звёзды"
     };
+    if(this.lockedNpc){
+      const npc=this.lockedNpc,ship=npc.ship,player=this.playerShip;
+      const a=player?.globPos(this),b=ship.globPos(this),distance=a?Math.hypot(a[0]-b[0],a[1]-b[1]):0;
+      const hull=ship.prop.slots.hull.stats.hullInt||100;
+      return {name:"ЗАХВАТ · " + npc.name,
+        detail:"роль: " + npc.role + " · цель: " + npc.agent.state.goal +
+          "<br>прочность " + Math.max(0,Math.round(ship.integrity||hull)) + "/" + hull +
+          " · дистанция " + fmtDist(distance) +
+          "<br>приказ: " + ({follow:"следовать",attack:"следовать и атаковать"}[this.playerOrder?.mode]||"нет")};
+    }
     if (!this.sel) return { name: S.name, detail: "кликните по любому телу: планете, луне, комете, обломку или звезде" };
     const o = this.obj(this.sel);
     if (this.sel.kind === "star"){
@@ -716,6 +859,13 @@ export class SystemScene {
         this.mgr.push(new LandingScene(this, { ...this.sel }, this.statsOf(this.sel)));
       } };
     }
+    if (this.playerShip && this.canApproachForLanding()){
+      const h = this.landingApproachAlt();
+      return { label:"Посадка → подлёт к поверхности", run: () => {
+        this.playerShip.fsdTo(this.sel, h);
+        this.mgr.onChange?.();
+      } };
+    }
     if (this.sel && this.playerShip){
       return { label:"FSD → орбита " + fmtDist(this.orbitAlt) + " (F)", run: () => {
         this.playerShip.fsdTo(this.sel, this.orbitAlt);
@@ -760,6 +910,31 @@ export class SystemScene {
         get:() => p.tank.id, set:v => p.setTank(v) });
       if (sh.mode === "landed")
         spec.push({ kind:"action", label:"Заправить бак", run: () => p.refuel() });
+    }
+
+    if(this.world){
+      spec.push({kind:"sect",label:"Мир"});
+      spec.push({kind:"action",label:"Сохранить мир",run:()=>{this.world.capture(this);this.world.persist();this.combatMsg="мир сохранён";}});
+    }
+
+    if(sh && this.lockedNpc){
+      const p=sh.prop;
+      spec.push({kind:"sect",label:"Захват цели · " + this.lockedNpc.name});
+      spec.push({kind:"buttons",items:[
+        {label:"Следовать",sel:this.playerOrder?.mode==="follow",run:()=>this.issueNpcOrder("follow")},
+        {label:"Следовать и атаковать",sel:this.playerOrder?.mode==="attack",run:()=>this.issueNpcOrder("attack")}
+      ]});
+      spec.push({kind:"action",label:"Снять захват",run:()=>this.lockNpc(null)});
+      const mounts=p.slotDefs.filter(slot=>slot.id.startsWith("weapon")&&p.slots[slot.id]);
+      if(mounts.length){
+        spec.push({kind:"readout",label:"Орудия",value:"1–5: выбрать пилон · Space: огонь по захваченной цели"});
+        spec.push({kind:"buttons",items:mounts.map(slot=>({
+          label:slot.id.slice(-1)+" · "+p.slots[slot.id].name,
+          sel:p.activeWeaponSlot===slot.id,
+          run:()=>{p.activeWeaponSlot=slot.id;}
+        }))});
+        spec.push({kind:"action",label:"Огонь по цели (Space)",run:()=>this.fireWeapon()});
+      }
     }
 
     /* ---------- орбита ---------- */

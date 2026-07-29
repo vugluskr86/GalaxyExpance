@@ -199,8 +199,9 @@ export const ABI_LIMITS=Object.freeze({
   NAME_MAX:255,
   PATH_MAX:1024,
   FD_MAX:32,
-  ARG_MAX:256,
+  ARG_MAX:2048,
   ENV_MAX:256,
+  ENV_VALUE_MAX:2048,
   MAX_PROCESSES:256,
 });
 

@@ -181,6 +181,23 @@ opcode:u8 argc:u8 operand...
 - записывает запускаемый файл `a.obj`;
 - созданный файл проходит декодирование и исполняется CPU.
 
+Для установленной Unix-системы генератор
+`scripts/generate-unix-toolchain-cli.mjs` создаёт protected CLI-обёртки
+`system/unix/bin/assembler.asm` и `system/unix/bin/linker.asm`. Они не являются
+host-реализациями: внутри остаются те же self-hosted Assembly cores, но имя
+входного файла берётся из `ARGS`, а I/O выполняется через `OPEN/READ/WRITE/CLOSE`
+VFS syscalls. Генерируемые файлы нельзя редактировать вручную; проверка
+воспроизводимости выполняется с `--check`.
+
+CLI-linker разносит первый объект, второй объект и output workspace по памяти и
+принимает объект до 240 КиБ. Системный Makefile использует единые translation
+units для libc с программой, обходя известный дефект старого большого
+multi-object relocation path.
+
+Relocation для `LOAD_A`, `LOAD_B`, `LOAD_C`, `LOAD_D` теперь получает тип из
+секции разрешённого символа: адрес обработчика/функции создаёт `ABS_TEXT`, адрес
+данных — `ABS_DATA`. Это необходимо, в частности, для IVT ядра.
+
 Ограничения текущей реализации:
 
 - self-hosted multi-object linker принимает не более двух PCOB за запуск;

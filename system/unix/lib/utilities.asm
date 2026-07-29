@@ -85,6 +85,17 @@ INC_A
 STORE32_A_B
 JMP util_arg_lex
 util_arg_found:
+; Redirection syntax belongs to sh and is not part of utility argv.
+LOAD_B util_arg_ptr
+LOAD32_A_B
+MOV_B_A
+LOAD8_A_B
+LOAD_D 62
+CMP_A_D
+JZ util_arg_missing
+LOAD_D 60
+CMP_A_D
+JZ util_arg_missing
 ; LEX_TOKEN keeps surrounding double quotes; expose the bounded payload.
 LOAD_B util_arg_len
 LOAD32_A_B

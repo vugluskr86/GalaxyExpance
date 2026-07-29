@@ -15,6 +15,8 @@ LOAD_B make_file_ptr
 STORE32_A_B
 CALL make_parse_args
 JNZ make_usage
+CALL make_cycle_enter
+JNZ make_cycle
 CALL make_read_file
 JNZ make_error
 CALL make_join_continuations
@@ -22,6 +24,9 @@ CALL make_load_variables
 CALL make_find_rule
 JNZ make_no_rule
 CALL make_needs_rebuild
+LOAD_D -1
+CMP_A_D
+JZ make_error
 JZ make_success
 CALL make_expand_recipe
 LOAD_B make_dry_run
@@ -55,7 +60,7 @@ LOAD_C make_shell_arg
 LOAD_D 0x00020004
 CALL libc_setenv
 LOAD_B make_shell_path
-LOAD_C 7
+LOAD_C 11
 LOAD_D 0
 CALL libc_spawn
 LOAD_D -1
@@ -229,7 +234,7 @@ MOV_C_B
 LOAD_B make_file_bytes
 LOAD32_A_B
 MOV_B_A
-LOAD_A 4096
+LOAD_A 16384
 SUB_A_B
 MOV_D_A
 LOAD_B make_fd
@@ -591,7 +596,119 @@ LOAD_A 0
 RET
 
 make_dependency_failed:
-JMP make_error
+LOAD_A -1
+RET
+
+; Maintain a whitespace-delimited target ancestry in MAKE_STACK.  Every child
+; make gets a private inherited environment, so finding its requested target
+; in the stack is a real graph cycle (A -> ... -> A), not merely a duplicate
+; dependency in an unrelated branch.
+make_cycle_enter:
+LOAD_B make_stack_key
+LOAD_C make_stack
+LOAD_D 0x0800000a
+SYSCALL 0x33
+LOAD_D -1
+CMP_A_D
+JNZ make_stack_loaded
+LOAD_A 0
+make_stack_loaded:
+LOAD_B make_stack_len
+STORE32_A_B
+LOAD_A 0
+LOAD_B make_stack_index
+STORE32_A_B
+make_stack_scan:
+LOAD_B make_stack_index
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_stack_len
+LOAD32_A_B
+MOV_C_A
+LOAD_B make_stack
+STR_TOKEN
+JZ make_stack_append
+MOV_C_A
+MOV_A_B
+LOAD_B make_stack_token_ptr
+STORE32_A_B
+MOV_A_C
+LOAD_B make_stack_token_len
+STORE32_A_B
+LOAD_B make_requested_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_stack_token_len
+LOAD32_A_B
+CMP_A_D
+JNZ make_stack_next
+LOAD_B make_requested_ptr
+LOAD32_A_B
+MOV_C_A
+LOAD_B make_stack_token_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_stack_token_ptr
+LOAD32_A_B
+MOV_B_A
+MEM_CMP
+JZ make_stack_cycle
+make_stack_next:
+LOAD_B make_stack_index
+LOAD32_A_B
+INC_A
+STORE32_A_B
+JMP make_stack_scan
+make_stack_append:
+LOAD_B make_stack_len
+LOAD32_A_B
+JZ make_stack_copy_target
+MOV_D_A
+LOAD_B make_stack
+ADD_B_D
+LOAD_A 32
+STORE8_A_B
+LOAD_B make_stack_len
+LOAD32_A_B
+INC_A
+STORE32_A_B
+make_stack_copy_target:
+LOAD_B make_stack_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_stack
+ADD_B_D
+MOV_C_B
+LOAD_B make_requested_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_requested_ptr
+LOAD32_A_B
+MOV_B_A
+MEM_COPY
+LOAD_B make_stack_len
+LOAD32_A_B
+MOV_D_A
+LOAD_B make_requested_len
+LOAD32_A_B
+MOV_B_A
+MOV_A_D
+ADD_A_B
+LOAD_B make_stack_len
+STORE32_A_B
+LOAD_B 65536
+MUL_A_B
+LOAD_B 10
+ADD_A_B
+MOV_D_A
+LOAD_B make_stack_key
+LOAD_C make_stack
+CALL libc_setenv
+LOAD_A 0
+RET
+make_stack_cycle:
+LOAD_A 1
+RET
 
 ; Build ARGS="make -f <file> <dependency>" and execute /bin/make.
 ; The child repeats the same bounded algorithm, providing a real dependency
@@ -636,7 +753,7 @@ LOAD_B make_args_key
 LOAD_C make_child_args
 CALL libc_setenv
 LOAD_B make_make_path
-LOAD_C 9
+LOAD_C 13
 LOAD_D 0
 CALL libc_spawn
 LOAD_D -1
@@ -909,7 +1026,15 @@ RET
 make_advance_line:
 LOAD_B make_line_end
 LOAD32_A_B
+PUSH_A
+LOAD_B make_file_bytes
+LOAD32_A_B
+MOV_D_A
+POP_A
+CMP_A_D
+JZ make_advance_store
 INC_A
+make_advance_store:
 LOAD_B make_line_start
 STORE32_A_B
 RET
@@ -959,17 +1084,23 @@ make_child_args_len: .dword 0
 make_child_source: .dword 0
 make_child_append_len: .dword 0
 make_child_status: .dword 0
+make_stack_len: .dword 0
+make_stack_index: .dword 0
+make_stack_token_ptr: .dword 0
+make_stack_token_len: .dword 0
 make_args: .zero 2048
-make_file: .zero 4096
-make_recipe_out: .zero 512
-make_child_args: .zero 512
+make_file: .zero 16384
+make_recipe_out: .zero 2048
+make_child_args: .zero 2048
+make_stack: .zero 2048
 make_target_stat: .zero 56
 make_dep_stat_buf: .zero 56
 make_args_key: .string "ARGS"
+make_stack_key: .string "MAKE_STACK"
 make_shell_command_key: .string "SH_COMMAND"
 make_shell_arg: .string "sh"
-make_shell_path: .string "/bin/sh"
-make_make_path: .string "/bin/make"
+make_shell_path: .string "/bin/sh.bin"
+make_make_path: .string "/bin/make.bin"
 make_child_prefix: .string "make -f "
 make_space: .string " "
 make_default_file: .string "Makefile"

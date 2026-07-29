@@ -6,8 +6,22 @@ import { primaryState, findPrimary, elements, propagate, bodyROf,
 import { Propulsion } from "./propulsion.js";
 import { ManeuverNode, stateAfterNode, nodeDvVector, stateAtNode } from "./maneuver.js";
 import { DU_M } from "./units.js";
+import { AgentController, AGENT_PROFILES } from "./agents.js";
+import { makeItem } from "./items.js";
 
 export { bodyROf as bodyRadius } from "./physics.js";
+
+/* Compact system-map silhouettes.  The hangar renderer is intentionally more
+ * elaborate; these outlines stay legible from 4 to 40 screen pixels. */
+const SYSTEM_HULLS={
+  scout:[[0,-1],[-.42,.55],[0,.92],[.42,.55]],vesta:[[0,-1],[-.72,-.38],[-.55,.65],[0,1],[.55,.65],[.72,-.38]],
+  hauler:[[-.62,-.86],[.62,-.86],[.92,.38],[.48,1],[-.48,1],[-.92,.38]],courier:[[0,-1],[-.34,.72],[0,1],[.34,.72]],
+  interceptor:[[0,-1],[-1,.12],[-.35,.33],[-.52,1],[.52,1],[.35,.33],[1,.12]],miner:[[-.6,-.78],[.6,-.78],[.82,.5],[.4,1],[-.4,1],[-.82,.5]],
+  explorer:[[0,-1],[-.62,-.2],[-.35,1],[.35,1],[.62,-.2]],gunship:[[0,-1],[-.95,-.12],[-.6,.25],[-.48,1],[.48,1],[.6,.25],[.95,-.12]],
+  corvette:[[0,-1],[-.56,-.28],[-.38,1],[.38,1],[.56,-.28]],frigate:[[0,-1],[-.9,-.35],[-.7,.62],[0,1],[.7,.62],[.9,-.35]],
+  freighter:[[-.7,-.8],[.7,-.8],[.82,.6],[.45,1],[-.45,1],[-.82,.6]],carrier:[[-1,-.75],[1,-.75],[1,.65],[.55,1],[-.55,1],[-1,.65]],
+  dreadnought:[[0,-1],[-.9,-.48],[-1,.58],[-.62,1],[.62,1],[1,.58],[.9,-.48]]
+};
 
 /** Корабль. Три режима:
  *   newton — орбитальный полёт. Пока двигатель молчит, движение идёт «на
@@ -39,6 +53,7 @@ export class Ship {
     this.nodeAuto = false;         // автопилот исполнения узла
     this.burning = false;
     this.lastStatus = "";
+    this.integrity = this.prop.slots.hull.stats.hullInt;
   }
 
   /* ---------------- геометрия и элементы ---------------- */
@@ -222,6 +237,12 @@ export class Ship {
   /* ---------------- основной шаг ---------------- */
   update(dt, sys){
     if (dt <= 0) return;
+    this._system=sys;
+    this.prop.tickWeapons(dt);
+    this.prop.tickSystems(dt);
+    const droid=this.prop.droid;
+    if(droid)this.integrity=Math.min(this.prop.slots.hull.stats.hullInt,this.integrity+droid.stats.repair*Math.max(0,dt));
+    if(this.empTimer>0){ this.empTimer=Math.max(0,this.empTimer-dt); this.burning=false; return; }
     if (this.mode === "landed"){
       const ps = primaryState(sys, this.landedOn || this.primary);
       if (ps){
@@ -438,8 +459,27 @@ export class Ship {
   }
 
   /* ---------------- отрисовка ---------------- */
-  draw(sctx, X, Y, t){
+  draw(sctx, X, Y, t, zoom=0){
+    const sprite=this.prop.hullStats.hullSprite||"vesta";
+    const size=Math.max(3,Math.min(22,Math.round(3+zoom*10)));
+    if(size>=6){
+      const c=Math.cos(this.nose),s=Math.sin(this.nose),shape=SYSTEM_HULLS[sprite]||SYSTEM_HULLS.vesta;
+      const point=([x,y])=>[Math.round(X+(x*c-y*s)*size),Math.round(Y+(x*s+y*c)*size)];
+      const first=point(shape[0]);sctx.beginPath();sctx.moveTo(first[0],first[1]);
+      for(const v of shape.slice(1)){const q=point(v);sctx.lineTo(q[0],q[1]);}
+      sctx.closePath();sctx.fillStyle=this.col;sctx.fill();
+      sctx.strokeStyle="#172440";sctx.lineWidth=1;sctx.stroke();
+      const cockpit=point([0,-.38]);sctx.fillStyle="#bdeaff";sctx.fillRect(cockpit[0]-1,cockpit[1]-1,3,3);
+      const armed=this.prop.weapons.length>0;
+      if(armed&&size>=10){for(const wing of [-.48,.48]){const gun=point([wing,.12]);sctx.fillStyle="#ffca70";sctx.fillRect(gun[0]-1,gun[1]-1,3,3);}}
+      if(this.prop.shield&&size>=14){sctx.strokeStyle="rgba(143,208,255,.65)";sctx.beginPath();sctx.arc(Math.round(X),Math.round(Y),size+3,0,Math.PI*2);sctx.stroke();}
+    }
     const c = Math.cos(this.nose), s = Math.sin(this.nose);
+    if(size>=6){
+      const fire=this.mode === "cruise"||this.burning;
+      if(fire&&Math.floor(t*12)%2){sctx.fillStyle=this.mode==="cruise"?"#8fd0ff":"#ffd166";sctx.fillRect(Math.round(X-c*(size+3))-1,Math.round(Y-s*(size+3))-1,3,3);}
+      return;
+    }
     sctx.fillStyle = this.col;
     sctx.fillRect(Math.round(X + c*3)-1, Math.round(Y + s*3)-1, 2, 2);
     sctx.fillRect(Math.round(X)-1, Math.round(Y)-1, 2, 2);
@@ -456,48 +496,39 @@ export class Ship {
 
 /** NPC: летает на FSD между телами и стоит на орбитах. */
 export class Npc {
-  constructor(ship, name){
+  constructor(ship, name, profile="trader", agentConfig={}, seed=1){
     this.ship = ship;
     this.name = name;
-    this.timer = 20 + Math.random()*40;
-  }
-  pickTarget(sys){
-    const S = sys.S;
-    const cands = [];
-    for(let i=0;i<S.planets.length;i++){
-      cands.push({ kind:"planet", i, j:0 });
-      const p = S.planets[i];
-      for(let j=0;j<p.moonList.length;j++) cands.push({ kind:"moon", i, j });
-    }
-    return cands.length ? cands[Math.floor(Math.random()*cands.length)] : null;
+    this.agent = new AgentController(profile,agentConfig,seed);
+    ship._npc = this;
+    this.role=this.agent.config.role;
   }
   update(dt, sys){
     this.ship.update(dt, sys);
-    if (this.ship.mode === "cruise") return;
-    this.timer -= dt;
-    if (this.timer <= 0){
-      const target = this.pickTarget(sys);
-      if (target){
-        this.ship.fsdTo(target, 14 + Math.random()*20);
-        this.timer = 400 + Math.random()*900;
-      }
-    }
+    this.agent.update(this,dt,sys);
   }
 }
 
-export function makeNpcs(sys, seed){
+export function makeNpcs(sys, seed,agentConfig={}){
   const S = sys.S;
   if (S.bhOnly || !S.planets.length) return [];
   const rng = mulberry32(seed ^ 0x0c9c);
   const n = 1 + Math.floor(rng()*2);
   const npcs = [];
-  const ROLES = ["Торговец", "Патруль", "Геолог", "Курьер"];
+  const PROFILES=["trader","patrol","geologist","courier","ranger","pirate"];
   for(let i=0;i<n;i++){
     const pi = Math.floor(rng()*S.planets.length);
     const ship = new Ship(sys, "#6fb7ff", 300 + rng()*250);
     ship.fsdTo({ kind:"planet", i:pi, j:0 }, 16);
+    const profile=PROFILES[Math.floor(rng()*PROFILES.length)];
+    const hullByProfile={trader:"hull_hauler",patrol:"hull_gunship",geologist:"hull_miner",courier:"hull_courier",ranger:"hull_explorer",pirate:"hull_interceptor"};
+    ship.prop.install(makeItem(hullByProfile[profile]||"hull_std"));
+    ship.integrity=ship.prop.slots.hull.stats.hullInt;
+    ship.prop.install(makeItem(profile==="pirate" ? "wpn_missile" : profile==="patrol"||profile==="ranger" ? "wpn_energy" : "wpn_laser"));
+    if(ship.prop.slotAvailable("shield"))ship.prop.install(makeItem(profile==="pirate" ? "shield_m" : "shield_s"));
     npcs.push(new Npc(ship,
-      ROLES[Math.floor(rng()*ROLES.length)] + " «" + nameFromHash(hash2i(i, 71, seed)) + "»"));
+      (AGENT_PROFILES[profile].role||profile) + " «" + nameFromHash(hash2i(i, 71, seed)) + "»",
+      profile,agentConfig[profile]||agentConfig.default||{},seed+i*7919));
   }
   return npcs;
 }

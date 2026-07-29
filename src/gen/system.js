@@ -1,5 +1,5 @@
 import { mulberry32, hash2i } from "../core/rng.js";
-import { bakePlanet, genMoons } from "./planet.js";
+import { bakePlanet, genMoons, makeSurfaceProfile } from "./planet.js";
 import { bakeStar, starDiam } from "./star.js";
 import { bakeBH } from "./blackhole.js";
 import { CLS } from "./starclass.js";
@@ -135,8 +135,9 @@ export function buildSystem(galaxy, gs){
         : Math.floor(rng()*MOONS_ROCKY_VAR),
       ang: rng()*Math.PI*2
     };
+    p.surface=makeSurfaceProfile(p,sun);
     bakePlanet(p);
-    genMoons(p, rng);
+    genMoons(p, rng,sun);
     planets.push(p);
   }
   let belt = null;

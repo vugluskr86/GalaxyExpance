@@ -604,6 +604,14 @@ node scripts/build-unix-stage9.mjs --check
 headers и `/etc` templates. `installer.bin` форматирует root, копирует файлы,
 ставит mode/owner, создаёт пользователей и выбирает `kernel.bin`.
 
+Реализовано: `scripts/build-unix-installer.mjs` создаёт
+`system/unix/build/install.pcfd`, `install.manifest.json` и `installer.bin`.
+Полный образ больше обычной 144-КБ дискеты, поэтому выдаётся как установочный
+носитель `PCFD-65535` (64 МБ). При загрузке `installer.bin` открывает
+интерактивный выбор target DRIVE, root password и guest; новый PCFS собирается
+и проверяется до публикации, затем BIOS получает boot target `kernel.bin`.
+`install.conf` поддерживает unattended-конфигурацию в тестах.
+
 ### Этап 11. Self-hosted build
 
 `make.bin` должен собрать libc, kernel, init, shell и utilities с помощью
@@ -1025,7 +1033,7 @@ userland. После этого bootstrap test пересобирает assemble
 
 ### Состояние Prompt 10
 
-Статус: **частично выполнено, bootstrap toolchain замкнут**.
+Статус: **выполнено полностью**.
 
 - `make.bin` разбирает `-f`, `-n`, target, переменные и continuation,
   сравнивает timestamps, прекращает сборку при ошибке и запускает рецепты
@@ -1034,16 +1042,39 @@ userland. После этого bootstrap test пересобирает assemble
   агрегатные цели обходят граф без host command dispatch;
 - системный Makefile содержит libc, kernel, init, shell, userland и цели
   `toolchain/bootstrap`;
+- `MAKE_STACK` обеспечивает обнаружение прямых и косвенных циклов графа;
+  ненулевой статус дочернего `make` или recipe распространяется до корневого
+  процесса и немедленно останавливает сборку;
+- protected CLI-варианты `assembler.bin` и `linker.bin` получают аргументы из
+  `ARGS`, читают и записывают файлы только через VFS syscalls; linker использует
+  разнесённые рабочие области для объектов до 240 КиБ;
+- `scripts/build-unix-staging.mjs` создаёт чистый 8-МиБ PCFS v2 staging image с
+  toolchain, Assembly-исходниками, headers, библиотеками и системным Makefile;
 - устранено перекрытие 64-КиБ source workspace с выходным PCVM payload
   self-hosted assembler;
+- self-hosted assembler различает TEXT/DATA relocation для `LOAD_A..LOAD_D`,
+  поэтому адреса kernel handlers корректно линкуются;
 - bootstrap-тест реально запускает `linker2.bin`, затем собирает
   `assembler3.bin` и `linker3.bin` исключительно посредством
   `assembler2.bin + linker2.bin`; третье поколение собирает и исполняет
   контрольную программу.
 
-До полного критерия всей ОС остаётся integration-тест установленного
-staging tree, который запускает сам `/bin/make bootstrap` и проверяет
-пересборку всех kernel/init/userland файлов, а не только toolchain.
+Integration suite `test/unix-prompt10.test.js` загружает чистый staging image и
+без host command dispatch запускает настоящий `/bin/make.bin`, `/bin/sh.bin`,
+`/bin/assembler.bin`, `/bin/linker.bin` и Assembly-утилиты. Тест сначала
+пересобирает и исполняет `hello.bin`, затем выполняет `/bin/make.bin -f Makefile
+bootstrap` и проверяет PCVM magic и декодирование 24 результатов: toolchain
+второго поколения, весь userland, kernel, init/logger и auth. На эталонной
+машине тест занимает около 30 секунд и использует 2 МиБ RAM на процесс.
+
+Воспроизводимая проверка:
+
+```powershell
+node scripts/generate-unix-toolchain-cli.mjs --check
+node scripts/build-unix-make-env.mjs --check
+node scripts/build-unix-staging.mjs --check
+node --test test/unix-make-env.test.js test/unix-prompt10.test.js
+```
 
 ## Prompt 11 — vi.bin
 

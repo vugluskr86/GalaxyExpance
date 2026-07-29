@@ -2,8 +2,8 @@ import { SLOTS, SLOT_RU, itemStatLines } from "../game/items.js";
 import { FloatingItem } from "../game/inventory.js";
 import { primaryState } from "../game/physics.js";
 import { fmtDv, fmtMass, fmtSpeed, fmtTime, fmtDist, DU_M } from "../game/units.js";
-import { lblText } from "../ui/panel.js";
 import { openComputerEditor } from "./computer.js";
+import { drawOutfitSilhouette, selectOutfitSlot, stepOutfitParticles } from "./outfit-render.js";
 
 /** Экран корабля: слоты, инвентарь, характеристики.
  *  Компоновка как в оснастке Elite: слева схема с точками подвески,
@@ -18,10 +18,11 @@ export class OutfitScene {
     this.msg = "";
   }
   get prop(){ return this.sys.playerShip?.prop; }
-  update(dt){ this.sys.update(dt); }
+  update(dt){ this.sys.update(dt); stepOutfitParticles(this,dt); }
 
   /* ---------- схема корабля ---------- */
   draw(t){
+    return drawOutfitSilhouette(this,t);
     const { sctx, SCR } = this.ctx;
     const cx = SCR/2, cy = SCR/2 - 10;
     /* корпус */
@@ -72,6 +73,7 @@ export class OutfitScene {
     }
   }
   drawLabels(){
+    return;
     const p = this.prop;
     if (!p) return;
     const L = this.ctx.LW, k = L/this.ctx.SCR;
@@ -88,6 +90,7 @@ export class OutfitScene {
 
   /* ---------- действия ---------- */
   /** Выбросить предмет в космос (или положить на грунт, если сели). */
+  onTap(x,y){ selectOutfitSlot(this,x,y); }
   dropToSpace(item){
     const sh = this.sys.playerShip;
     if (!sh) return;
@@ -106,7 +109,7 @@ export class OutfitScene {
     const p = this.prop;
     if (!p) return;
     p.inventory.remove(item);
-    const old = p.install(item);
+    const old = p.install(item,this.slot);
     if (old) p.inventory.add(old);
     this.slot = item.slot;
     this.sel = null;
@@ -221,6 +224,22 @@ export class OutfitScene {
           this.msg = "BIOS: операционная система загружена";
         } catch (err){ this.msg = err.message; }
       } });
+      spec.push({ kind:"action", label:"BIOS Setup (Del)", run:() => {
+        const terminal=window._pixelCosmosTerminal || null;
+        host.runtime.openBiosSetup(terminal);
+        terminal?.canvas?.focus();
+        this.msg = "BIOS Setup: выберите загрузочный носитель";
+      } });
+      const installer=host.runtime.bootDevices().find(device=>device.storage.installationMedia);
+      if(installer)spec.push({ kind:"action", label:"Запустить установщик PCFD", run:() => {
+        try {
+          host.firmware.saveSettings({bootDevice:installer.id,bootFile:"os.bin"});
+          const terminal=window._pixelCosmosTerminal || null;
+          host.runtime.boot(terminal);
+          terminal?.canvas?.focus();
+          this.msg="PCFD Installer: выберите target DRIVE";
+        } catch(error){this.msg=error.message;}
+      } });
       spec.push({ kind:"action", label:"Программировать", run:() => openComputerEditor(host) });
     }
 
@@ -258,7 +277,7 @@ export class OutfitScene {
 
     /* --- слоты --- */
     spec.push({ kind:"sect", label:"Слоты" });
-    spec.push({ kind:"rows", items: SLOTS.map(s => {
+    spec.push({ kind:"rows", items: p.slotDefs.map(s => {
       const it = p.slots[s.id];
       const acts = [];
       if (it?.slotDefs.length){
@@ -286,7 +305,7 @@ export class OutfitScene {
     const computer = p.slots.computer;
 
     /* --- совместимые модули из инвентаря --- */
-    const compat = p.inventory.bySlot(this.slot);
+    const compat = p.inventory.bySlot(p.itemType(this.slot));
     spec.push({ kind:"sect", label:"Доступно для слота «" + SLOT_RU[this.slot] + "»" });
     spec.push({ kind:"rows", empty:"нет подходящих модулей в инвентаре",
       items: compat.map(it => ({
@@ -307,7 +326,7 @@ export class OutfitScene {
         label: it.name + (it.qty > 1 ? " ×" + it.qty : ""),
         note: it.mass.toFixed(1) + " т",
         actions: [
-          ...(it.slot !== "cargo" && Object.hasOwn(p.slots, it.slot)
+          ...(it.slot !== "cargo" && p.accepts(it)
               ? [{ label:"Установить", run:() => this.installFromInv(it) }]
               : it.slot === "cargo"
               ? [{ label:"В трюм", run:() => this.stow(it) }]

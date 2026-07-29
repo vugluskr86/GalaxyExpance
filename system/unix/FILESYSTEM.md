@@ -1,4 +1,4 @@
-# PCFS v1
+# PCFS v2
 
 `PCFS` — блочный сериализуемый образ корневой файловой системы PCOS.
 
@@ -9,16 +9,26 @@
 | Offset | Width | Field |
 | ---: | ---: | --- |
 | 0 | 4 | ASCII magic `PCFS` |
-| 4 | 1 | version, сейчас `1` |
+| 4 | 1 | version, сейчас `2` |
 | 5 | 4 | количество блоков, little-endian |
 | 9 | 4 | FNV-1a checksum байтов от offset 13 до конца образа |
+| 13 | 4 | количество блоков inode table (`inodeBlocks`) |
 
 Размер файла обязан совпадать с объявленным количеством блоков. Загрузчик
 сначала проверяет magic, version и размеры, затем checksum.
 
 ## Inode table
 
-После superblock расположена фиксированная inode-область:
+После superblock расположена фиксированная inode-область. В PCFS v2 её размер
+записан в `inodeBlocks`; допустимы значения от 1 до 64 блоков, то есть до 512
+inode:
+
+```text
+inodeBlocks = superblock.u32le(13)
+```
+
+Reader сохраняет совместимость с PCFS v1. Для старого образа размер таблицы
+вычисляется по прежней формуле:
 
 ```text
 max(1, min(8, floor((blockCount - 1) / 4))) blocks

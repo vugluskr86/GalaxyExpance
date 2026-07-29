@@ -81,9 +81,19 @@ export class FloatingItem {
 export function starterInventory(){
   return new Inventory([
     makeItem("eng_lite"), makeItem("tank_s"), makeItem("scoop_basic"),
+    makeItem("hull_scout"), makeItem("hull_hauler"), makeItem("hull_courier"), makeItem("hull_interceptor"), makeItem("hull_miner"),
+    makeItem("hull_explorer"), makeItem("hull_gunship"), makeItem("hull_corvette"),
+    makeItem("hull_frigate"), makeItem("hull_freighter"), makeItem("hull_carrier"), makeItem("hull_dreadnought"),
     makeItem("gpu_graphics"), makeItem("cpu_dual"),
     makeItem("ram_32"), makeItem("ram_64"),
     makeItem("drive_chip"), makeItem("drive_crystal"),
+    makeItem("drive_installer"),
+    makeItem("wpn_laser"), makeItem("wpn_energy"), makeItem("wpn_kinetic"),
+    makeItem("wpn_missile"), makeItem("wpn_torpedo"), makeItem("wpn_emp"),
+    makeItem("wpn_nuclear"), makeItem("wpn_mine"),
+    makeItem("reactor_mk1"), makeItem("reactor_mk3"), makeItem("reactor_mk4"),
+    makeItem("shield_s"), makeItem("shield_m"), makeItem("shield_l"), makeItem("shield_x"),
+    makeItem("droid_s"), makeItem("droid_m"), makeItem("droid_l"), makeItem("droid_x"),
     makeItem("ore_fe", 4), makeItem("probe", 1)
   ]);
 }

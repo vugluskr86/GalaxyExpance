@@ -670,8 +670,9 @@ test("ABI stage 0: ABI limits are reasonable",()=>{
   assert.equal(ABI_LIMITS.NAME_MAX,255);
   assert.equal(ABI_LIMITS.PATH_MAX,1024);
   assert.equal(ABI_LIMITS.FD_MAX,32);
-  assert.equal(ABI_LIMITS.ARG_MAX,256);
+  assert.equal(ABI_LIMITS.ARG_MAX,2048);
   assert.equal(ABI_LIMITS.ENV_MAX,256);
+  assert.equal(ABI_LIMITS.ENV_VALUE_MAX,2048);
   assert.equal(ABI_LIMITS.MAX_PROCESSES,256);
 });
 

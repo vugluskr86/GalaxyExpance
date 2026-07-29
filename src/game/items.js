@@ -1,5 +1,6 @@
-import { ComputerMemory } from "./computer.js";
+import { ComputerFirmware, ComputerMemory } from "./computer.js";
 import { ComputerRuntime } from "./cpu.js";
+import { INSTALLER_BINARY, INSTALL_PCFD_BASE64 } from "./install-media.generated.js";
 
 /** Абстракция предмета.
  *
@@ -15,6 +16,14 @@ export const SLOTS = [
   { id:"engine", name:"Двигатель",    icon:"▲" },
   { id:"tank",   name:"Топливный бак",icon:"▮" },
   { id:"scoop",  name:"Захват",       icon:"◇" },
+  { id:"shield", name:"Генератор щита", icon:"◌" },
+  { id:"droid",  name:"Ремонтные дроиды", icon:"✚" },
+  { id:"reactor",name:"Реактор",      icon:"⚛" },
+  { id:"weapon1",name:"Оружие 1", icon:"✦", itemSlot:"weapon" },
+  { id:"weapon2",name:"Оружие 2", icon:"✦", itemSlot:"weapon" },
+  { id:"weapon3",name:"Оружие 3", icon:"✦", itemSlot:"weapon" },
+  { id:"weapon4",name:"Оружие 4", icon:"✦", itemSlot:"weapon" },
+  { id:"weapon5",name:"Оружие 5", icon:"✦", itemSlot:"weapon" },
   { id:"computer", name:"Борт. компьютер", icon:"◈" }
 ];
 export const COMPUTER_SLOTS = [
@@ -26,19 +35,31 @@ export const COMPUTER_SLOTS = [
   { id:"peripheral2", name:"Периферия 2", icon:"○" },
   { id:"peripheral3", name:"Периферия 3", icon:"○" }
 ];
+export const EXPANSION_COMPUTER_SLOTS = [
+  ...COMPUTER_SLOTS,
+  { id:"peripheral4", name:"Периферия 4", icon:"○" }
+];
 export const SLOT_RU = Object.fromEntries([...SLOTS, ...COMPUTER_SLOTS].map(s => [s.id, s.name]));
+export const itemSlotFor = slotId => SLOTS.find(slot=>slot.id===slotId)?.itemSlot || slotId;
 
 export const RATING_ORDER = ["E","D","C","B","A"];
 
 /** Каталог модулей и груза. */
 export const CATALOG = [
   /* ---------- корпуса ---------- */
-  { id:"hull_scout", slot:"hull", cls:2, rating:"D", name:"Разведчик «Игла»",
-    mass:3.2, price:180000, stats:{ cargo:6,  crew:1, hullInt:180 } },
-  { id:"hull_std",   slot:"hull", cls:4, rating:"C", name:"Универсал «Веста»",
-    mass:5.0, price:640000, stats:{ cargo:16, crew:2, hullInt:340 } },
-  { id:"hull_hauler",slot:"hull", cls:6, rating:"C", name:"Грузовик «Тяга»",
-    mass:9.4, price:1850000, stats:{ cargo:48, crew:3, hullInt:520 } },
+  { id:"hull_scout", slot:"hull", cls:2, rating:"D", name:"Разведчик «Игла»", mass:3.2, price:180000, stats:{ cargo:6,crew:1,hullInt:180,weaponSlots:1,droidSlot:false,hullSprite:"scout" } },
+  { id:"hull_std", slot:"hull", cls:4, rating:"C", name:"Универсал «Веста»", mass:5, price:640000, stats:{ cargo:16,crew:2,hullInt:340,weaponSlots:2,hullSprite:"vesta" } },
+  { id:"hull_hauler", slot:"hull", cls:6, rating:"C", name:"Грузовик «Тяга»", mass:9.4, price:1850000, stats:{ cargo:48,crew:3,hullInt:520,weaponSlots:2,scoopSlot:false,hullSprite:"hauler" } },
+  { id:"hull_courier", slot:"hull", cls:2, rating:"B", name:"Курьер «Стриж»", mass:2.8, price:310000, stats:{ cargo:4,crew:1,hullInt:150,weaponSlots:1,shieldSlot:false,hullSprite:"courier" } },
+  { id:"hull_interceptor", slot:"hull", cls:3, rating:"A", name:"Перехватчик «Зенит»", mass:3.9, price:820000, stats:{ cargo:5,crew:1,hullInt:230,weaponSlots:3,hullSprite:"interceptor" } },
+  { id:"hull_miner", slot:"hull", cls:4, rating:"C", name:"Рудокоп «Ковш»", mass:6.2, price:990000, stats:{ cargo:30,crew:2,hullInt:370,weaponSlots:2,shieldSlot:false,hullSprite:"miner" } },
+  { id:"hull_explorer", slot:"hull", cls:4, rating:"B", name:"Эксплорер «Полярис»", mass:5.6, price:1150000, stats:{ cargo:20,crew:3,hullInt:320,weaponSlots:2,droidSlot:false,hullSprite:"explorer" } },
+  { id:"hull_gunship", slot:"hull", cls:5, rating:"B", name:"Канонерка «Гром»", mass:7.3, price:1680000, stats:{ cargo:10,crew:3,hullInt:560,weaponSlots:4,hullSprite:"gunship" } },
+  { id:"hull_corvette", slot:"hull", cls:5, rating:"A", name:"Корвет «Ладога»", mass:8.1, price:2100000, stats:{ cargo:18,crew:4,hullInt:610,weaponSlots:3,shieldSlot:false,hullSprite:"corvette" } },
+  { id:"hull_frigate", slot:"hull", cls:6, rating:"B", name:"Фрегат «Меридиан»", mass:11.2, price:3300000, stats:{ cargo:26,crew:6,hullInt:820,weaponSlots:5,hullSprite:"frigate" } },
+  { id:"hull_freighter", slot:"hull", cls:6, rating:"C", name:"Транспорт «Атлант»", mass:12.8, price:2700000, stats:{ cargo:72,crew:5,hullInt:700,weaponSlots:2,hullSprite:"freighter" } },
+  { id:"hull_carrier", slot:"hull", cls:7, rating:"A", name:"Носитель «Орбита»", mass:16.5, price:5900000, stats:{ cargo:54,crew:12,hullInt:1100,weaponSlots:4,hullSprite:"carrier" } },
+  { id:"hull_dreadnought", slot:"hull", cls:8, rating:"A", name:"Дредноут «Бастион»", mass:24, price:9800000, stats:{ cargo:38,crew:18,hullInt:1600,weaponSlots:5,hullSprite:"dreadnought" } },
 
   /* ---------- двигатели ---------- */
   { id:"eng_ion",   slot:"engine", cls:2, rating:"A", name:"Ионный «Тень»",
@@ -72,6 +93,30 @@ export const CATALOG = [
   { id:"scoop_pro",   slot:"scoop", cls:5, rating:"A", name:"Заборник «Протуберанец»",
     mass:2.3, price:820000,stats:{ scoopRate:0.19,  grabRange:14, grabSpeed:0.05, scoopAlt:1.6 } },
 
+  /* ---------- реакторы, щиты и ремонт ---------- */
+  { id:"reactor_mk1", slot:"reactor", cls:1, rating:"D", name:"Реактор Р-1 «Искра»", mass:0.8, price:120000, stats:{ grade:1,power:40 } },
+  { id:"reactor_mk2", slot:"reactor", cls:2, rating:"C", name:"Реактор Р-2 «Пульс»", mass:1.3, price:280000, stats:{ grade:2,power:80 } },
+  { id:"reactor_mk3", slot:"reactor", cls:3, rating:"B", name:"Реактор Р-3 «Спектр»", mass:2.1, price:610000, stats:{ grade:3,power:150 } },
+  { id:"reactor_mk4", slot:"reactor", cls:4, rating:"A", name:"Реактор Р-4 «Гелиос»", mass:3.4, price:1350000, stats:{ grade:4,power:280 } },
+  { id:"shield_s", slot:"shield", cls:1, rating:"D", name:"Щит СГ-20", mass:0.7, price:150000, stats:{ capacity:20,regen:2 } },
+  { id:"shield_m", slot:"shield", cls:2, rating:"C", name:"Щит СГ-55", mass:1.3, price:360000, stats:{ capacity:55,regen:4 } },
+  { id:"shield_l", slot:"shield", cls:3, rating:"B", name:"Щит СГ-110 «Купол»", mass:2.4, price:820000, stats:{ capacity:110,regen:7 } },
+  { id:"shield_x", slot:"shield", cls:4, rating:"A", name:"Щит СГ-190 «Эгида»", mass:4.1, price:1700000, stats:{ capacity:190,regen:11 } },
+  { id:"droid_s", slot:"droid", cls:1, rating:"D", name:"Дроиды РД-1", mass:0.4, price:90000, stats:{ repair:1.2 } },
+  { id:"droid_m", slot:"droid", cls:2, rating:"C", name:"Дроиды РД-4 «Латка»", mass:0.8, price:240000, stats:{ repair:2.8 } },
+  { id:"droid_l", slot:"droid", cls:3, rating:"B", name:"Дроиды РД-8 «Мастер»", mass:1.5, price:590000, stats:{ repair:5.5 } },
+  { id:"droid_x", slot:"droid", cls:4, rating:"A", name:"Дроиды РД-16 «Рой»", mass:2.7, price:1250000, stats:{ repair:9 } },
+
+  /* ---------- вооружение ---------- */
+  { id:"wpn_laser", slot:"weapon", cls:2, rating:"C", name:"Лазер Л-12 «Искра»", mass:0.7, price:180000, stats:{ weaponType:"laser", damage:14, range:160, speed:760, cooldown:0.16, ammo:0, color:"#ff6bd6" } },
+  { id:"wpn_energy", slot:"weapon", cls:3, rating:"B", name:"Энергопушка ЭП-4 «Вольт»", mass:1.2, price:330000, stats:{ weaponType:"energy", damage:28, range:140, speed:430, cooldown:0.48, ammo:0, color:"#8fd0ff" } },
+  { id:"wpn_kinetic", slot:"weapon", cls:3, rating:"C", name:"Кинетическая пушка К-90", mass:1.8, price:280000, stats:{ weaponType:"kinetic", damage:42, range:180, speed:310, cooldown:0.65, ammo:90, color:"#ffd166" } },
+  { id:"wpn_missile", slot:"weapon", cls:4, rating:"B", name:"ПУ «Стриж» · ракеты", mass:1.6, price:460000, stats:{ weaponType:"missile", damage:68, range:300, speed:115, cooldown:1.1, ammo:12, guided:true, color:"#7ee08a" } },
+  { id:"wpn_torpedo", slot:"weapon", cls:5, rating:"B", name:"Торпедный аппарат ТА-6", mass:2.5, price:620000, stats:{ weaponType:"torpedo", damage:125, range:380, speed:78, cooldown:2.1, ammo:6, splash:10, color:"#ff9a6b" } },
+  { id:"wpn_emp", slot:"weapon", cls:4, rating:"A", name:"ЭМИ-излучатель «Гроза»", mass:1.4, price:780000, stats:{ weaponType:"emp", damage:4, range:130, speed:170, cooldown:2.6, ammo:8, splash:18, emp:8, color:"#c9a0e8" } },
+  { id:"wpn_nuclear", slot:"weapon", cls:6, rating:"A", name:"Ядерная торпеда «Гелиос»", mass:4.8, price:2400000, stats:{ weaponType:"nuclear", damage:420, range:520, speed:66, cooldown:5, ammo:2, splash:34, guided:true, nuclear:true, color:"#f07d1a" } },
+  { id:"wpn_mine", slot:"weapon", cls:3, rating:"C", name:"Минный постановщик МП-8", mass:1.1, price:290000, stats:{ weaponType:"mine", damage:96, range:260, speed:4, cooldown:1.3, ammo:16, splash:14, mine:true, color:"#ff5c4d" } },
+
   /* ---------- груз ---------- */
   { id:"ore_fe",   slot:"cargo", cls:1, rating:"E", name:"Железная руда",     mass:1, price:320 },
   { id:"ore_ti",   slot:"cargo", cls:1, rating:"C", name:"Титановая руда",    mass:1, price:1450 },
@@ -88,6 +133,9 @@ export const CATALOG = [
   { id:"comp_adv",   slot:"computer", cls:5, rating:"A", name:"МК-2П «Алгол»",
     mass:1.7, price:1200000, slots: COMPUTER_SLOTS,
     defaults:{ gpu:"gpu_graphics", cpu:"cpu_quad", ram:"ram_4096", drive:"drive_crystal" } },
+  { id:"comp_expand", slot:"computer", cls:6, rating:"A", name:"МК-3М «Магистраль»",
+    mass:2.1, price:1650000, slots:EXPANSION_COMPUTER_SLOTS,
+    defaults:{ gpu:"gpu_graphics", cpu:"cpu_quad", ram:"ram_4096", peripheral1:"drive_floppy", drive:"drive_hard_big" } },
 
   /* ---------- компоненты компьютера ---------- */
   { id:"gpu_text", slot:"gpu", cls:1, rating:"D", name:"GPU «Литера»",
@@ -121,7 +169,16 @@ export const CATALOG = [
   { id:"drive_chip", slot:"drive", cls:2, rating:"C", name:"Чип памяти ЧП-128",
     mass:0.08, price:74000, stats:{ driveType:"chip", capacityKb:128 } },
   { id:"drive_crystal", slot:"drive", cls:3, rating:"A", name:"Кристалл памяти КР-512",
-    mass:0.04, price:360000, stats:{ driveType:"crystal", capacityKb:512 } }
+    mass:0.04, price:360000, stats:{ driveType:"crystal", capacityKb:512 } },
+  /* Носители занимают любой универсальный периферийный разъём. */
+  { id:"drive_floppy", slot:"peripheral", cls:1, rating:"E", name:"Дисковод ФД-144",
+    mass:0.24, price:18000, stats:{ driveType:"floppy", capacityKb:144, bootable:true } },
+  { id:"drive_hard", slot:"peripheral", cls:2, rating:"C", name:"Жёсткий диск ЖД-2048",
+    mass:0.42, price:95000, stats:{ driveType:"hard", capacityKb:2048, bootable:true } },
+  { id:"drive_hard_big", slot:"peripheral", cls:2, rating:"C", name:"Жёсткий диск ЖД-65535",
+    mass:0.42, price:195000, stats:{ driveType:"hard", capacityKb:65535, bootable:true } },
+  { id:"drive_installer", slot:"peripheral", cls:3, rating:"A", name:"Установочный носитель PCFD-65535",
+    mass:0.46, price:0, stats:{ driveType:"pcfd", capacityKb:65535, bootable:true, installerMedia:true } }
 ];
 
 export const byId = id => CATALOG.find(d => d.id === id) || null;
@@ -138,10 +195,23 @@ export class Item {
       const defaultId = this.def.defaults?.[slot.id];
       this.slots[slot.id] = defaultId ? new Item(defaultId) : null;
     }
-    if (this.slot === "drive"){
+    if (this.slot === "drive" || this.stats.driveType){
       this.storage = new ComputerMemory(this.stats.capacityKb);
+      if(this.stats.installerMedia){
+        this.storage.programs=[];
+        const pcfd=Uint8Array.from(atob(INSTALL_PCFD_BASE64),char=>char.charCodeAt(0));
+        this.storage.saveBinary("os.bin",INSTALLER_BINARY);
+        this.storage.saveBinary("installer.bin",INSTALLER_BINARY);
+        this.storage.saveBinary("install.pcfd",pcfd);
+        this.storage.save("install.conf","unattended=true\nroot_password=root\nguest=true\nboot_file=kernel.bin\n");
+        this.storage.installerPackage=pcfd;
+        this.storage.installationMedia=true;
+      }
     }
-    if (this.slot === "computer") this.runtime = new ComputerRuntime(this);
+    if (this.slot === "computer"){
+      this.firmware = new ComputerFirmware();
+      this.runtime = new ComputerRuntime(this);
+    }
   }
   get id(){ return this.def.id; }
   get slot(){ return this.def.slot; }
@@ -153,12 +223,22 @@ export class Item {
   get tag(){ return this.def.cls + this.def.rating; }
   get stats(){ return this.def.stats || {}; }
   get slotDefs(){ return this.def.slots || []; }
-  get memory(){ return this.slots.drive?.storage || null; }
-  accepts(item){ return !!item && Object.hasOwn(this.slots, item.slot); }
+  get memory(){
+    return this.slots.drive?.storage || Object.values(this.slots).find(item=>item?.storage)?.storage || null;
+  }
+  compatibleSlot(item){
+    if(!item)return null;
+    if(Object.hasOwn(this.slots,item.slot))return item.slot;
+    if(item.slot==="peripheral")return this.slotDefs.find(slot=>
+      slot.id.startsWith("peripheral")&&!this.slots[slot.id])?.id || null;
+    return null;
+  }
+  accepts(item){ return !!this.compatibleSlot(item); }
   install(item){
-    if (!this.accepts(item)) return null;
-    const old = this.slots[item.slot];
-    this.slots[item.slot] = item;
+    const slot=this.compatibleSlot(item);
+    if (!slot) return null;
+    const old = this.slots[slot];
+    this.slots[slot] = item;
     return old;
   }
   uninstall(slot){
@@ -182,15 +262,16 @@ export function itemStatLines(def){
   const s = def.stats || {};
   const out = [];
   if (def.slot === "computer"){
-    out.push("слоты GPU · CPU · RAM · DRIVE · периферия ×3");
+    const peripherals=(def.slots||[]).filter(slot=>slot.id.startsWith("peripheral")).length;
+    out.push("слоты GPU · CPU · RAM · DRIVE · периферия ×"+peripherals);
   } else if (def.slot === "gpu"){
     out.push("вывод: " + (s.output === "graphics" ? "графика" : "текст"));
   } else if (def.slot === "cpu"){
     out.push("потоки " + s.threads);
   } else if (def.slot === "ram"){
     out.push("оперативная память " + s.capacityKb + " КБ");
-  } else if (def.slot === "drive"){
-    const types = { magnetic:"магнитный диск", chip:"чип", crystal:"кристалл" };
+  } else if (def.slot === "drive" || def.slot === "peripheral"){
+    const types = { magnetic:"магнитный диск", chip:"чип", crystal:"кристалл", floppy:"дисковод", hard:"жёсткий диск", pcfd:"дисковод с установочным носителем" };
     out.push("тип: " + types[s.driveType], "память " + s.capacityKb + " КБ");
   } else if (def.slot === "hull"){
     out.push("трюм " + s.cargo + " т", "экипаж " + s.crew, "прочность " + s.hullInt);
@@ -203,6 +284,15 @@ export function itemStatLines(def){
     if (s.scoopRate > 0) out.push("сбор " + (s.scoopRate*60).toFixed(1) + " т/мин",
                                   "высота ×" + s.scoopAlt + " R");
     else out.push("сбор топлива: нет");
+  } else if (def.slot === "reactor"){
+    out.push("грейд " + s.grade, "мощность " + s.power + " МВт");
+  } else if (def.slot === "shield"){
+    out.push("щит " + s.capacity, "реген " + s.regen + "/с");
+  } else if (def.slot === "droid"){
+    out.push("ремонт " + s.repair + " ед/с");
+  } else if (def.slot === "weapon"){
+    const type={laser:"лазер",energy:"энергия",kinetic:"кинетика",missile:"ракеты",torpedo:"торпеды",emp:"ЭМИ",nuclear:"ядерные торпеды",mine:"мины"}[s.weaponType] || "оружие";
+    out.push(type, "урон " + s.damage, "дальность " + s.range + " du", s.ammo ? "боезапас " + s.ammo : "боезапас: энергия");
   }
   out.push("масса " + def.mass + " т");
   return out;

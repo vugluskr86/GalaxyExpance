@@ -1,187 +1,282 @@
 # PCOS self-hosted userland build graph.
 # Используется make.bin внутри PCVM.
 # Запуск: make [-f file] [target]
-ASM=assembler
-LINK=link
+ASM=assembler.bin
+LINK=linker.bin
 LIBC_BUILD=system/unix/build/libc.asm
-LIBC_SRC=lib/crt0.asm lib/syscall.asm lib/string.asm lib/stdlib.asm lib/io.asm lib/path.asm lib/getopt.asm lib/userdb.asm lib/utilities.asm lib/shell-parser.asm
+LIBC_SRC=lib/crt0.asm lib/syscall.asm lib/string.asm lib/stdlib.asm lib/io.asm lib/path.asm lib/getopt.asm
 KERNEL_SRC=kernel/entry.asm kernel/syscall.asm kernel/process.asm kernel/scheduler.asm kernel/memory.asm kernel/vfs.asm kernel/permissions.asm kernel/devices.asm
 
 # ======== Stage 1: libc ========
-$(LIBC_BUILD): $(LIBC_SRC)
-	cat $(LIBC_SRC) > $(LIBC_BUILD)
+build/libc.asm: lib/crt0.asm lib/syscall.asm lib/string.asm lib/stdlib.asm lib/io.asm lib/path.asm lib/getopt.asm
+	cat.bin lib/crt0.asm > build/libc.asm ; \
+	cat.bin lib/syscall.asm >> build/libc.asm ; \
+	cat.bin lib/string.asm >> build/libc.asm ; \
+	cat.bin lib/stdlib.asm >> build/libc.asm ; \
+	cat.bin lib/io.asm >> build/libc.asm ; \
+	cat.bin lib/path.asm >> build/libc.asm ; \
+	cat.bin lib/getopt.asm >> build/libc.asm
 
-libc.obj: $(LIBC_BUILD)
-	$(ASM) $(LIBC_BUILD) libc.obj
+libc.obj: build/libc.asm
+	$(ASM) build/libc.asm ; mv.bin a.obj libc.obj
 
 # ======== Stage 2: hello (smoke test) ========
-hello.obj: hello.asm
-	$(ASM) hello.asm hello.obj
+build/hello.asm: build/libc.asm hello.asm
+	cat.bin build/libc.asm > build/hello.asm ; cat.bin hello.asm >> build/hello.asm
 
-hello.bin: hello.obj libc.obj
-	$(LINK) hello.obj libc.obj hello.bin
+hello.obj: build/hello.asm
+	$(ASM) build/hello.asm ; mv.bin a.obj hello.obj
+
+hello.bin: hello.obj
+	$(LINK) hello.obj ; mv.bin a.bin hello.bin
 
 # ======== Stage 3: core utilities ========
-env.obj: bin/env.asm
-	$(ASM) bin/env.asm env.obj
+build/env.asm: build/libc.asm bin/env.asm
+	cat.bin build/libc.asm > build/env.asm ; cat.bin bin/env.asm >> build/env.asm
 
-env.bin: env.obj libc.obj
-	$(LINK) env.obj libc.obj env.bin
+env.obj: build/env.asm
+	$(ASM) build/env.asm ; mv.bin a.obj env.obj
 
-make.obj: bin/make.asm
-	$(ASM) bin/make.asm make.obj
+env.bin: env.obj
+	$(LINK) env.obj ; mv.bin a.bin env.bin
 
-make.bin: make.obj libc.obj
-	$(LINK) make.obj libc.obj make.bin
+build/make.asm: build/libc.asm bin/make.asm
+	cat.bin build/libc.asm > build/make.asm ; cat.bin bin/make.asm >> build/make.asm
 
-sh.obj: bin/sh.asm
-	$(ASM) bin/sh.asm sh.obj
+make.obj: build/make.asm
+	$(ASM) build/make.asm ; mv.bin a.obj make.obj
 
-sh.bin: sh.obj libc.obj
-	$(LINK) sh.obj libc.obj sh.bin
+make.bin: make.obj
+	$(LINK) make.obj ; mv.bin a.bin make.bin
 
-ls.obj: bin/ls.asm
-	$(ASM) bin/ls.asm ls.obj
+build/shell-lib.asm: build/libc.asm lib/shell-parser.asm
+	cat.bin build/libc.asm > build/shell-lib.asm ; cat.bin lib/shell-parser.asm >> build/shell-lib.asm
 
-ls.bin: ls.obj libc.obj
-	$(LINK) ls.obj libc.obj ls.bin
+build/sh.asm: build/shell-lib.asm bin/sh.asm
+	cat.bin build/shell-lib.asm > build/sh.asm ; cat.bin bin/sh.asm >> build/sh.asm
 
-cat.obj: bin/cat.asm
-	$(ASM) bin/cat.asm cat.obj
+sh.obj: build/sh.asm
+	$(ASM) build/sh.asm ; mv.bin a.obj sh.obj
 
-cat.bin: cat.obj libc.obj
-	$(LINK) cat.obj libc.obj cat.bin
+sh.bin: sh.obj
+	$(LINK) sh.obj ; mv.bin a.bin sh.bin
 
-grep.obj: bin/grep.asm
-	$(ASM) bin/grep.asm grep.obj
+build/utilities-lib.asm: build/libc.asm lib/utilities.asm
+	cat.bin build/libc.asm > build/utilities-lib.asm ; cat.bin lib/utilities.asm >> build/utilities-lib.asm
 
-grep.bin: grep.obj libc.obj
-	$(LINK) grep.obj libc.obj grep.bin
+build/ls.asm: build/utilities-lib.asm bin/ls.asm
+	cat.bin build/utilities-lib.asm > build/ls.asm ; cat.bin bin/ls.asm >> build/ls.asm
 
-cp.obj: bin/cp.asm
-	$(ASM) bin/cp.asm cp.obj
+ls.obj: build/ls.asm
+	$(ASM) build/ls.asm ; mv.bin a.obj ls.obj
 
-cp.bin: cp.obj libc.obj
-	$(LINK) cp.obj libc.obj cp.bin
+ls.bin: ls.obj
+	$(LINK) ls.obj ; mv.bin a.bin ls.bin
 
-mv.obj: bin/mv.asm
-	$(ASM) bin/mv.asm mv.obj
+build/cat.asm: build/utilities-lib.asm bin/cat.asm
+	cat.bin build/utilities-lib.asm > build/cat.asm ; cat.bin bin/cat.asm >> build/cat.asm
 
-mv.bin: mv.obj libc.obj
-	$(LINK) mv.obj libc.obj mv.bin
+cat.obj: build/cat.asm
+	$(ASM) build/cat.asm ; mv.bin a.obj cat.obj
 
-mkdir.obj: bin/mkdir.asm
-	$(ASM) bin/mkdir.asm mkdir.obj
+cat.bin: cat.obj
+	$(LINK) cat.obj ; mv.bin a.bin cat.bin
 
-mkdir.bin: mkdir.obj libc.obj
-	$(LINK) mkdir.obj libc.obj mkdir.bin
+build/grep.asm: build/utilities-lib.asm bin/grep.asm
+	cat.bin build/utilities-lib.asm > build/grep.asm ; cat.bin bin/grep.asm >> build/grep.asm
 
-rm.obj: bin/rm.asm
-	$(ASM) bin/rm.asm rm.obj
+grep.obj: build/grep.asm
+	$(ASM) build/grep.asm ; mv.bin a.obj grep.obj
 
-rm.bin: rm.obj libc.obj
-	$(LINK) rm.obj libc.obj rm.bin
+grep.bin: grep.obj
+	$(LINK) grep.obj ; mv.bin a.bin grep.bin
 
-link-util.obj: bin/link.asm
-	$(ASM) bin/link.asm link-util.obj
+build/cp.asm: build/utilities-lib.asm bin/cp.asm
+	cat.bin build/utilities-lib.asm > build/cp.asm ; cat.bin bin/cp.asm >> build/cp.asm
 
-link-util.bin: link-util.obj libc.obj
-	$(LINK) link-util.obj libc.obj link-util.bin
+cp.obj: build/cp.asm
+	$(ASM) build/cp.asm ; mv.bin a.obj cp.obj
 
-top.obj: bin/top.asm
-	$(ASM) bin/top.asm top.obj
+cp.bin: cp.obj
+	$(LINK) cp.obj ; mv.bin a.bin cp.bin
 
-top.bin: top.obj libc.obj
-	$(LINK) top.obj libc.obj top.bin
+build/mv.asm: build/utilities-lib.asm bin/mv.asm
+	cat.bin build/utilities-lib.asm > build/mv.asm ; cat.bin bin/mv.asm >> build/mv.asm
 
-find.obj: bin/find.asm
-	$(ASM) bin/find.asm find.obj
+mv.obj: build/mv.asm
+	$(ASM) build/mv.asm ; mv.bin a.obj mv.obj
 
-find.bin: find.obj libc.obj
-	$(LINK) find.obj libc.obj find.bin
+mv.bin: mv.obj
+	$(LINK) mv.obj ; mv.bin a.bin mv.bin
 
-chown.obj: bin/chown.asm
-	$(ASM) bin/chown.asm chown.obj
+build/mkdir.asm: build/utilities-lib.asm bin/mkdir.asm
+	cat.bin build/utilities-lib.asm > build/mkdir.asm ; cat.bin bin/mkdir.asm >> build/mkdir.asm
 
-chown.bin: chown.obj libc.obj
-	$(LINK) chown.obj libc.obj chown.bin
+mkdir.obj: build/mkdir.asm
+	$(ASM) build/mkdir.asm ; mv.bin a.obj mkdir.obj
 
-chgrp.obj: bin/chgrp.asm
-	$(ASM) bin/chgrp.asm chgrp.obj
+mkdir.bin: mkdir.obj
+	$(LINK) mkdir.obj ; mv.bin a.bin mkdir.bin
 
-chgrp.bin: chgrp.obj libc.obj
-	$(LINK) chgrp.obj libc.obj chgrp.bin
+build/rm.asm: build/utilities-lib.asm bin/rm.asm
+	cat.bin build/utilities-lib.asm > build/rm.asm ; cat.bin bin/rm.asm >> build/rm.asm
 
-user.obj: bin/user.asm
-	$(ASM) bin/user.asm user.obj
+rm.obj: build/rm.asm
+	$(ASM) build/rm.asm ; mv.bin a.obj rm.obj
 
-user.bin: user.obj libc.obj
-	$(LINK) user.obj libc.obj user.bin
+rm.bin: rm.obj
+	$(LINK) rm.obj ; mv.bin a.bin rm.bin
 
-login.obj: bin/login.asm
-	$(ASM) bin/login.asm login.obj
+build/link-util.asm: build/utilities-lib.asm bin/link.asm
+	cat.bin build/utilities-lib.asm > build/link-util.asm ; cat.bin bin/link.asm >> build/link-util.asm
 
-login.bin: login.obj libc.obj lib/userdb.asm
-	$(LINK) login.obj libc.obj login.bin
+link-util.obj: build/link-util.asm
+	$(ASM) build/link-util.asm ; mv.bin a.obj link-util.obj
 
-passwd.obj: bin/passwd.asm
-	$(ASM) bin/passwd.asm passwd.obj
+link-util.bin: link-util.obj
+	$(LINK) link-util.obj ; mv.bin a.bin link-util.bin
 
-passwd.bin: passwd.obj libc.obj
-	$(LINK) passwd.obj libc.obj passwd.bin
+build/top.asm: build/libc.asm bin/top.asm
+	cat.bin build/libc.asm > build/top.asm ; cat.bin bin/top.asm >> build/top.asm
+
+top.obj: build/top.asm
+	$(ASM) build/top.asm ; mv.bin a.obj top.obj
+
+top.bin: top.obj
+	$(LINK) top.obj ; mv.bin a.bin top.bin
+
+build/ps.asm: build/libc.asm bin/ps.asm
+	cat.bin build/libc.asm > build/ps.asm ; cat.bin bin/ps.asm >> build/ps.asm
+
+ps.obj: build/ps.asm
+	$(ASM) build/ps.asm ; mv.bin a.obj ps.obj
+
+ps.bin: ps.obj
+	$(LINK) ps.obj ; mv.bin a.bin ps.bin
+
+build/find.asm: build/utilities-lib.asm bin/find.asm
+	cat.bin build/utilities-lib.asm > build/find.asm ; cat.bin bin/find.asm >> build/find.asm
+
+find.obj: build/find.asm
+	$(ASM) build/find.asm ; mv.bin a.obj find.obj
+
+find.bin: find.obj
+	$(LINK) find.obj ; mv.bin a.bin find.bin
+
+build/chown.asm: build/utilities-lib.asm bin/chown.asm
+	cat.bin build/utilities-lib.asm > build/chown.asm ; cat.bin bin/chown.asm >> build/chown.asm
+
+chown.obj: build/chown.asm
+	$(ASM) build/chown.asm ; mv.bin a.obj chown.obj
+
+chown.bin: chown.obj
+	$(LINK) chown.obj ; mv.bin a.bin chown.bin
+
+build/chgrp.asm: build/utilities-lib.asm bin/chgrp.asm
+	cat.bin build/utilities-lib.asm > build/chgrp.asm ; cat.bin bin/chgrp.asm >> build/chgrp.asm
+
+chgrp.obj: build/chgrp.asm
+	$(ASM) build/chgrp.asm ; mv.bin a.obj chgrp.obj
+
+chgrp.bin: chgrp.obj
+	$(LINK) chgrp.obj ; mv.bin a.bin chgrp.bin
+
+build/user.asm: build/utilities-lib.asm bin/user.asm
+	cat.bin build/utilities-lib.asm > build/user.asm ; cat.bin bin/user.asm >> build/user.asm
+
+user.obj: build/user.asm
+	$(ASM) build/user.asm ; mv.bin a.obj user.obj
+
+user.bin: user.obj
+	$(LINK) user.obj ; mv.bin a.bin user.bin
+
+build/userdb-lib.asm: build/libc.asm lib/userdb.asm
+	cat.bin build/libc.asm > build/userdb-lib.asm ; cat.bin lib/userdb.asm >> build/userdb-lib.asm
+
+build/login.asm: build/userdb-lib.asm bin/login.asm
+	cat.bin build/userdb-lib.asm > build/login.asm ; cat.bin bin/login.asm >> build/login.asm
+
+login.obj: build/login.asm
+	$(ASM) build/login.asm ; mv.bin a.obj login.obj
+
+login.bin: login.obj
+	$(LINK) login.obj ; mv.bin a.bin login.bin
+
+build/passwd.asm: build/userdb-lib.asm bin/passwd.asm
+	cat.bin build/userdb-lib.asm > build/passwd.asm ; cat.bin bin/passwd.asm >> build/passwd.asm
+
+passwd.obj: build/passwd.asm
+	$(ASM) build/passwd.asm ; mv.bin a.obj passwd.obj
+
+passwd.bin: passwd.obj
+	$(LINK) passwd.obj ; mv.bin a.bin passwd.bin
 
 # ======== Stage 4: kernel ========
-kernel.obj: $(KERNEL_SRC)
-	$(ASM) kernel/entry.asm kernel/entry.obj
+build/kernel.asm: kernel/entry.asm kernel/syscall.asm kernel/process.asm kernel/scheduler.asm kernel/memory.asm kernel/vfs.asm kernel/permissions.asm kernel/devices.asm
+	cat.bin kernel/entry.asm > build/kernel.asm ; \
+	cat.bin kernel/syscall.asm >> build/kernel.asm ; \
+	cat.bin kernel/process.asm >> build/kernel.asm ; \
+	cat.bin kernel/scheduler.asm >> build/kernel.asm ; \
+	cat.bin kernel/memory.asm >> build/kernel.asm ; \
+	cat.bin kernel/vfs.asm >> build/kernel.asm ; \
+	cat.bin kernel/permissions.asm >> build/kernel.asm ; \
+	cat.bin kernel/devices.asm >> build/kernel.asm
 
-kernel.bin: kernel.obj libc.obj
-	$(LINK) kernel.obj libc.obj kernel.bin
+kernel.obj: build/kernel.asm
+	$(ASM) build/kernel.asm ; mv.bin a.obj kernel.obj
+
+kernel.bin: kernel.obj
+	$(LINK) kernel.obj ; mv.bin a.bin kernel.bin
 
 # ======== Stage 5: services ========
-init.obj: init/init.asm
-	$(ASM) init/init.asm init.obj
+build/init.asm: build/libc.asm init/init.asm
+	cat.bin build/libc.asm > build/init.asm ; cat.bin init/init.asm >> build/init.asm
 
-init.bin: init.obj libc.obj
-	$(LINK) init.obj libc.obj init.bin
+init.obj: build/init.asm
+	$(ASM) build/init.asm ; mv.bin a.obj init.obj
 
-logger.obj: sbin/logger.asm
-	$(ASM) sbin/logger.asm logger.obj
+init.bin: init.obj
+	$(LINK) init.obj ; mv.bin a.bin init.bin
 
-logger.bin: logger.obj libc.obj
-	$(LINK) logger.obj libc.obj logger.bin
+build/logger.asm: build/libc.asm sbin/logger.asm
+	cat.bin build/libc.asm > build/logger.asm ; cat.bin sbin/logger.asm >> build/logger.asm
+
+logger.obj: build/logger.asm
+	$(ASM) build/logger.asm ; mv.bin a.obj logger.obj
+
+logger.bin: logger.obj
+	$(LINK) logger.obj ; mv.bin a.bin logger.bin
 
 # ======== Aggregate targets ========
 baseline: hello.bin env.bin make.bin sh.bin
 
-userland: hello.bin env.bin make.bin sh.bin ls.bin cat.bin grep.bin cp.bin mv.bin mkdir.bin rm.bin link-util.bin top.bin find.bin chown.bin chgrp.bin user.bin
+userland: hello.bin env.bin make.bin sh.bin ls.bin cat.bin grep.bin cp.bin mv.bin mkdir.bin rm.bin link-util.bin top.bin ps.bin find.bin chown.bin chgrp.bin user.bin
 
 system: kernel.bin init.bin logger.bin
 
 auth: login.bin passwd.bin
 
 all: userland system auth
-	echo userland-built
 
 # ======== Bootstrap: self-hosted toolchain rebuild ========
 assembler2.obj: ../../system/assembler.asm
-	$(ASM) ../../system/assembler.asm assembler2.obj
+	$(ASM) ../../system/assembler.asm ; mv.bin a.obj assembler2.obj
 
 assembler2.bin: assembler2.obj
-	$(LINK) assembler2.obj assembler2.bin
+	$(LINK) assembler2.obj ; mv.bin a.bin assembler2.bin
 
 linker2.obj: ../../system/linker.asm
-	$(ASM) ../../system/linker.asm linker2.obj
+	$(ASM) ../../system/linker.asm ; mv.bin a.obj linker2.obj
 
 linker2.bin: linker2.obj
-	$(LINK) linker2.obj linker2.bin
+	$(LINK) linker2.obj ; mv.bin a.bin linker2.bin
 
 toolchain: assembler2.bin linker2.bin
 
 bootstrap: toolchain all
-	echo bootstrap-complete
 
 # ======== Clean ========
 clean:
-	rm *.obj *.bin
+	rm.bin *.obj *.bin
 
 .PHONY: clean bootstrap all userland system auth baseline toolchain

@@ -5,6 +5,14 @@ import { PT_RU } from "../gen/planet.js";
  *  инсоляции (светимость звезды / расстояние) и типа мира. */
 export function planetStats(S, p, kind, parentDist){
   if (p._stats) return p._stats;
+  if(p.surface){
+    const q=p.surface,parts=[];
+    for(const [name,value] of [["N₂",q.gN2],["O₂",q.gO2],["CO₂",q.gCO2],["CH₄",q.gCH4],["SO₂",q.gSO2],["H₂O",q.gH2O]])if(value>.01)parts.push(`${name} ${Math.round(value*100)} %`);
+    const liquid={water:"вода (океаны и озёра)",methane:"жидкий метан (озёра)",ammonia:"аммиачный раствор",lava:"расплавленная порода",none:"нет"}[q.liquidType]||"нет";
+    const veg=q.vegetation>.5?"леса и травы":q.vegetation>.16?"разреженная растительность":q.vegetation>.04?"мхи и лишайники":"нет";
+    p._stats={tempC:Math.round(q.tempK-273),atm:q.pressure<.02?"нет (следовые газы)":(parts.join(" · ")||"плотная атмосфера"),pressure:q.pressure<.01?"< 0.001 атм":q.pressure.toFixed(2)+" атм",liquid,minerals:q.minerals>.7?"богатые залежи":q.minerals>.35?"железо, никель, силикаты":"бедные силикаты",veg,grav:q.gravity.toFixed(2),day:Math.round((2*Math.PI/(Math.max(.05,p.spin)*2.6e-4))/360)/10,typeRu:PT_RU[p.type],hasAtm:q.pressure>=.02};
+    return p._stats;
+  }
   const rng = mulberry32(p.seed ^ 0x57a7);
   const dist = kind === "moon" ? parentDist : p.dist;
   const L = Math.pow(S.sun.D/37.7, 2)*Math.pow(S.sun.temp/5700, 4);

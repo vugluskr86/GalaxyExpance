@@ -1,6 +1,6 @@
 import { mulberry32 } from "../core/rng.js";
 import { fbm } from "../core/noise.js";
-import { BAYER, SHADE, shadeTable } from "../core/color.js";
+import { BAYER, SHADE, shadeTable, hex2rgb } from "../core/color.js";
 
 export const PT = {
   terran:{ caps:true, craters:0,
@@ -38,6 +38,58 @@ export const PT_RU = {
 export const TILT = -0.42, RING_SQ = 0.34;
 const cosT = Math.cos(TILT), sinT = Math.sin(TILT);
 
+/** Physical and visual surface parameters. They are stored on the generated
+ * body, rather than chosen by the landing screen, so every view uses the same
+ * deterministic planet. Values not implied by the class come from its seed. */
+export function makeSurfaceProfile(body,sun={temp:5700,D:38}){
+  const rng=mulberry32((body.seed^0x51f15e)>>>0),type=body.type||"moon";
+  const flux=Math.pow((sun.D||38)/37.7,2)*Math.pow((sun.temp||5700)/5700,4)/Math.pow(Math.max(30,body.dist||100)/100,2);
+  const base={terran:[1,.78,.21,.01,.06,.55,.62,.56],ocean:[1.4,.72,.24,.02,.04,.82,.82,.42],desert:[.05,.03,0,.88,.22,.05,.03,.58],ice:[.3,.84,0,.12,.2,.34,.08,.3],lava:[5,.18,0,.6,.55,.12,0,.85],gas:[12,.72,0,.08,.5,.8,0,.28],alien:[1,.55,.08,.16,.25,.42,.48,.64],moon:[0,0,0,.4,0,0,0,.42]}[type]||[0,0,0,.4,0,0,0,.42];
+  const pressure=type==="moon"?0:Math.max(0,type==="gas"?8:base[0]*(.72+rng()*.72));
+  const greenhouse=type==="lava"?170:type==="ocean"?28:type==="terran"?20:type==="alien"?18:type==="ice"?5:0;
+  const tempK=Math.round(278*Math.pow(Math.max(.001,flux),.25)+greenhouse+(rng()-.5)*16);
+  const liquidType=type==="lava"?"lava":type==="ice"?(tempK<130?"methane":"water"):type==="alien"?(rng()<.45?"ammonia":"water"):type==="terran"||type==="ocean"?"water":"none";
+  const liquid=liquidType==="none"?0:Math.min(.94,Math.max(0,base[5]+(rng()-.5)*.22));
+  const gCO2=type==="desert"?.84:type==="lava"?.45:type==="alien"?.2:type==="ice"?.07:.004+rng()*.018;
+  const gCH4=type==="ice"?.12:type==="alien"?.08:type==="gas"?.08:0;
+  const gSO2=type==="lava"?.28:0;
+  const gH2O=liquidType==="water"?Math.min(.12,.01+liquid*.06):0;
+  const vegetation=pressure>.25&&tempK>235&&tempK<335&&liquid>0.08?(type==="alien"?.2+rng()*.6:type==="terran"||type==="ocean"?.25+rng()*.65:rng()*.18):0;
+  return {tempK,pressure,gravity:Math.max(.05,Math.min(3,(body.size||16)/18*(.8+rng()*.4))),starT:sun.temp||5700,starLum:flux*Math.pow(Math.max(.3,(body.dist||100)/100),2),orbitAU:(body.dist||100)/100,
+    gN2:Math.max(0,base[1]-gCO2-gCH4),gO2:vegetation>.22?base[2]:0,gCO2,gCH4,gSO2,gH2O,
+    dust:Math.min(1,base[3]+(rng()-.5)*.24),haze:Math.min(1,base[4]+(rng()-.5)*.2),wind:rng(),magnetic:rng(),
+    liquid,liquidType,humidity:liquidType==="water"?Math.min(1,.18+liquid*.75+rng()*.15):rng()*.25,vegetation,flora:Math.floor(rng()*360),volcanism:type==="lava"?.6+rng()*.4:rng()*.18,minerals:Math.min(1,base[7]+(rng()-.5)*.35),relief:.28+rng()*.82,roughness:rng(),
+    lat:-70+rng()*140,tilt:rng()*42,season:rng(),hour:rng()*24,cloudCover:pressure>.04?Math.min(1,(liquid*.65+vegetation*.2+rng()*.25)):0,cloudHeight:rng(),cloudSpeed:.15+rng()*1.2,
+    plantIter:2+Math.floor(rng()*4),plantAngle:12+Math.floor(rng()*30),plantSize:.55+rng()*1.2,plantDensity:vegetation*(.5+rng()),plantVariants:1+Math.floor(rng()*4),colony:vegetation>.2&&rng()>.7?1+Math.floor(rng()*3):0};
+}
+
+const clamp01=v=>Math.max(0,Math.min(1,v));
+const blendRgb=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*clamp01(t)));
+function floraRgb(h){
+  const c=(1-Math.abs((h/60)%6-3))*0.45+.2;
+  const pick=n=>Math.round(255*Math.max(0,Math.min(1,c-Math.max(0,Math.min(1,Math.abs((h/60+n)%6-3)-1)))));
+  return [pick(0),pick(4),pick(2)];
+}
+const LIQUID_RGB={water:[24,104,176],methane:[31,83,98],ammonia:[74,124,133],lava:[224,73,21]};
+
+/** Palette used by the shared canvas globe renderer.  It derives visible
+ * terrain, liquid and dust colours from the same profile as LandingScene. */
+export function surfacePalette(body,cols){
+  const q=body.surface;
+  if (!q || PT[body.type]?.gas) return cols;
+  const liquid=LIQUID_RGB[q.liquidType] || LIQUID_RGB.water;
+  const liquidBands={terran:3,ocean:4,ice:2,alien:1}[body.type] || 0;
+  const flora=floraRgb(q.flora||110), mineral=[145,78,48];
+  return cols.map((source,i)=>{
+    let col=typeof source === "string" ? hex2rgb(source) : source.slice();
+    const isLiquid=i<liquidBands && q.liquid>.02;
+    if (isLiquid) col=blendRgb(col,liquid,.48+q.liquid*.38);
+    else if (q.vegetation>.02 && body.type!=="desert") col=blendRgb(col,flora,q.vegetation*.58);
+    col=blendRgb(col,mineral,(q.minerals||0)*.10+(q.dust||0)*.28);
+    return col;
+  });
+}
+
 /** Запекает текстуру и спрайт планеты в p (мутирует объект). */
 export function bakePlanet(p){
   const T = PT[p.type];
@@ -51,6 +103,7 @@ export function bakePlanet(p){
   let cols;
   if (T.gas){ cols = T.schemes[Math.floor(rng()*T.schemes.length)]; }
   else { cols = T.bands.map(b => b[1]); if (T.caps) cols.push(T.ice); }
+  cols = surfacePalette(p, cols);
   const capIdx = cols.length - 1;
   const craters = [];
   for(let i = 0; i < (T.craters||0); i++){
@@ -83,7 +136,9 @@ export function bakePlanet(p){
         idx[o] = ci;
       }
       const cn = fbm(px*1.9+40, py*1.9-17, pz*1.9+8, nseed ^ 0x5bd1e995, 3);
-      cloud[o] = cn > 0.615 ? 2 : (cn > 0.565 ? 1 : 0);
+      const cover=p.surface?.cloudCover ?? (p.clouds ? .5 : 0);
+      const cutoff=.79-cover*.31;
+      cloud[o] = cover>.02 && cn > cutoff ? 2 : (cover>.08 && cn > cutoff-.05 ? 1 : 0);
     }
   }
   p.tex = { w, h, idx, cloud };
@@ -138,7 +193,7 @@ export function renderPlanetBody(p, lx, ly, lz){
         let lvl = Math.round((1-dot)*4 + bay*1.3);
         lvl = Math.min(4, Math.max(0, lvl));
         let col = p.pal[tex.idx[to]][lvl];
-        if (p.clouds){
+        if (p.clouds || p.surface?.cloudCover > .02){
           let cu = (Math.atan2(nx, nz) + p.crot)/(Math.PI*2); cu -= Math.floor(cu);
           const cv = tex.cloud[tv*tex.w + (Math.floor(cu*tex.w) % tex.w)];
           if (cv > 0) col = p.cloudCols[2-cv][lvl];
@@ -160,8 +215,30 @@ export function renderPlanetBody(p, lx, ly, lz){
   p.pctx.putImageData(p.img, 0, 0);
 }
 
+/**
+ * Returns a body sprite suitable for its current on-screen LOD.  The high
+ * levels reuse the deterministic texture but rasterise it at a denser native
+ * resolution, avoiding a blurred canvas upscale when the camera is close.
+ */
+export function renderPlanetLod(p,lx,ly,lz,lod=0){
+  if(lod<=0){renderPlanetBody(p,lx,ly,lz);return p.cvs;}
+  const factor=lod===1?2:3;
+  const C=Math.min(512,Math.max(p.C+1,Math.round(p.C*factor)));
+  p._lodSprites ||= Object.create(null);
+  let sprite=p._lodSprites[C];
+  if(!sprite){
+    const cvs=document.createElement("canvas");cvs.width=C;cvs.height=C;
+    const pctx=cvs.getContext("2d");
+    sprite={cvs,pctx,img:pctx.createImageData(C,C)};p._lodSprites[C]=sprite;
+  }
+  // Do not mutate the simulation body: a view only changes raster resolution.
+  const view={...p,...sprite,C,pr:p.pr};
+  renderPlanetBody(view,lx,ly,lz);
+  return sprite.cvs;
+}
+
 /** Спутники планеты из переданного rng (порядок вызовов = контракт генерации!). */
-export function genMoons(p, rng){
+export function genMoons(p, rng, sun){
   p.moonList = [];
   const base = (p.rings ? p.size*1.15 : p.size/2) + 8;
   for(let i=0; i<p.moons; i++){
@@ -174,7 +251,7 @@ export function genMoons(p, rng){
       ang: rng()*Math.PI*2,
       w: (1.5 - i*0.28) * (rng()<0.15 ? -1 : 1)
     };
-    bakePlanet(m);
+    m.dist=p.dist;m.surface=makeSurfaceProfile(m,sun);bakePlanet(m);
     p.moonList.push(m);
   }
 }

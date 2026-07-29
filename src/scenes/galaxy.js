@@ -14,9 +14,10 @@ const LODS = [
 ];
 
 export class GalaxyScene {
-  constructor(galDef){
+  constructor(galDef,world=null){
     this.gal = galDef;                    // запись кластера {def, name, desig, ...}
     this.g = new Galaxy(galDef.def);
+    this.world = world;
     this.crumb = "Галактика";
     this.cam = { x:0, y:0 };
     this.zoom = 0.2;
@@ -328,7 +329,8 @@ export class GalaxyScene {
     }
     this.jumpMsg = null;
     player.doJump(this.g.def.seed, star.x, star.y);
-    this.mgr.push(new SystemScene(this.g, star));
+    if(this.world)this.world.data.galaxyIndex=this.gal.idx;
+    this.mgr.push(new SystemScene(this.g, star,{world:this.world}));
   }
   primary(){
     if (this.sel && this.sel.kind === "neb")

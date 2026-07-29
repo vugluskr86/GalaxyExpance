@@ -2,8 +2,9 @@ import { GalaxyScene } from "./galaxy.js";
 import { lblText, toLbl } from "../ui/panel.js";
 
 export class ClusterScene {
-  constructor(cluster){
+  constructor(cluster,world=null){
     this.cluster = cluster;
+    this.world = world;
     this.crumb = "Кластер";
     this.cam = { x:0, y:0 };
     this.zoom = 0.08;
@@ -70,7 +71,7 @@ export class ClusterScene {
     if (this.sel === hit) this.enterGalaxy(hit);
     else { this.sel = hit; this.mgr.onChange?.(); }
   }
-  enterGalaxy(g){ this.mgr.push(new GalaxyScene(g)); }
+  enterGalaxy(g){ this.mgr.push(new GalaxyScene(g,this.world)); }
   onDragStart(){ return { cx: this.cam.x, cy: this.cam.y }; }
   onDragMove(dx, dy, st){
     this.cam.x = st.cx - dx/this.zoom;

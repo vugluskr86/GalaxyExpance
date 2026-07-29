@@ -53,6 +53,33 @@ test("env applies assignments and launches a separate command",()=>{
   assert.deepEqual(calls,["/bin/cat"]);
 });
 
+test("protected Unix assembler CLI reads ARGS and writes PCOB through VFS",()=>{
+  const store=new InodeFS(4096),root=store.readInode(store.rootId);
+  addFile(store,root,"demo.asm","LOAD_A 55\nPRINT_A\nHALT\n",10);
+  const context=execute("assembler","assembler /demo.asm",
+    {store,cpuBytes:2097152,maxSteps:100_000_000});
+  assert.equal(context.result.halted,true);
+  const inode=store.resolvePath(store.rootId,"/a.obj").inode;
+  assert.ok(inode,context.output.join(" | "));
+  const object=store.readData(inode);
+  assert.deepEqual(Array.from(object.slice(0,4)),[0x50,0x43,0x4f,0x42]);
+});
+
+test("protected Unix linker CLI links the VFS object and output executes",()=>{
+  const store=new InodeFS(4096),root=store.readInode(store.rootId);
+  addFile(store,root,"demo.asm","LOAD_A 55\nPRINT_A\nHALT\n",10);
+  execute("assembler","assembler /demo.asm",
+    {store,cpuBytes:2097152,maxSteps:100_000_000});
+  const linked=execute("linker","linker /a.obj",
+    {store,cpuBytes:2097152,maxSteps:100_000_000});
+  assert.equal(linked.result.halted,true);
+  const inode=store.resolvePath(store.rootId,"/a.bin").inode;
+  assert.ok(inode,linked.output.join(" | "));
+  const output=[],program=new Assembler().decodeBinary(store.readData(inode));
+  new CPU(8192,value=>output.push(String(value))).run(program);
+  assert.deepEqual(output,["55"]);
+});
+
 test("make parses variables, -f, target and executes recipe through sh",()=>{
   const store=new InodeFS(128),root=store.readInode(store.rootId),calls=[];
   addFile(store,root,"source","payload",20);
@@ -61,7 +88,7 @@ test("make parses variables, -f, target and executes recipe through sh",()=>{
     procExec(path){calls.push(path);return 2;},
     procWait(){return{pid:2,status:0};},
   },maxSteps:2000000});
-  assert.deepEqual(calls,["/bin/sh"]);
+  assert.deepEqual(calls,["/bin/sh.bin"]);
   assert.equal(context.environment.SH_COMMAND,undefined);
   assert.equal(context.environment.ARGS,"sh");
   assert.equal(context.result.halted,true);
@@ -110,8 +137,8 @@ test("make walks a missing dependency through a child make process",()=>{
     procWait(){return{pid:2,status:0};},
   },maxSteps:5000000});
   assert.equal(context.result.halted,true);
-  assert.equal(calls[0],"/bin/make");
-  assert.equal(calls.at(-1),"/bin/sh");
+  assert.equal(calls[0],"/bin/make.bin");
+  assert.equal(calls.at(-1),"/bin/sh.bin");
 });
 
 test("make parses full system Makefile without crash",()=>{
@@ -140,7 +167,7 @@ test("make bootstrap target exists and references assembler/linker rebuild",()=>
 test("make clean target exists",()=>{
   const makefileText=fs.readFileSync(new URL("../system/unix/Makefile",import.meta.url),"utf8");
   assert.match(makefileText,/clean:/);
-  assert.match(makefileText,/rm \*\.obj/);
+  assert.match(makefileText,/rm\.bin \*\.obj/);
 });
 
 test("Makefile covers all install-manifest binaries",()=>{
@@ -152,7 +179,7 @@ test("Makefile covers all install-manifest binaries",()=>{
     if(!file.path.endsWith(".bin"))continue;
     const name=file.path.split("/").pop().replace(".bin","");
     if(name==="link")continue; // "link" conflicts with make "link" target name
-    const target=`${name}.bin`;
+    const target=["assembler","linker"].includes(name)?`${name}2.bin`:`${name}.bin`;
     assert.ok(makefileText.includes(`${target}:`),
       `Makefile missing target ${target} for manifest entry ${file.path}`);
   }

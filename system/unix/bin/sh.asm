@@ -22,7 +22,7 @@ LOAD_D 0x00090004
 CALL libc_setenv
 LOAD_B shell_batch_key
 LOAD_C shell_raw_line
-LOAD_D 0x0200000a
+LOAD_D 0x0800000a
 SYSCALL 0x33
 LOAD_D -1
 CMP_A_D
@@ -36,7 +36,7 @@ JMP shell_not_interrupt
 shell_loop:
 CALL shell_print_prompt
 LOAD_B shell_raw_line
-LOAD_C 512
+LOAD_C 2048
 SYSCALL 0x40
 JZ shell_loop
 LOAD_D -1
@@ -868,9 +868,9 @@ shell_expand_var_spec: .dword 0
 shell_export_ptr: .dword 0
 shell_export_len: .dword 0
 shell_scan: .dword 0
-shell_line: .zero 512
-shell_raw_line: .zero 512
-shell_expanded_line: .zero 512
+shell_line: .zero 2048
+shell_raw_line: .zero 2048
+shell_expanded_line: .zero 2048
 shell_status_text: .zero 16
 shell_env_text: .zero 256
 shell_prompt_user: .zero 32

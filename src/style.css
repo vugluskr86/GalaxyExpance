@@ -9,8 +9,8 @@ body{
   min-height:100vh; display:flex; flex-direction:column; align-items:center;
   padding:24px 16px 48px;
 }
-h1{font-size:22px; letter-spacing:6px; text-transform:uppercase; color:var(--accent); margin-bottom:4px; text-align:center;}
-.sub{color:var(--muted); font-size:12px; margin-bottom:24px; letter-spacing:2px; text-align:center;}
+h1{font-size:22px; letter-spacing:6px; text-transform:uppercase; color:var(--accent); margin-bottom:24px; text-align:center;}
+.sub{color:var(--muted); font-size:12px; margin-top:24px; letter-spacing:2px; text-align:center;}
 .layout{display:flex; gap:24px; flex-wrap:wrap; justify-content:center; align-items:flex-start; width:100%; max-width:1020px;}
 .screens{width:560px; max-width:100%; display:flex; flex-direction:column; gap:12px;}
 .stage{position:relative; width:560px; max-width:100%; aspect-ratio:1/1;

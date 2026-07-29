@@ -25,6 +25,7 @@ export class BodyScene {
         type:o.type, seed:o.seed,
         rings: selRef.kind === "planet" ? o.rings : false,
         clouds: selRef.kind === "planet" ? o.clouds : false,
+        surface:o.surface,
         size: selRef.kind === "moon" ? 150 : (o.rings ? 96 : 176),
         moons:0
       };
@@ -310,6 +311,13 @@ export class BodyScene {
           const m = src.moonList[this.moonSel.i];
           const st = planetStats(this.sys.S, m, "moon", src.dist);
           this.mgr.push(new LandingScene(this.sys, this.moonRef(), st));
+        } };
+      }
+      if (ship && this.sys.canApproachForLanding(this.moonRef())){
+        const h = this.sys.landingApproachAlt(this.moonRef());
+        return { label:"Посадка → подлёт к спутнику", run: () => {
+          ship.fsdTo(this.moonRef(), h);
+          this.mgr.onChange?.();
         } };
       }
       if (ship){
