@@ -27,13 +27,33 @@ export const PT = {
   alien:{ caps:false, craters:0,
     bands:[[0.36,"#14532d"],[0.48,"#22884b"],[0.545,"#7ee08a"],[0.68,"#5b2d7a"],
            [0.84,"#7c3fa8"],[1.01,"#b06ad0"]] },
+  jungle:{ caps:true, craters:0,
+    bands:[[0.34,"#10365c"],[0.48,"#1d7196"],[0.55,"#53b8c5"],[0.62,"#d2b66d"],
+           [0.78,"#287344"],[1.01,"#17452f"]], ice:"#dfead9" },
+  mars:{ caps:false, craters:7,
+    bands:[[0.30,"#3d1e20"],[0.46,"#733023"],[0.62,"#a94c2c"],[0.78,"#d1763d"],
+           [1.01,"#eca65c"]] },
+  venus:{ caps:false, craters:0,
+    bands:[[0.36,"#3a2415"],[0.53,"#78502a"],[0.70,"#ae7a37"],[0.86,"#e0af55"],
+           [1.01,"#f2d782"]] },
+  titan:{ caps:false, craters:2,
+    bands:[[0.34,"#263443"],[0.48,"#4d6471"],[0.62,"#778070"],[0.78,"#aa9566"],
+           [1.01,"#d4b56e"]] },
+  methane:{ caps:false, craters:1,
+    bands:[[0.34,"#112e4a"],[0.50,"#1d6175"],[0.64,"#3a9b9c"],[0.79,"#75c69c"],
+           [1.01,"#badb96"]] },
+  megacity:{ caps:true, craters:0,
+    bands:[[0.34,"#15304e"],[0.48,"#285f87"],[0.57,"#85b7c9"],[0.66,"#71828b"],
+           [0.82,"#46555a"],[1.01,"#9eaa9c"]], ice:"#d8e2dd" },
   moon:{ caps:false, craters:10,
     bands:[[0.30,"#2e2b33"],[0.46,"#4a4652"],[0.60,"#6b6675"],[0.74,"#8d8798"],
            [0.88,"#b3adbd"],[1.01,"#d8d3e0"]] }
 };
 export const PT_RU = {
   terran:"землеподобная", ocean:"океаническая", desert:"пустынная", ice:"ледяная",
-  lava:"лавовая", gas:"газовый гигант", alien:"чужой мир", moon:"мёртвый мир"
+  lava:"лавовая", gas:"газовый гигант", alien:"чужой мир", jungle:"джунгли",
+  mars:"марсианская", venus:"венерианская", titan:"титановая", methane:"метановая",
+  megacity:"городской мир", moon:"мёртвый мир"
 };
 export const TILT = -0.42, RING_SQ = 0.34;
 const cosT = Math.cos(TILT), sinT = Math.sin(TILT);
@@ -44,8 +64,10 @@ const cosT = Math.cos(TILT), sinT = Math.sin(TILT);
 export function makeSurfaceProfile(body,sun={temp:5700,D:38},worldSeed=0){
   const surfaceSeed=hash2i(body.seed||0,Math.round(body.dist||0),worldSeed^0x51f15e);
   const rng=mulberry32(surfaceSeed>>>0),type=body.type||"moon";
-  const orbitAU=(body.dist||100)/100;
-  const starLum=Math.pow((sun.D||38)/37.7,2)*Math.pow((sun.temp||5700)/5700,4);
+  /* System distances are screen-space pixels: the habitable band at
+   * 250–450 px maps to roughly 0.75–1.35 AU, not 2.5–4.5 AU. */
+  const orbitAU=(body.dist||330)/330;
+  const starLum=sun.lum??Math.max(.04,Math.pow((sun.D||38)/37.7,2)*Math.pow((sun.temp||5700)/5700,4));
   const flux=starLum/Math.pow(Math.max(.03,orbitAU),2);
   const base={terran:[1,.78,.21,.01,.06,.55,.62,.56],ocean:[1.4,.72,.24,.02,.04,.82,.82,.42],desert:[.05,.03,0,.88,.22,.05,.03,.58],ice:[.3,.84,0,.12,.2,.34,.08,.3],lava:[5,.18,0,.6,.55,.12,0,.85],gas:[12,.72,0,.08,.5,.8,0,.28],alien:[1,.55,.08,.16,.25,.42,.48,.64],moon:[0,0,0,.4,0,0,0,.42]}[type]||[0,0,0,.4,0,0,0,.42];
   const pressure=type==="moon"?0:Math.max(0,type==="gas"?8:base[0]*(.72+rng()*.72));
@@ -58,7 +80,7 @@ export function makeSurfaceProfile(body,sun={temp:5700,D:38},worldSeed=0){
   const gSO2=type==="lava"?.28:0;
   const gH2O=liquidType==="water"?Math.min(.12,.01+liquid*.06):0;
   const vegetation=pressure>.25&&tempK>235&&tempK<335&&liquid>0.08?(type==="alien"?.2+rng()*.6:type==="terran"||type==="ocean"?.25+rng()*.65:rng()*.18):0;
-  return {seed:surfaceSeed,tempK,pressure,gravity:Math.max(.05,Math.min(3,(body.size||16)/18*(.8+rng()*.4))),starT:sun.temp||5700,starLum,orbitAU,
+  const profile={seed:surfaceSeed,tempK,pressure,gravity:Math.max(.05,Math.min(3,(body.size||16)/18*(.8+rng()*.4))),starT:sun.temp||5700,starLum,orbitAU,
     gN2:Math.max(0,base[1]-gCO2-gCH4),gO2:vegetation>.22?base[2]:0,gCO2,gCH4,gSO2,gH2O,
     dust:Math.min(1,base[3]+(rng()-.5)*.24),haze:Math.min(1,base[4]+(rng()-.5)*.2),wind:rng(),magnetic:rng(),
     liquid,liquidType,humidity:liquidType==="water"?Math.min(1,.18+liquid*.75+rng()*.15):rng()*.25,vegetation,flora:Math.floor(rng()*360),volcanism:type==="lava"?.6+rng()*.4:rng()*.18,minerals:Math.min(1,base[7]+(rng()-.5)*.35),relief:.28+rng()*.82,roughness:rng(),
@@ -68,7 +90,46 @@ export function makeSurfaceProfile(body,sun={temp:5700,D:38},worldSeed=0){
      * vegetation a second time in landing-view's placement pass. */
     plantDensity:vegetation>.02?.55+rng()*.8:0,plantVariants:1+Math.floor(rng()*4),
     colony:vegetation>.2&&rng()>.7?1+Math.floor(rng()*3):0,cloudMode:"auto",plantMode:"auto",weatherMode:"auto",weatherPick:"clear",weatherPower:.7,
-    showCity:true,showShip:true,showWFCGround:true,showPlants:true,exposure:1.55,levels:26,animate:true,dayLen:0};
+    showCity:true,showShip:true,showWFCGround:false,showPlants:true,exposure:1,levels:26,animate:true,dayLen:0};
+  return tuneSurfaceProfile(profile,type,rng);
+}
+
+/** Curated visual baselines copied from landing_examples.  The seeded offsets
+ * below retain deterministic variety without producing black, unreadable views. */
+const LANDING_TUNING={
+  terran:{tempK:288,pressure:1,starT:5800,starLum:1,orbitAU:1,dust:.08,haze:.05,liquid:.66,liquidType:"water",humidity:.6,vegetation:.65,flora:110,volcanism:.06,minerals:.3,relief:.55,roughness:.5,lat:34,cloudCover:.45,colony:3},
+  ocean:{tempK:286,pressure:1.35,starT:5800,starLum:1,orbitAU:1.05,dust:.04,haze:.08,liquid:.88,liquidType:"water",humidity:.82,vegetation:.48,flora:145,volcanism:.05,minerals:.2,relief:.32,roughness:.35,lat:18,cloudCover:.58,colony:2},
+  desert:{tempK:215,pressure:.006,starT:5800,starLum:1,orbitAU:1.52,dust:.85,haze:.25,liquid:0,liquidType:"none",humidity:.02,vegetation:0,volcanism:.06,minerals:.6,relief:.7,roughness:.6,cloudCover:.05,colony:0},
+  ice:{tempK:198,pressure:.6,starT:3500,starLum:.08,orbitAU:.4,dust:.05,haze:.15,liquid:.35,liquidType:"ammonia",humidity:.7,vegetation:.05,flora:190,volcanism:.06,minerals:.2,relief:.6,roughness:.55,lat:62,cloudCover:.55,colony:1},
+  lava:{tempK:520,pressure:1.8,starT:4200,starLum:.35,orbitAU:.4,dust:.6,haze:.5,liquid:.2,liquidType:"lava",humidity:.15,vegetation:0,volcanism:.95,minerals:.8,relief:.8,roughness:.75,cloudCover:.5,colony:0},
+  alien:{tempK:264,pressure:.8,starT:3100,starLum:.015,orbitAU:.11,dust:.15,haze:.3,liquid:.4,liquidType:"water",humidity:.45,vegetation:.7,flora:305,volcanism:.06,minerals:.45,relief:.6,roughness:.55,cloudCover:.6,colony:1},
+  moon:{tempK:250,pressure:0,starT:5800,starLum:1,orbitAU:1,dust:.4,haze:0,liquid:0,liquidType:"none",humidity:0,vegetation:0,volcanism:.06,minerals:.4,relief:.45,roughness:.65,cloudCover:0,colony:0},
+  jungle:{tempK:302,pressure:1.4,starT:4800,starLum:.55,orbitAU:.7,dust:.03,haze:.1,liquid:.5,liquidType:"water",humidity:.9,vegetation:1,flora:88,volcanism:.06,minerals:.25,relief:.45,roughness:.4,lat:4,cloudCover:.7,colony:2},
+  mars:{tempK:215,pressure:.006,starT:5800,starLum:1,orbitAU:1.52,dust:.85,haze:.25,liquid:0,liquidType:"none",humidity:.02,vegetation:0,volcanism:.06,minerals:.6,relief:.7,roughness:.6,cloudCover:.05,colony:0},
+  venus:{tempK:735,pressure:9.5,starT:5800,starLum:1,orbitAU:.72,dust:.2,haze:1,liquid:0,liquidType:"none",humidity:.1,vegetation:0,volcanism:.6,minerals:.5,relief:.5,roughness:.45,cloudCover:1,colony:0},
+  titan:{tempK:94,pressure:1.5,starT:5800,starLum:1,orbitAU:9.5,dust:.1,haze:.95,liquid:.25,liquidType:"methane",humidity:.4,vegetation:0,volcanism:.06,minerals:.15,relief:.3,roughness:.45,cloudCover:.5,colony:0},
+  methane:{tempK:250,pressure:2.2,starT:6600,starLum:1.6,orbitAU:1.6,dust:.05,haze:.2,liquid:.3,liquidType:"methane",humidity:.4,vegetation:.3,flora:265,volcanism:.06,minerals:.4,relief:.55,roughness:.5,cloudCover:.4,colony:1},
+  megacity:{tempK:291,pressure:1.1,starT:5800,starLum:1,orbitAU:1,dust:.2,haze:.45,liquid:.4,liquidType:"water",humidity:.45,vegetation:.2,flora:110,volcanism:.06,minerals:.3,relief:.35,roughness:.35,cloudCover:.5,colony:4}
+};
+const LANDING_GASES={
+  terran:[.78,.21,.004,0,0,.01],ocean:[.72,.24,.02,0,0,.05],desert:[.03,0,.95,0,0,.001],ice:[.8,0,.05,.1,0,.05],
+  lava:[.15,0,.5,0,.35,0],alien:[.6,.05,.3,.05,0,.02],moon:[0,0,0,0,0,0],jungle:[.7,.25,.01,0,0,.04],
+  mars:[.03,0,.95,0,0,.001],venus:[.03,0,.955,0,.015,0],titan:[.95,0,0,.05,0,0],methane:[.45,0,.05,.5,0,0],megacity:[.74,.2,.03,0,.02,.01]
+};
+function tuneSurfaceProfile(profile,type,rng){
+  const tuning=LANDING_TUNING[type];
+  if(!tuning) return profile;
+  const [gN2,gO2,gCO2,gCH4,gSO2,gH2O]=LANDING_GASES[type]||[];
+  const atmosphere=gN2===undefined?{}:{gN2,gO2,gCO2,gCH4,gSO2,gH2O};
+  const source={...profile,...tuning,...atmosphere};
+  const varied={...tuning};
+  const wobble=(value,amount,lo=0,hi=1)=>Math.max(lo,Math.min(hi,value+(rng()-.5)*amount));
+  varied.dust=wobble(source.dust,.10); varied.haze=wobble(source.haze,.10);
+  varied.relief=wobble(source.relief,.14); varied.roughness=wobble(source.roughness,.14);
+  varied.cloudCover=wobble(source.cloudCover,.12); varied.lat=Math.max(-75,Math.min(75,source.lat+(rng()-.5)*26));
+  varied.flora=(source.flora+Math.floor((rng()-.5)*72)+360)%360;
+  if(source.vegetation>0) varied.plantDensity=.5+rng()*.55;
+  return {...source,...varied,exposure:1,levels:26,showCity:true,showShip:true,showWFCGround:true,showPlants:true};
 }
 
 const clamp01=v=>Math.max(0,Math.min(1,v));
@@ -86,7 +147,7 @@ export function surfacePalette(body,cols){
   const q=body.surface;
   if (!q || PT[body.type]?.gas) return cols;
   const liquid=LIQUID_RGB[q.liquidType] || LIQUID_RGB.water;
-  const liquidBands={terran:3,ocean:4,ice:2,alien:1}[body.type] || 0;
+  const liquidBands={terran:3,ocean:4,ice:2,alien:1,jungle:3,methane:2,megacity:2}[body.type] || 0;
   const flora=floraRgb(q.flora||110), mineral=[145,78,48];
   return cols.map((source,i)=>{
     let col=typeof source === "string" ? hex2rgb(source) : source.slice();

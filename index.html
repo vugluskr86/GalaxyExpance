@@ -14,13 +14,13 @@
       <canvas id="scene"></canvas>
       <canvas id="labels"></canvas>
       <div class="nameplate"><span id="npTitle">—</span><small id="npInfo">—</small></div>
-      <button id="btnBack" class="stagebtn hidden">← назад</button>
+      <button id="btnBack" class="stagebtn hidden" data-i18n="ui.back">← назад</button>
       <button id="btnZin" class="stagebtn">+</button>
-      <button id="btnFit" class="stagebtn">Обзор</button>
+      <button id="btnFit" class="stagebtn" data-i18n="ui.overview">Обзор</button>
       <button id="btnZout" class="stagebtn">−</button>
     </div>
     <div class="terminal-frame">
-      <div class="terminal-title">Бортовой терминал · кликните для ввода</div>
+      <div class="terminal-title" data-i18n="ui.terminalHint">Бортовой терминал · кликните для ввода</div>
       <div class="terminal-screen">
         <canvas id="computerTerminal" width="560" height="560" tabindex="0"></canvas>
       </div>
@@ -28,7 +28,7 @@
   </div>
   <div class="panel" id="panel"></div>
 </div>
-<div class="sub">кластер галактик → галактика → система → тело · всё из одного зерна</div>
+<div class="sub" data-i18n="ui.worldDescription">кластер галактик → галактика → система → тело · всё из одного зерна</div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -127,7 +127,7 @@ const DEF={
   /* флора */
   plantMode:'auto', plantIter:4, plantAngle:24, plantSize:1, plantDensity:0.6, plantVariants:4,
   /* поселение и вывод */
-  colony:3, showCity:true, showShip:true, showWFCGround:true, showPlants:true,
+  colony:3, showCity:true, showShip:true, showWFCGround:false, showPlants:true,
   weatherMode:'auto', weatherPick:'clear', weatherPower:0.7,
   exposure:1, levels:26, animate:true, dayLen:0
 };
@@ -668,6 +668,7 @@ function buildWorld(){
 
   /* 7.2 мозаика грунта */
   let ground=null;
+  
   if(P.showWFCGround){
     const tiles=groundTiles(),cs=6,gw=Math.ceil(W/cs),gh=6;
     const idOf=m=>tiles.findIndex(t=>t.id===m+m);

@@ -1,12 +1,16 @@
 import { makeSurfaceProfile } from "./gen/planet.js";
 import { createLandingViewRenderer } from "./gen/landing-view-renderer.generated.js";
+import { applyDocument, getLocale, setLocale, t, tr } from "./i18n/index.js";
 
 const $=id=>document.getElementById(id), canvas=$("view"), ctx=canvas.getContext("2d");
 const ids=["pressure","cloud","dust","vegetation","relief"], outputs={pressure:"pressureOut",cloud:"cloudOut",dust:"dustOut",vegetation:"vegetationOut",relief:"reliefOut"};
 let profile=null, renderer=null, hour=12;
+applyDocument();
+$("language").value=getLocale();
+$("language").addEventListener("change",()=>{setLocale($("language").value);applyDocument();showProfile();});
 
 function showProfile(){
-  const rows=[["Температура",Math.round(profile.tempK)+" K"],["Давление",profile.pressure.toFixed(2)+" атм"],["Жидкость",profile.liquidType+" · "+Math.round(profile.liquid*100)+"%"],["Облака",Math.round(profile.cloudCover*100)+"%"],["Флора",Math.round(profile.vegetation*100)+"%"],["Звезда",profile.starT+" K"]];
+  const rows=[[t("ui.temperature"),Math.round(profile.tempK)+" K"],[t("ui.pressure"),profile.pressure.toFixed(2)+" "+t("ui.atmospheres")],[t("ui.liquid"),tr(profile.liquidType)+" · "+Math.round(profile.liquid*100)+"%"],[t("ui.clouds"),Math.round(profile.cloudCover*100)+"%"],[t("ui.flora"),Math.round(profile.vegetation*100)+"%"],[t("ui.star"),profile.starT+" K"]];
   $("profile").innerHTML=rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
 }
 function syncControls(){
@@ -34,7 +38,7 @@ rebuild();
 function frame(ms){
   const phase=(hour-6)/24*Math.PI*2;
   renderer.render(ms/1000,phase);
-  $("status").textContent=`Погода: ${renderer.weather} · ${hour.toFixed(1)}:00`;
+  $("status").textContent=`${t("ui.weather")}: ${tr(renderer.weather)} · ${hour.toFixed(1)}:00`;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

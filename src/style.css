@@ -104,6 +104,15 @@ button.big:hover{background:var(--accent); color:#1a1300;}
   border:2px solid var(--line); background:var(--panel2); color:var(--muted);
   border-radius:4px; cursor:pointer; flex-shrink:0;}
 .editor-del:hover{color:#ff5c4d; border-color:#ff5c4d;}
+.surface-profile{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+.surface-profile-name{box-sizing:border-box;width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font:inherit;font-size:11px;}
+.surface-profile-buttons{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.surface-profile-buttons button,.surface-profile-row button{font-size:10px;padding:5px 6px;}
+.surface-profile-list{display:flex;flex-direction:column;gap:3px;max-height:132px;overflow:auto;}
+.surface-profile-list>small,.surface-profile-notice{color:var(--muted);font-size:10px;}
+.surface-profile-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:3px;align-items:center;}
+.surface-profile-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;}
+.surface-profile-notice{display:block;padding-top:2px;}
 
 .editor-layout{
   display:flex; gap:12px; margin-top:12px;

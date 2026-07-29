@@ -54,9 +54,27 @@ test("the landing scene executes the renderer extracted from landing-view.html",
   assert.ok(lum>10000,"daylight frame should not be near-black");
 });
 
+test("curated planet archetypes stay seed-stable, visible at noon and materially distinct",()=>{
+  const types=["terran","ocean","desert","ice","lava","alien","moon","jungle","mars","venus","titan","methane","megacity"];
+  const signatures=new Set();
+  for(const [index,type] of types.entries()){
+    const body={type,seed:9000+index,size:22,dist:320};
+    const a=makeSurfaceProfile(body,{temp:5700,D:40},321),b=makeSurfaceProfile(body,{temp:5700,D:40},321);
+    assert.deepEqual(a,b,`${type} must stay deterministic`);
+    assert.equal(a.exposure,1,`${type} uses the calibrated landing exposure`);
+    const canvas={width:420,height:420,getContext:()=>({createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData:image=>{canvas.frame=image;}})};
+    createLandingViewRenderer(canvas,{...a,moons:1,rings:false}).render(.1,Math.PI/2);
+    let lum=0;
+    for(let i=0;i<canvas.frame.data.length;i+=160)lum+=canvas.frame.data[i]+canvas.frame.data[i+1]+canvas.frame.data[i+2];
+    assert.ok(lum>4500,`${type} noon frame should be readable, not near-black`);
+    signatures.add(`${a.liquidType}/${a.vegetation.toFixed(1)}/${a.dust.toFixed(1)}/${a.haze.toFixed(1)}/${a.colony}`);
+  }
+  assert.ok(signatures.size>=9,"archetypes must produce substantially different surface profiles");
+});
+
 test("a vegetated world creates visible L-system plants in the source renderer",()=>{
   const canvas={width:420,height:420,getContext:()=>({createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData:()=>{}})};
-  const profile={...makeSurfaceProfile({type:"terran",seed:808,size:24,dist:180},{temp:5800,D:40},91),seed:808,liquid:0,vegetation:1,plantDensity:1,showPlants:true,showWFCGround:true};
+  const profile={...makeSurfaceProfile({type:"terran",seed:808,size:24,dist:180},{temp:5800,D:40},91),seed:808,liquid:0,vegetation:1,plantDensity:1,showPlants:true,showWFCGround:false};
   const renderer=createLandingViewRenderer(canvas,profile);
   assert.ok(renderer.diagnostics.plantSprites>0);
   assert.ok(renderer.diagnostics.plantItems>0);

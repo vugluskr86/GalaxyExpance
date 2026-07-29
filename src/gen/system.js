@@ -81,9 +81,9 @@ const NEBULA_CHANCE = 0.6;
 /* ---------------------------------------------------------------- */
 
 function zoneTypes(dist){
-  if (dist < ZONE_HOT) return ["lava","desert","moon","desert"];
-  if (dist < ZONE_HAB) return ["terran","ocean","desert","alien","terran"];
-  return ["gas","ice","alien","gas","moon"];
+  if (dist < ZONE_HOT) return ["lava","venus","mars","desert","moon","lava"];
+  if (dist < ZONE_HAB) return ["terran","ocean","jungle","megacity","desert","alien","terran"];
+  return ["gas","ice","titan","methane","alien","gas","moon"];
 }
 
 /** Система из звезды галактики. Первые вызовы rng совпадают с Galaxy.starInfo —
@@ -111,7 +111,9 @@ export function buildSystem(galaxy, gs){
   const nPlanets = Math.floor(rng()*PLANETS_MAX);
   const hasBelt = rng() < BELT_CHANCE;
   const cls = CLS[gs.ci];
-  const sun = { temp: Math.round(cls.temp*(0.9 + rng()*0.2)), seed: seed ^ 0xa, D:0, rot:0 };
+  const surfaceLum={O:30,B:12,A:3,F:1.5,G:1,K:.45,M:.12,L:.03};
+  const sun = { temp: Math.round(cls.temp*(0.9 + rng()*0.2)), seed: seed ^ 0xa, D:0, rot:0,
+    lum:surfaceLum[cls.c] || 1 };
   sun.D = sun.temp < 2500 ? 24 : starDiam(sun.temp);
   bakeStar(sun);
   const planets = [];

@@ -10,6 +10,7 @@ import { settings, warpStep } from "./ui/settings.js";
 import { toggleConsole } from "./game/console.js";
 import { ComputerTerminal } from "./game/terminal.js";
 import { WorldSave, loadWorld } from "./game/savegame.js";
+import { applyDocument, tr } from "./i18n/index.js";
 
 const SCR = 420;
 const scene = document.getElementById("scene");
@@ -20,6 +21,8 @@ const lbl = document.getElementById("labels");
 const lctx = lbl.getContext("2d");
 const dpr = Math.min(2, window.devicePixelRatio || 1);
 const ctx = { scene, sctx, lbl, lctx, SCR, LW: 560 };
+applyDocument();
+window.addEventListener("pixel-cosmos:locale", () => applyDocument());
 window._pixelCosmosTerminal = new ComputerTerminal(document.getElementById("computerTerminal"));
 
 function sizeLabels(){
@@ -157,8 +160,8 @@ function loop(nowMs){
   mgr.draw(t);
   const st = mgr.current?.status?.();
   if (st){
-    npTitle.textContent = st.title;
-    npInfo.textContent = st.info + " · время ×" + warp.toLocaleString("ru-RU") +
+    npTitle.textContent = tr(st.title);
+    npInfo.textContent = tr(st.info) + " · " + tr("время") + " ×" + warp.toLocaleString("ru-RU") +
       (warp < settings.speed ? " (варп ограничен)" : "");
   }
   btnBack.classList.toggle("hidden", mgr.stack.length <= 1);

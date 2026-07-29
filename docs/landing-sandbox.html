@@ -3,47 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pixel Cosmos — Sandbox поверхности</title>
-  <script type="module" crossorigin src="/GalaxyExpance/assets/landing-sandbox-BGVIjT8K.js"></script>
-  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/landing-view-renderer.generated-BQrNTol3.js">
+  <title>Pixel Cosmos — Surface Sandbox</title>
+  <script type="module" crossorigin src="/GalaxyExpance/assets/landing-sandbox-DAR6FMUH.js"></script>
+  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/i18n-DdSGEHG7.js">
   <link rel="stylesheet" crossorigin href="/GalaxyExpance/assets/landing-sandbox-DO2LIOlZ.css">
 </head>
 <body>
   <header>
-    <a href="./index.html">← Игра</a>
-    <h1>Surface <b>Sandbox</b></h1>
-    <span>живой рендер из игрового модуля</span>
+    <a href="./index.html" data-i18n="ui.back">← назад</a>
+    <h1 data-i18n="ui.sandbox">Surface Sandbox</h1>
+    <span data-i18n="ui.sandboxDescription">живой рендер из игрового модуля</span>
+    <select id="language"><option value="ru">Русский</option><option value="en">English</option></select>
   </header>
   <main>
     <aside class="controls">
-      <h2>Планета</h2>
-      <label>Тип
+      <h2 data-i18n="ui.planet">Планета</h2>
+      <label><span data-i18n="ui.planetType">Тип</span>
         <select id="type">
-          <option value="terran">Землеподобная</option><option value="ocean">Океаническая</option>
-          <option value="desert">Пустыня</option><option value="ice">Ледяная</option>
-          <option value="lava">Вулканическая</option><option value="alien">Чужой мир</option><option value="moon">Луна</option>
+          <option value="terran" data-i18n="ui.terran">Землеподобная</option><option value="ocean" data-i18n="ui.ocean">Океаническая</option>
+          <option value="desert" data-i18n="ui.desert">Пустыня</option><option value="ice" data-i18n="ui.ice">Ледяная</option>
+          <option value="lava" data-i18n="ui.lava">Вулканическая</option><option value="alien" data-i18n="ui.alien">Чужой мир</option><option value="moon" data-i18n="ui.moon">Луна</option>
+          <option value="jungle" data-i18n="ui.jungle">Джунгли</option><option value="mars" data-i18n="ui.mars">Марсианская</option><option value="venus" data-i18n="ui.venus">Венерианская</option>
+          <option value="titan" data-i18n="ui.titan">Титановая</option><option value="methane" data-i18n="ui.methane">Метановая</option><option value="megacity" data-i18n="ui.megacity">Городской мир</option>
         </select>
       </label>
-      <label>Seed <input id="seed" type="number" value="482"></label>
-      <label>Фаза суток <output id="hourOut"></output><input id="hour" type="range" min="0" max="24" step="0.1" value="12"></label>
-      <button id="random">Новая планета</button>
-      <h2>Среда</h2>
-      <label>Давление <output id="pressureOut"></output><input id="pressure" type="range" min="0" max="10" step="0.05"></label>
-      <label>Облачность <output id="cloudOut"></output><input id="cloud" type="range" min="0" max="1" step="0.01"></label>
-      <label>Пыль и дымка <output id="dustOut"></output><input id="dust" type="range" min="0" max="1" step="0.01"></label>
-      <label>Растительность <output id="vegetationOut"></output><input id="vegetation" type="range" min="0" max="1" step="0.01"></label>
-      <label>Рельеф <output id="reliefOut"></output><input id="relief" type="range" min="0" max="1" step="0.01"></label>
+      <label><span data-i18n="ui.seed">Seed</span> <input id="seed" type="number" value="482"></label>
+      <label><span data-i18n="ui.dayPhase">Фаза суток</span> <output id="hourOut"></output><input id="hour" type="range" min="0" max="24" step="0.1" value="12"></label>
+      <button id="random" data-i18n="ui.newPlanet">Новая планета</button>
+      <h2 data-i18n="ui.environment">Среда</h2>
+      <label><span data-i18n="ui.pressure">Давление</span> <output id="pressureOut"></output><input id="pressure" type="range" min="0" max="10" step="0.05"></label>
+      <label><span data-i18n="ui.cloudCover">Облачность</span> <output id="cloudOut"></output><input id="cloud" type="range" min="0" max="1" step="0.01"></label>
+      <label><span data-i18n="ui.dustHaze">Пыль и дымка</span> <output id="dustOut"></output><input id="dust" type="range" min="0" max="1" step="0.01"></label>
+      <label><span data-i18n="ui.vegetation">Растительность</span> <output id="vegetationOut"></output><input id="vegetation" type="range" min="0" max="1" step="0.01"></label>
+      <label><span data-i18n="ui.relief">Рельеф</span> <output id="reliefOut"></output><input id="relief" type="range" min="0" max="1" step="0.01"></label>
     </aside>
     <section class="stage">
       <canvas id="view" width="420" height="420"></canvas>
       <p id="status">Инициализация…</p>
-      <p class="note">Canvas 420×420 · без промежуточного масштабирования</p>
+      <p class="note" data-i18n="ui.sandboxNative">Canvas 420×420 · без промежуточного масштабирования</p>
     </section>
     <aside class="readout">
-      <h2>Профиль</h2>
+      <h2 data-i18n="ui.profile">Профиль</h2>
       <dl id="profile"></dl>
-      <h2>Проверка</h2>
-      <p>Эта страница использует тот же извлечённый из <code>landing-view.html</code> рендерер, что и сцена посадки.</p>
+      <h2 data-i18n="ui.check">Проверка</h2>
+      <p data-i18n="ui.sandboxCheck">Эта страница использует тот же извлечённый из landing-view.html рендерер, что и сцена посадки.</p>
     </aside>
   </main>
 </body>

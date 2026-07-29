@@ -1,4 +1,5 @@
 import { Assembler } from "../game/cpu.js";
+import { t, tr } from "../i18n/index.js";
 
 let panel = null;
 
@@ -11,25 +12,25 @@ export function openComputerEditor(item){
   const mem = item.memory;
   const cpu = item.slots.cpu?.stats.threads || 0;
   const ram = item.slots.ram?.stats.capacityKb || 0;
-  const gpu = item.slots.gpu?.stats.output || "нет";
+  const gpu = item.slots.gpu?.stats.output || t("ui.none");
   let currentFile = null;
 
   const div = document.createElement("div");
   div.className = "editor-panel";
   div.innerHTML = `<div class="editor-header">
-    <span>${item.name} · CPU ${cpu} поток(а) · RAM ${ram} КБ · DRIVE ${mem.ramKb} КБ · GPU ${gpu}</span>
-    <button class="editor-close" title="Закрыть">×</button>
+    <span>${item.name} · CPU ${cpu} ${t("ui.threads")} · RAM ${ram} ${t("ui.kb")} · DRIVE ${mem.ramKb} ${t("ui.kb")} · GPU ${gpu}</span>
+    <button class="editor-close" title="${t("ui.close")}">×</button>
   </div>
   <div class="editor-body">
     <div class="editor-left">
       <div class="editor-toolbar">
-        <input id="edFilename" type="text" placeholder="имя.asm" class="editor-filename">
-        <button id="edNew" class="editor-toolbtn" title="Новый файл" aria-label="Новый файл">＋</button>
-        <button id="edSave" class="editor-toolbtn" title="Сохранить исходник" aria-label="Сохранить исходник">▣</button>
-        <button id="edBuild" class="editor-toolbtn" title="Собрать в машинный код" aria-label="Собрать в машинный код">⚙</button>
-        <button id="edRun" class="editor-toolbtn editor-toolbtn-run" title="Запустить выбранный бинарный файл" aria-label="Запустить выбранный бинарный файл">▶</button>
+        <input id="edFilename" type="text" placeholder="${t("ui.filenamePlaceholder")}" class="editor-filename">
+        <button id="edNew" class="editor-toolbtn" title="${t("ui.newFile")}" aria-label="${t("ui.newFile")}">＋</button>
+        <button id="edSave" class="editor-toolbtn" title="${t("ui.saveSource")}" aria-label="${t("ui.saveSource")}">▣</button>
+        <button id="edBuild" class="editor-toolbtn" title="${t("ui.assemble")}" aria-label="${t("ui.assemble")}">⚙</button>
+        <button id="edRun" class="editor-toolbtn editor-toolbtn-run" title="${t("ui.runBinary")}" aria-label="${t("ui.runBinary")}">▶</button>
       </div>
-      <textarea id="edCode" class="editor-code" placeholder="введите assembly..." spellcheck="false"></textarea>
+      <textarea id="edCode" class="editor-code" placeholder="${t("ui.assemblyPlaceholder")}" spellcheck="false"></textarea>
       <div class="editor-msg" id="edMsg"></div>
       <pre class="console-output" id="edOutput"></pre>
     </div>
@@ -54,16 +55,16 @@ export function openComputerEditor(item){
   function refreshList(){
     const progs = mem.list();
     info.textContent =
-      `Программ: ${progs.length} · занято ${(mem.totalBytes()/1024).toFixed(1)}/${mem.ramKb} КБ`;
+      `${t("ui.programs")}: ${progs.length} · ${t("ui.used")} ${(mem.totalBytes()/1024).toFixed(1)}/${mem.ramKb} ${t("ui.kb")}`;
     list.innerHTML = "";
     for(const p of progs){
       const row = document.createElement("div");
       row.className = "editor-file-row";
       const btn = document.createElement("button");
-      btn.textContent = `${p.name} (${(p.size/1024).toFixed(1)} КБ)`;
+      btn.textContent = `${p.name} (${(p.size/1024).toFixed(1)} ${t("ui.kb")})`;
       btn.addEventListener("click", () => {
         if (currentFile && code.value !== (mem.get(currentFile)?.code || "")
-            && !confirm("Несохранённые изменения будут потеряны. Продолжить?")) return;
+            && !confirm(t("ui.unsavedConfirm"))) return;
         const prog = mem.get(p.name);
         fn.value = p.name;
         if(prog?.data){
@@ -75,17 +76,17 @@ export function openComputerEditor(item){
           code.readOnly=false;
         }
         currentFile = p.name;
-        showMsg("Загружено: " + p.name);
+        showMsg(t("ui.loaded") + ": " + p.name);
       });
       const del = document.createElement("button");
       del.textContent = "×";
       del.className = "editor-del";
-      del.title = "Удалить";
+      del.title = t("ui.delete");
       del.addEventListener("click", () => {
         mem.delete(p.name);
         if (currentFile === p.name){ fn.value = ""; code.value = ""; currentFile = null; }
         refreshList();
-        showMsg("Удалено: " + p.name);
+        showMsg(t("ui.deleted") + ": " + p.name);
       });
       row.appendChild(btn);
       row.appendChild(del);
@@ -96,7 +97,7 @@ export function openComputerEditor(item){
   div.querySelector(".editor-close").addEventListener("click", closeComputerEditor);
 
   div.querySelector("#edNew").addEventListener("click", () => {
-    if (code.value && !confirm("Несохранённые изменения будут потеряны. Продолжить?")) return;
+    if (code.value && !confirm(t("ui.unsavedConfirm"))) return;
     fn.value = "";
     code.value = "";
     code.readOnly = false;
@@ -107,45 +108,45 @@ export function openComputerEditor(item){
 
   div.querySelector("#edSave").addEventListener("click", () => {
     const name = fn.value.trim();
-    if (!name){ showMsg("Введите имя файла"); return; }
-    if(code.readOnly){ showMsg("Бинарный файл нельзя редактировать"); return; }
+    if (!name){ showMsg(t("ui.enterFilename")); return; }
+    if(code.readOnly){ showMsg(t("ui.binaryReadonly")); return; }
     if (!/\.(asm|bas)$/i.test(name)) fn.value = name + ".asm";
     const err = mem.save(fn.value, code.value);
     if (err){ showMsg(err); }
-    else { showMsg("Сохранено: " + fn.value); currentFile = fn.value; }
+    else { showMsg(t("ui.saved") + ": " + fn.value); currentFile = fn.value; }
     refreshList();
   });
 
   div.querySelector("#edBuild").addEventListener("click",()=>{
-    if(code.readOnly){ showMsg("Выберите исходный .asm файл"); return; }
+    if(code.readOnly){ showMsg(t("ui.selectSource")); return; }
     try{
       const binary=new Assembler().assembleBinary(code.value);
       const sourceName=fn.value.trim() || "program.asm";
       const binaryName=sourceName.replace(/\.(asm|bas)$/i,"")+".bin";
       const err=mem.saveBinary(binaryName,binary);
       if(err)showMsg(err);
-      else{ showMsg(`Собрано: ${binaryName} · ${binary.length} Б`); refreshList(); }
-    }catch(err){ showMsg("Ошибка сборки: "+err.message); }
+      else{ showMsg(`${t("ui.assembled")}: ${binaryName} · ${binary.length} ${t("ui.bytes")}`); refreshList(); }
+    }catch(err){ showMsg(t("ui.buildError")+": "+tr(err.message)); }
   });
 
   div.querySelector("#edRun").addEventListener("click", () => {
     output.textContent = "";
     try {
       const file=mem.get(currentFile);
-      if(!file?.data)throw new Error("сначала соберите .asm и выберите созданный .bin");
+      if(!file?.data)throw new Error(t("ui.buildThenSelectBinary"));
       const terminal = window._pixelCosmosTerminal || null;
       const result = item.runtime.runBinary(file.data, terminal);
       terminal?.canvas?.focus();
       output.textContent = [
         ...result.output,
-        `— HALT · ${result.steps} инструкций · CPU ${result.threads} поток(а)`,
-        `RAM ${result.ramBytes/1024} КБ · GPU ${result.outputMode}`,
+        `— HALT · ${result.steps} ${t("ui.instructions")} · CPU ${result.threads} ${t("ui.threads")}`,
+        `RAM ${result.ramBytes/1024} ${t("ui.kb")} · GPU ${result.outputMode}`,
         result.registers
       ].join("\n");
-      showMsg("Программа завершена");
+      showMsg(t("ui.programFinished"));
     } catch (err){
-      output.textContent = "ОШИБКА: " + err.message;
-      showMsg("Ошибка выполнения");
+      output.textContent = t("ui.error") + ": " + tr(err.message);
+      showMsg(t("ui.executionError"));
     }
   });
 
