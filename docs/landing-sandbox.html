@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Cosmos — Sandbox поверхности</title>
+  <script type="module" crossorigin src="/GalaxyExpance/assets/landing-sandbox-BGVIjT8K.js"></script>
+  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/landing-view-renderer.generated-BQrNTol3.js">
+  <link rel="stylesheet" crossorigin href="/GalaxyExpance/assets/landing-sandbox-DO2LIOlZ.css">
+</head>
+<body>
+  <header>
+    <a href="./index.html">← Игра</a>
+    <h1>Surface <b>Sandbox</b></h1>
+    <span>живой рендер из игрового модуля</span>
+  </header>
+  <main>
+    <aside class="controls">
+      <h2>Планета</h2>
+      <label>Тип
+        <select id="type">
+          <option value="terran">Землеподобная</option><option value="ocean">Океаническая</option>
+          <option value="desert">Пустыня</option><option value="ice">Ледяная</option>
+          <option value="lava">Вулканическая</option><option value="alien">Чужой мир</option><option value="moon">Луна</option>
+        </select>
+      </label>
+      <label>Seed <input id="seed" type="number" value="482"></label>
+      <label>Фаза суток <output id="hourOut"></output><input id="hour" type="range" min="0" max="24" step="0.1" value="12"></label>
+      <button id="random">Новая планета</button>
+      <h2>Среда</h2>
+      <label>Давление <output id="pressureOut"></output><input id="pressure" type="range" min="0" max="10" step="0.05"></label>
+      <label>Облачность <output id="cloudOut"></output><input id="cloud" type="range" min="0" max="1" step="0.01"></label>
+      <label>Пыль и дымка <output id="dustOut"></output><input id="dust" type="range" min="0" max="1" step="0.01"></label>
+      <label>Растительность <output id="vegetationOut"></output><input id="vegetation" type="range" min="0" max="1" step="0.01"></label>
+      <label>Рельеф <output id="reliefOut"></output><input id="relief" type="range" min="0" max="1" step="0.01"></label>
+    </aside>
+    <section class="stage">
+      <canvas id="view" width="420" height="420"></canvas>
+      <p id="status">Инициализация…</p>
+      <p class="note">Canvas 420×420 · без промежуточного масштабирования</p>
+    </section>
+    <aside class="readout">
+      <h2>Профиль</h2>
+      <dl id="profile"></dl>
+      <h2>Проверка</h2>
+      <p>Эта страница использует тот же извлечённый из <code>landing-view.html</code> рендерер, что и сцена посадки.</p>
+    </aside>
+  </main>
+</body>
+</html>

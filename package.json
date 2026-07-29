@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Процедурный пиксельный космос: кластер галактик → галактика → система → тело. Каркас для игры.",
   "scripts": {
-    "prebuild": "node scripts/build-unix-installer.mjs",
+    "pretest": "node scripts/extract-landing-view-renderer.mjs",
+    "prebuild": "node scripts/extract-landing-view-renderer.mjs && node scripts/build-unix-installer.mjs",
     "build:installer": "node scripts/build-unix-installer.mjs",
     "dev": "vite",
     "build": "vite build",

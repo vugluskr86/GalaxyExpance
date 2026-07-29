@@ -1,4 +1,4 @@
-import { SurfaceRenderer } from "../gen/surface-renderer.js";
+import { createLandingViewRenderer } from "../gen/landing-view-renderer.generated.js";
 import { player } from "../game/player.js";
 import { lblText } from "../ui/panel.js";
 
@@ -19,8 +19,16 @@ export class LandingScene {
     this.sys=sys; this.selRef=selRef; this.stats=stats; this.crumb="Поверхность";
     this.p=sys.obj(selRef);
     this.surface=this.p.surface||fallbackSurface(sys,stats);
-    const seed=(this.p.seed??this.p.rseed??((this.p.id||1)*77))|0;
-    this.renderer=new SurfaceRenderer(this.surface,seed,420,420);
+    const seed=(this.surface.seed??this.p.seed??this.p.rseed??((this.p.id||1)*77))|0;
+    /* Render at the game's native canvas size.  No low-resolution frame is
+     * stretched into the viewport. */
+    this.surfaceCanvas=document.createElement("canvas");
+    this.surfaceCanvas.width=420; this.surfaceCanvas.height=420;
+    this.surfaceCtx=this.surfaceCanvas.getContext("2d");
+    this.renderer=createLandingViewRenderer(this.surfaceCanvas,{
+      ...this.surface, seed, moons:this.p.moonList?.length||0, rings:!!this.p.rings
+    });
+    this.landingPhase0=this.dayPhase();
     player.refuel();
     sys.playerShip?.prop.refuel();
   }
@@ -30,7 +38,13 @@ export class LandingScene {
     const src=k==="comet"?this.p.th:(k==="rock"?this.p.ang:this.p.rot);
     return ((src%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
   }
-  draw(t){this.renderer.render(this.ctx.sctx,t,this.dayPhase());}
+  draw(t){
+    /* A new landing begins in local daylight, then follows the world's
+     * rotation.  It avoids a random first frame being an unreadable polar night. */
+    const phase=Math.PI/2+(this.dayPhase()-this.landingPhase0);
+    this.renderer.render(t,phase);
+    this.ctx.sctx.drawImage(this.surfaceCanvas,0,0);
+  }
   drawLabels(){
     const hours=((this.dayPhase()/(Math.PI*2))*24+6)%24;
     const hh=String(Math.floor(hours)).padStart(2,"0"),mm=String(Math.floor((hours%1)*60)).padStart(2,"0");

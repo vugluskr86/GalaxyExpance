@@ -1,4 +1,4 @@
-import { mulberry32 } from "../core/rng.js";
+import { mulberry32, hash2i } from "../core/rng.js";
 import { fbm } from "../core/noise.js";
 import { BAYER, SHADE, shadeTable, hex2rgb } from "../core/color.js";
 
@@ -41,9 +41,12 @@ const cosT = Math.cos(TILT), sinT = Math.sin(TILT);
 /** Physical and visual surface parameters. They are stored on the generated
  * body, rather than chosen by the landing screen, so every view uses the same
  * deterministic planet. Values not implied by the class come from its seed. */
-export function makeSurfaceProfile(body,sun={temp:5700,D:38}){
-  const rng=mulberry32((body.seed^0x51f15e)>>>0),type=body.type||"moon";
-  const flux=Math.pow((sun.D||38)/37.7,2)*Math.pow((sun.temp||5700)/5700,4)/Math.pow(Math.max(30,body.dist||100)/100,2);
+export function makeSurfaceProfile(body,sun={temp:5700,D:38},worldSeed=0){
+  const surfaceSeed=hash2i(body.seed||0,Math.round(body.dist||0),worldSeed^0x51f15e);
+  const rng=mulberry32(surfaceSeed>>>0),type=body.type||"moon";
+  const orbitAU=(body.dist||100)/100;
+  const starLum=Math.pow((sun.D||38)/37.7,2)*Math.pow((sun.temp||5700)/5700,4);
+  const flux=starLum/Math.pow(Math.max(.03,orbitAU),2);
   const base={terran:[1,.78,.21,.01,.06,.55,.62,.56],ocean:[1.4,.72,.24,.02,.04,.82,.82,.42],desert:[.05,.03,0,.88,.22,.05,.03,.58],ice:[.3,.84,0,.12,.2,.34,.08,.3],lava:[5,.18,0,.6,.55,.12,0,.85],gas:[12,.72,0,.08,.5,.8,0,.28],alien:[1,.55,.08,.16,.25,.42,.48,.64],moon:[0,0,0,.4,0,0,0,.42]}[type]||[0,0,0,.4,0,0,0,.42];
   const pressure=type==="moon"?0:Math.max(0,type==="gas"?8:base[0]*(.72+rng()*.72));
   const greenhouse=type==="lava"?170:type==="ocean"?28:type==="terran"?20:type==="alien"?18:type==="ice"?5:0;
@@ -55,12 +58,17 @@ export function makeSurfaceProfile(body,sun={temp:5700,D:38}){
   const gSO2=type==="lava"?.28:0;
   const gH2O=liquidType==="water"?Math.min(.12,.01+liquid*.06):0;
   const vegetation=pressure>.25&&tempK>235&&tempK<335&&liquid>0.08?(type==="alien"?.2+rng()*.6:type==="terran"||type==="ocean"?.25+rng()*.65:rng()*.18):0;
-  return {tempK,pressure,gravity:Math.max(.05,Math.min(3,(body.size||16)/18*(.8+rng()*.4))),starT:sun.temp||5700,starLum:flux*Math.pow(Math.max(.3,(body.dist||100)/100),2),orbitAU:(body.dist||100)/100,
+  return {seed:surfaceSeed,tempK,pressure,gravity:Math.max(.05,Math.min(3,(body.size||16)/18*(.8+rng()*.4))),starT:sun.temp||5700,starLum,orbitAU,
     gN2:Math.max(0,base[1]-gCO2-gCH4),gO2:vegetation>.22?base[2]:0,gCO2,gCH4,gSO2,gH2O,
     dust:Math.min(1,base[3]+(rng()-.5)*.24),haze:Math.min(1,base[4]+(rng()-.5)*.2),wind:rng(),magnetic:rng(),
     liquid,liquidType,humidity:liquidType==="water"?Math.min(1,.18+liquid*.75+rng()*.15):rng()*.25,vegetation,flora:Math.floor(rng()*360),volcanism:type==="lava"?.6+rng()*.4:rng()*.18,minerals:Math.min(1,base[7]+(rng()-.5)*.35),relief:.28+rng()*.82,roughness:rng(),
     lat:-70+rng()*140,tilt:rng()*42,season:rng(),hour:rng()*24,cloudCover:pressure>.04?Math.min(1,(liquid*.65+vegetation*.2+rng()*.25)):0,cloudHeight:rng(),cloudSpeed:.15+rng()*1.2,
-    plantIter:2+Math.floor(rng()*4),plantAngle:12+Math.floor(rng()*30),plantSize:.55+rng()*1.2,plantDensity:vegetation*(.5+rng()),plantVariants:1+Math.floor(rng()*4),colony:vegetation>.2&&rng()>.7?1+Math.floor(rng()*3):0};
+    plantIter:2+Math.floor(rng()*4),plantAngle:12+Math.floor(rng()*30),plantSize:.8+rng()*1.35,
+    /* Density is an artistic placement control; it must not be multiplied by
+     * vegetation a second time in landing-view's placement pass. */
+    plantDensity:vegetation>.02?.55+rng()*.8:0,plantVariants:1+Math.floor(rng()*4),
+    colony:vegetation>.2&&rng()>.7?1+Math.floor(rng()*3):0,cloudMode:"auto",plantMode:"auto",weatherMode:"auto",weatherPick:"clear",weatherPower:.7,
+    showCity:true,showShip:true,showWFCGround:true,showPlants:true,exposure:1.55,levels:26,animate:true,dayLen:0};
 }
 
 const clamp01=v=>Math.max(0,Math.min(1,v));
@@ -238,7 +246,7 @@ export function renderPlanetLod(p,lx,ly,lz,lod=0){
 }
 
 /** Спутники планеты из переданного rng (порядок вызовов = контракт генерации!). */
-export function genMoons(p, rng, sun){
+export function genMoons(p, rng, sun, worldSeed=0){
   p.moonList = [];
   const base = (p.rings ? p.size*1.15 : p.size/2) + 8;
   for(let i=0; i<p.moons; i++){
@@ -251,7 +259,7 @@ export function genMoons(p, rng, sun){
       ang: rng()*Math.PI*2,
       w: (1.5 - i*0.28) * (rng()<0.15 ? -1 : 1)
     };
-    m.dist=p.dist;m.surface=makeSurfaceProfile(m,sun);bakePlanet(m);
+    m.dist=p.dist;m.surface=makeSurfaceProfile(m,sun,worldSeed);bakePlanet(m);
     p.moonList.push(m);
   }
 }

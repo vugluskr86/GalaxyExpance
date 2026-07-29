@@ -135,9 +135,9 @@ export function buildSystem(galaxy, gs){
         : Math.floor(rng()*MOONS_ROCKY_VAR),
       ang: rng()*Math.PI*2
     };
-    p.surface=makeSurfaceProfile(p,sun);
+    p.surface=makeSurfaceProfile(p,sun,seed);
     bakePlanet(p);
-    genMoons(p, rng,sun);
+    genMoons(p, rng,sun,seed);
     planets.push(p);
   }
   let belt = null;
