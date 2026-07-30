@@ -11,7 +11,7 @@ import { toggleConsole } from "./game/console.js";
 import { ComputerTerminal } from "./game/terminal.js";
 import { WorldSave, landedBodyRef, loadWorld } from "./game/savegame.js";
 import { LandingScene } from "./scenes/landing.js";
-import { applyDocument, tr } from "./i18n/index.js";
+import { applyDocument, t, tr } from "./i18n/index.js";
 
 const SCR = 420;
 const scene = document.getElementById("scene");

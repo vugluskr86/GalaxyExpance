@@ -1,8 +1,8 @@
-import { configEntries, exportConfig, importConfig, resetConfig, saveConfigPreset, setConfig } from "../config/balance.js";
+import { configEntries, exportConfig, importConfig, resetConfig, saveConfigPreset, setConfig, undoConfig, redoConfig, undoAvailable, redoAvailable } from "../config/balance.js";
 import { sampleTelemetry, telemetrySnapshot } from "../game/telemetry.js";
 import { t } from "../i18n/index.js";
 
-const domains=["economy","effects","render","telemetry"];
+const domains=["economy","effects","render","telemetry","combat","npc","generation"];
 const download=(name,text)=>{const a=document.createElement("a");a.download=name;a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.click();setTimeout(()=>URL.revokeObjectURL(a.href),0);};
 /** Developer balance workbench. It deliberately reads the live SystemScene so
  * ship, surface, economy and NPC figures are never a second mock simulation. */
@@ -41,6 +41,10 @@ export class BalanceLabScene {
       spec.push({kind:"select",label:t("ui.balanceConfigDomain"),options:domains.map(domain=>[domain,domain]),get:()=>this.domain,set:value=>{this.domain=value;}});
       for(const entry of configEntries(this.domain))spec.push({kind:"range",label:t(entry.label),min:entry.min,max:entry.max,step:entry.step,get:()=>entry.value,set:value=>setConfig(entry.path,value),fmt:value=>String(value)});
       spec.push({kind:"action",label:t("ui.balanceReset"),run:()=>{resetConfig(this.domain);this.mgr.notify(t("ui.balanceResetDone"));}});
+      spec.push({kind:"buttons",items:[
+        {label:"Undo",run:()=>{undoConfig();this.mgr.notify(t("ui.balanceUndo"));}},
+        {label:"Redo",run:()=>{redoConfig();this.mgr.notify(t("ui.balanceRedo"));}}
+      ]});
     }else if(this.tab==="events"){
       const events=(this.sys.world?telemetrySnapshot(this.sys.world).events:[]).slice(-12).reverse();spec.push({kind:"rows",empty:t("ui.balanceNoData"),items:events.map(event=>({tag:event.type.slice(0,4).toUpperCase(),label:event.type,note:JSON.stringify(event.data)}))});
     }else spec.push({kind:"balanceTools",saveLabel:t("ui.balanceSavePreset"),exportLabel:t("ui.balanceExport"),importLabel:t("ui.balanceImport"),save:()=>{saveConfigPreset(globalThis.prompt?.(t("ui.balancePresetName"),"dev")||"dev");this.mgr.notify(t("ui.balanceSaved"));},export:()=>download("pixel-cosmos-balance.json",exportConfig()),import:file=>this.importFile(file)});

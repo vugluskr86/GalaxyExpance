@@ -79,7 +79,7 @@ export const CATALOG = [
   { id:"hull_frigate", slot:"hull", cls:6, rating:"B", name:"Фрегат «Меридиан»", mass:11.2, price:3300000, stats:{ cargo:26,crew:6,hullInt:820,weaponSlots:5,computerSlots:3,terminalSlots:3,antennaSlot:true,scannerSlot:true,maxTakeoffMass:82,hullSprite:"frigate" } },
   { id:"hull_freighter", slot:"hull", cls:6, rating:"C", name:"Транспорт «Атлант»", mass:12.8, price:2700000, stats:{ cargo:72,crew:5,hullInt:700,weaponSlots:2,computerSlots:3,terminalSlots:2,antennaSlot:true,scannerSlot:true,maxTakeoffMass:145,hullSprite:"freighter" } },
   { id:"hull_carrier", slot:"hull", cls:7, rating:"A", name:"Носитель «Орбита»", mass:16.5, price:5900000, stats:{ cargo:54,crew:12,hullInt:1100,weaponSlots:4,computerSlots:5,terminalSlots:5,antennaSlot:true,scannerSlot:true,maxTakeoffMass:150,hullSprite:"carrier" } },
-  { id:"hull_dreadnought", slot:"hull", cls:8, rating:"A", name:"Дредноут «Бастион»", mass:24, price:9800000, stats:{ cargo:38,crew:18,hullInt:1600,weaponSlots:5,computerSlots:5,terminalSlots:5,antennaSlot:true,scannerSlot:true,maxTakeoffMass:220,hullSprite:"dreadnought" } },
+  { id:"hull_dreadnought", slot:"hull", cls:8, rating:"A", name:"Дредноут «Бастион»", mass:24, price:9800000, stats:{ cargo:38,crew:18,hullInt:1600,weaponSlots:5,computerSlots:12,terminalSlots:5,antennaSlot:true,scannerSlot:true,maxTakeoffMass:220,hullSprite:"dreadnought" } },
 
   /* ---------- двигатели ---------- */
   { id:"eng_ion",   slot:"engine", cls:2, rating:"A", name:"Ионный «Тень»",

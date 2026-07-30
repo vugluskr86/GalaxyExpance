@@ -108,12 +108,12 @@ export class SystemScene {
   }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
   ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
-  zoomBy(f){ this.zoom = Math.min(configValue("render.systemZoomMax"), Math.max(configValue("render.systemZoomMin"), this.zoom*f)); }
+  zoomBy(f){ this.zoom = Math.min(configValue("render.systemZoomMax")??5, Math.max(configValue("render.systemZoomMin")??0.1, this.zoom*f)); }
   execConsoleCommand(input, print){ execCommand(this, input, print); }
   onWheel(mx, my, deltaY){
     const wx = (mx - this.ctx.SCR/2)/this.zoom + this.cam.x;
     const wy = (my - this.ctx.SCR/2)/this.zoom + this.cam.y;
-    const wheel=configValue("render.systemZoomWheel");this.zoom = Math.min(configValue("render.systemZoomMax"), Math.max(configValue("render.systemZoomMin"), this.zoom * (deltaY < 0 ? wheel : 1/wheel)));
+    const wheel=configValue("render.systemZoomWheel")??1.5;this.zoom = Math.min(configValue("render.systemZoomMax")??5, Math.max(configValue("render.systemZoomMin")??0.1, this.zoom * (deltaY < 0 ? wheel : 1/wheel)));
     this.cam.x = wx - (mx - this.ctx.SCR/2)/this.zoom;
     this.cam.y = wy - (my - this.ctx.SCR/2)/this.zoom;
   }

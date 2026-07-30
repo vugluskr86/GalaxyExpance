@@ -52,7 +52,7 @@ export class LandingScene {
     /* Render at the game's native canvas size.  No low-resolution frame is
      * stretched into the viewport. */
     this.surfaceCanvas=document.createElement("canvas");
-    const canvasSize=configValue("surface.canvasSize");
+    const canvasSize=configValue("render.surfaceCanvasSize");
     this.surfaceCanvas.width=canvasSize; this.surfaceCanvas.height=canvasSize;
     this.surfaceCtx=this.surfaceCanvas.getContext("2d");
     this.rebuildRenderer({ seed, moons:this.p.moonList?.length||0, rings:!!this.p.rings });
