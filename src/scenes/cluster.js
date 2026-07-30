@@ -1,5 +1,6 @@
 import { GalaxyScene } from "./galaxy.js";
 import { lblText, toLbl } from "../ui/panel.js";
+import { t } from "../i18n/index.js";
 
 export class ClusterScene {
   constructor(cluster,world=null){
@@ -30,6 +31,14 @@ export class ClusterScene {
       sctx.globalAlpha = 0.85 + 0.15*Math.sin(t*0.7 + g.ph);
       sctx.drawImage(this.cluster.thumb(g), Math.round(X - s/2), Math.round(Y - s/2), s, s);
       sctx.globalAlpha = 1;
+    }
+    const current=this.world?.data.galaxyIndex;
+    const galaxy=this.cluster.galaxies.find(item=>item.idx===current);
+    if(galaxy){
+      const X=Math.round(this.wsx(galaxy.x)),Y=Math.round(this.wsy(galaxy.y)),r=Math.max(7,Math.round(galaxy.rv*this.zoom+6));
+      sctx.fillStyle="#ffd166";
+      sctx.fillRect(X-r,Y,4,1);sctx.fillRect(X+r-3,Y,4,1);
+      sctx.fillRect(X,Y-r,1,4);sctx.fillRect(X,Y+r-3,1,4);
     }
     if (this.sel){
       const X = Math.round(this.wsx(this.sel.x)), Y = Math.round(this.wsy(this.sel.y));
@@ -119,7 +128,9 @@ export class ClusterScene {
     }));
   }
   panelSpec(){
-    return [
+    const spec=[];
+    if(this.mgr?.returnToShip) spec.push({kind:"action",label:t("ui.goToShip"),run:()=>this.mgr.returnToShip()});
+    spec.push(
       { kind:"seed", label:"Зерно кластера", get:() => this.cluster.seed,
         set:(v) => { this.cluster.setSeed(v); this.sel = null; this.fit(); } },
       { kind:"range", label:"Галактик", min:8, max:60, step:1,
@@ -128,6 +139,7 @@ export class ClusterScene {
       { kind:"range", label:"Разброс", min:2000, max:8000, step:200,
         get:() => this.cluster.spread,
         set:(v) => { this.cluster.spread = v; this.cluster.build(); this.sel = null; this.fit(); } }
-    ];
+    );
+    return spec;
   }
 }

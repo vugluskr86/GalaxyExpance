@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/pixel-shipyard-v1.schema.json",
+  "title": "Pixel Shipyard ship data v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["format", "seed", "algorithm", "palette", "image", "stats", "slots", "parameters"],
+  "properties": {
+    "format": { "const": "pixel-shipyard/v1" },
+    "seed": { "type": "integer", "minimum": 0 },
+    "algorithm": {
+      "type": "string",
+      "enum": ["ca", "agents", "skeleton", "wfc", "hybrid"]
+    },
+    "palette": {
+      "type": "string",
+      "enum": ["steel", "rust", "alien", "imperial", "neon", "void", "sand"]
+    },
+    "image": { "$ref": "#/$defs/image" },
+    "stats": { "$ref": "#/$defs/stats" },
+    "slots": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/slot" }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x0", "y0", "x1", "y1"],
+      "properties": {
+        "x0": { "type": "integer", "minimum": 0 },
+        "y0": { "type": "integer", "minimum": 0 },
+        "x1": { "type": "integer", "minimum": 0 },
+        "y1": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["gridWidth", "gridHeight", "scale", "crop", "bounds", "background", "origin", "axis", "slotCoordinates"],
+      "properties": {
+        "gridWidth": { "type": "integer", "minimum": 1 },
+        "gridHeight": { "type": "integer", "minimum": 1 },
+        "scale": { "type": "integer", "minimum": 1 },
+        "crop": { "type": "boolean" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "background": { "type": "string", "enum": ["dock", "dark", "none"] },
+        "origin": { "const": "top-left" },
+        "axis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "const": "right" },
+            "y": { "const": "down" }
+          }
+        },
+        "slotCoordinates": { "const": "grid-pixels-before-scale" }
+      }
+    },
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w", "h"],
+      "properties": {
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -1, "maximum": 1 },
+        "y": { "type": "integer", "minimum": -1, "maximum": 1 }
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "x", "y", "rotation", "mount"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["engine", "weapon", "cockpit", "utility"] },
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "rotation": { "type": "number" },
+        "size": { "$ref": "#/$defs/size" },
+        "mount": { "type": "string", "minLength": 1 },
+        "direction": { "$ref": "#/$defs/direction" }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["len", "beam", "hull", "mass", "engines", "guns", "cls", "ratio", "fill"],
+      "properties": {
+        "len": { "type": "integer", "minimum": 0 },
+        "beam": { "type": "integer", "minimum": 0 },
+        "hull": { "type": "integer", "minimum": 0 },
+        "glass": { "type": "integer", "minimum": 0 },
+        "acc": { "type": "integer", "minimum": 0 },
+        "mass": { "type": "number", "minimum": 0 },
+        "engines": { "type": "integer", "minimum": 0 },
+        "guns": { "type": "integer", "minimum": 0 },
+        "cls": { "type": "string" },
+        "ratio": { "type": "number", "minimum": 0 },
+        "fill": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "twr": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

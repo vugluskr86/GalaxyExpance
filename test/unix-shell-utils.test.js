@@ -60,6 +60,13 @@ test("cat streams a file and cp preserves complete content",()=>{
   assert.equal(quoted.output.join(""),"quoted");
 });
 
+test("short-lived utilities report an open error and still terminate",()=>{
+  const missing=runtime("cat /missing");
+  const result=execute("cat",missing);
+  assert.equal(result.halted,true);
+  assert.match(missing.output.join(""),/command error/);
+});
+
 test("mkdir, link and rm mutate VFS through their individual binaries",()=>{
   const store=new InodeFS(128),root=store.readInode(store.rootId);
   addFile(store,root,"source","payload");
@@ -137,6 +144,27 @@ test("sh executes builtins and resolves external commands through /bin PATH",()=
   assert.deepEqual(spawned,["/bin/cat"]);
   assert.equal(env.ARGS,"cat /note");
   assert.match(terminal.lines.join("\n"),/\//);
+});
+
+test("sh yields while a foreground utility is still running",()=>{
+  const store=new InodeFS(128),terminal=new ComputerTerminal(),env={},waits=[];
+  terminal.lineQueue.push("cat /note","exit");
+  const context=runtime("",{store,terminal,extra:{
+    envSet(key,value){env[key]=value;return true;},
+    envGet:key=>env[key],
+    procExec(){return 2;},
+    procWait(pid){waits.push(pid);return waits.length===1?null:{pid,status:0};},
+  }});
+  const assembler=new Assembler();
+  const binary=new Uint8Array(fs.readFileSync(
+    new URL("../system/unix/build/sh.bin",import.meta.url)));
+  const program=assembler.decodeBinary(binary);
+  const cpu=new CPU(65536,value=>context.output.push(String(value)),context.terminal,context.system);
+  const first=cpu.run(program,500000,true,{preempt:true});
+  assert.equal(first.yielded,true,JSON.stringify({waits,result:first}));
+  const second=cpu.run(program,500000,false,{preempt:true});
+  assert.equal(waits.length,2);
+  assert.equal(second.halted,true);
 });
 
 test("sh executes semicolon sequence nodes outside quotes",()=>{

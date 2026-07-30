@@ -211,6 +211,16 @@ passwd.obj: build/passwd.asm
 passwd.bin: passwd.obj
 	$(LINK) passwd.obj ; mv.bin a.bin passwd.bin
 
+# ======== Applications (/usr/bin) ========
+build/scanner.asm: build/libc.asm bin/scanner.asm
+	cat.bin build/libc.asm > build/scanner.asm ; cat.bin bin/scanner.asm >> build/scanner.asm
+
+scanner.obj: build/scanner.asm
+	$(ASM) build/scanner.asm ; mv.bin a.obj scanner.obj
+
+scanner.bin: scanner.obj
+	$(LINK) scanner.obj ; mv.bin a.bin scanner.bin
+
 # ======== Stage 4: kernel ========
 build/kernel.asm: kernel/entry.asm kernel/syscall.asm kernel/process.asm kernel/scheduler.asm kernel/memory.asm kernel/vfs.asm kernel/permissions.asm kernel/devices.asm
 	cat.bin kernel/entry.asm > build/kernel.asm ; \
@@ -250,7 +260,7 @@ logger.bin: logger.obj
 # ======== Aggregate targets ========
 baseline: hello.bin env.bin make.bin sh.bin
 
-userland: hello.bin env.bin make.bin sh.bin ls.bin cat.bin grep.bin cp.bin mv.bin mkdir.bin rm.bin link-util.bin top.bin ps.bin find.bin chown.bin chgrp.bin user.bin
+userland: hello.bin env.bin make.bin sh.bin ls.bin cat.bin grep.bin cp.bin mv.bin mkdir.bin rm.bin link-util.bin top.bin ps.bin find.bin chown.bin chgrp.bin user.bin scanner.bin
 
 system: kernel.bin init.bin logger.bin
 

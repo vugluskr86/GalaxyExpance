@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сухой док — генератор pixelart-кораблей</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#0e131b;
+  --panel:#151c26;
+  --panel-2:#1b2431;
+  --line:#2b3644;
+  --line-soft:#212b37;
+  --ink:#dbe3ec;
+  --muted:#7b8b9d;
+  --amber:#ffb03a;
+  --cyan:#54cfd8;
+  --danger:#e2604a;
+  --radius:3px;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --disp:"Chakra Petch",system-ui,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--mono);font-size:12px;line-height:1.5;
+  background-image:
+    linear-gradient(var(--line-soft) 1px,transparent 1px),
+    linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+  background-size:32px 32px;
+  background-position:-1px -1px;
+}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+
+/* ---------- шапка ---------- */
+header{
+  display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  padding:14px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#141b25,#101720);
+}
+header h1{
+  font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:.14em;
+  text-transform:uppercase;margin:0;
+}
+header h1 b{color:var(--amber);font-weight:700}
+.hazard{
+  flex:1;min-width:60px;height:9px;border:1px solid var(--line);
+  background:repeating-linear-gradient(45deg,#33291a 0 7px,#0f141c 7px 14px);
+}
+header .meta{color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-size:10px}
+
+/* ---------- сетка ---------- */
+.app{display:grid;grid-template-columns:340px minmax(0,1fr) 300px;gap:0;min-height:calc(100vh - 52px)}
+.col{min-width:0}
+.rail{border-right:1px solid var(--line);background:var(--panel);overflow:auto;max-height:calc(100vh - 52px)}
+.rail.right{border-right:0;border-left:1px solid var(--line)}
+.stage{padding:24px;display:flex;flex-direction:column;gap:18px;align-items:center;background:radial-gradient(circle at 50% 18%,#182335 0,#0e131b 46%,#090d13 100%)}
+
+/* ---------- группы настроек ---------- */
+.group{border-bottom:1px solid var(--line-soft)}
+.group>summary{
+  cursor:pointer;list-style:none;padding:10px 14px;
+  font-family:var(--disp);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;background:var(--panel-2);
+}
+.group>summary::-webkit-details-marker{display:none}
+.group>summary::before{content:"";width:6px;height:6px;background:var(--cyan);transform:rotate(45deg);flex:none}
+.group[open]>summary::before{background:var(--amber)}
+.group>summary:hover{color:#fff}
+.body{padding:10px 14px 14px}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;margin:0 0 9px}
+.row label{color:var(--muted);font-size:11px}
+.row .val{color:var(--amber);font-size:11px;font-variant-numeric:tabular-nums}
+.row input[type=range]{grid-column:1/-1;width:100%;margin:0;accent-color:var(--cyan);height:16px}
+.row select,.row input[type=number],.row input[type=text]{
+  grid-column:1/-1;width:100%;background:#0d131b;border:1px solid var(--line);
+  border-radius:var(--radius);padding:5px 7px;
+}
+.row.inline{grid-template-columns:auto 1fr}
+.row.inline input[type=checkbox]{grid-column:auto;width:14px;height:14px;accent-color:var(--amber);margin:0}
+.row.inline label{grid-column:auto;color:var(--ink);font-size:11px}
+.hint{color:var(--muted);font-size:10px;margin:-4px 0 10px;line-height:1.4}
+
+/* ---------- кнопки ---------- */
+.btn{
+  background:#0d131b;border:1px solid var(--line);border-radius:var(--radius);
+  padding:7px 10px;cursor:pointer;letter-spacing:.06em;text-transform:uppercase;font-size:10.5px;
+  font-family:var(--disp);font-weight:600;
+}
+.btn:hover{border-color:var(--cyan);color:#fff}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#1a1206}
+.btn.primary:hover{background:#ffc262;color:#150e04}
+.btn.ghost{border-style:dashed}
+.btn.mini{padding:4px 7px;font-size:10px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.btns.grid2{display:grid;grid-template-columns:1fr 1fr}
+
+/* ---------- док ---------- */
+.dock{position:relative;padding:30px;background:linear-gradient(135deg,#111a27cc,#090e16cc);border:1px solid #263447;box-shadow:inset 0 0 40px #0008}
+.dock::before,.dock::after{
+  content:"";position:absolute;width:22px;height:22px;border:2px solid var(--amber);
+}
+.dock::before{left:0;top:0;border-right:0;border-bottom:0}
+.dock::after{right:0;bottom:0;border-left:0;border-top:0}
+.dock .corner{position:absolute;width:22px;height:22px;border:2px solid var(--amber)}
+.dock .corner.tr{right:0;top:0;border-left:0;border-bottom:0}
+.dock .corner.bl{left:0;bottom:0;border-right:0;border-top:0}
+.ruler{position:absolute;color:var(--muted);font-size:9px;letter-spacing:.1em}
+.ruler.top{top:8px;left:50%;transform:translateX(-50%)}
+.ruler.side{left:6px;top:50%;transform:translateY(-50%) rotate(-90deg);transform-origin:center}
+#main{image-rendering:pixelated;display:block;background:#070b12;border:1px solid #3a485a;box-shadow:0 0 0 1px #080b10,0 18px 50px #0009}
+.stagebar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+
+/* ---------- спецификация ---------- */
+.spec{width:100%;border:1px solid var(--line);background:linear-gradient(180deg,#182231,#111923);max-width:680px;box-shadow:0 12px 32px #0005}
+.spec h3,.rail h3{
+  margin:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel-2);
+  font-family:var(--disp);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+}
+.spec dl{margin:0;padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px 14px}
+.spec div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--line-soft);padding-bottom:3px}
+.spec dt{color:var(--muted);font-size:10.5px}
+.spec dd{margin:0;color:var(--ink);font-variant-numeric:tabular-nums;font-size:11px}
+.spec dd.hi{color:var(--cyan)}
+
+/* ---------- флот / батч ---------- */
+.fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;padding:12px}
+.fleet canvas{
+  image-rendering:pixelated;width:100%;height:auto;background:#0a0e14;
+  border:1px solid var(--line);cursor:pointer;display:block;
+}
+.fleet canvas:hover{border-color:var(--amber)}
+.fleet figure{margin:0;display:flex;flex-direction:column;gap:3px}
+.fleet figcaption{color:var(--muted);font-size:9.5px;text-align:center}
+
+/* ---------- пресеты ---------- */
+.presets{padding:12px;display:flex;flex-direction:column;gap:8px}
+.preset{display:grid;grid-template-columns:1fr auto auto;gap:5px;align-items:center;
+  border:1px solid var(--line);border-radius:var(--radius);padding:5px 6px;background:#0d131b}
+.preset span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.empty{color:var(--muted);font-size:10.5px;border:1px dashed var(--line);padding:12px;text-align:center}
+.note{color:var(--muted);font-size:10px;padding:0 12px 12px}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  background:var(--panel-2);border:1px solid var(--amber);color:var(--ink);
+  padding:8px 14px;font-size:11px;border-radius:var(--radius);opacity:0;pointer-events:none;
+  transition:opacity .2s;z-index:20;
+}
+.toast.on{opacity:1}
+.slot-legend{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;color:var(--muted);font-size:10px}
+.slot-legend span{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);padding:3px 6px;background:#0b1119}
+.slot-legend i{width:7px;height:7px;display:inline-block}
+.data-preview{width:100%;max-width:680px;border:1px solid var(--line);background:#0b1119}
+.data-preview summary{cursor:pointer;padding:8px 12px;font-family:var(--disp);letter-spacing:.1em;text-transform:uppercase;background:var(--panel-2)}
+.data-preview pre{margin:0;padding:12px;max-height:260px;overflow:auto;color:#9fdde2;font-size:10px;white-space:pre-wrap}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:1100px){
+  .app{grid-template-columns:1fr}
+  .rail,.rail.right{border:0;border-top:1px solid var(--line);max-height:none}
+  .stage{order:-1}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Сухой<b>·</b>Док</h1>
+  <span class="meta">процедурные корпуса · 5 алгоритмов · wfc</span>
+  <div class="hazard" aria-hidden="true"></div>
+  <span class="meta" id="seedTag">seed —</span>
+</header>
+
+<div class="app">
+
+  <!-- ЛЕВЫЙ РЕЛЬС: настройки -->
+  <div class="col rail" id="controls"></div>
+
+  <!-- ЦЕНТР: док -->
+  <div class="col stage">
+    <div class="dock">
+      <i class="corner tr"></i><i class="corner bl"></i>
+      <span class="ruler top" id="rulerTop">— px</span>
+      <span class="ruler side" id="rulerSide">— px</span>
+      <canvas id="main" width="400" height="500"></canvas>
+    </div>
+
+    <div class="stagebar">
+      <button class="btn primary" id="bNew">Новый корабль</button>
+      <button class="btn" id="bRegen">Перегенерировать</button>
+      <button class="btn" id="bRandom">Случайно всё</button>
+      <button class="btn" id="bPng">Скачать PNG</button>
+      <button class="btn primary" id="bPackage">PNG + данные</button>
+      <button class="btn" id="bJson">Скачать JSON</button>
+      <button class="btn" id="bSheet">Скачать флот</button>
+    </div>
+
+    <div class="slot-legend"><span><i style="background:#ffb03a"></i>двигатель</span><span><i style="background:#e2604a"></i>оружие</span><span><i style="background:#54cfd8"></i>кабина</span><span><i style="background:#b78cff"></i>служебный слот</span></div>
+
+    <div class="spec">
+      <h3>Спецификация и слоты</h3>
+      <dl id="spec"></dl>
+    </div>
+    <details class="data-preview">
+      <summary>Предпросмотр данных корабля</summary>
+      <pre id="dataPreview"></pre>
+    </details>
+  </div>
+
+  <!-- ПРАВЫЙ РЕЛЬС: пресеты + флот -->
+  <div class="col rail right">
+    <h3>Пресеты</h3>
+    <div class="presets">
+      <div class="row"><input type="text" id="pName" placeholder="имя пресета"></div>
+      <div class="btns grid2">
+        <button class="btn" id="bSave">Сохранить</button>
+        <button class="btn" id="bCopy">Копировать JSON</button>
+      </div>
+      <div class="btns grid2">
+        <button class="btn ghost" id="bExport">Экспорт файла</button>
+        <button class="btn ghost" id="bImport">Импорт файла</button>
+      </div>
+      <div id="presetList"></div>
+      <input type="file" id="fileIn" accept="application/json" hidden>
+    </div>
+    <h3>Флот</h3>
+    <div class="fleet" id="fleet"></div>
+    <p class="note">Клик по эскизу — загрузить его seed в док. Пробел — новый корабль.</p>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   0. УТИЛИТЫ
+   ============================================================ */
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const smoothstep=(e0,e1,x)=>{const t=clamp((x-e0)/(e1-e0),0,1);return t*t*(3-2*t);};
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let rnd=mulberry32(1);
+const rf=(a,b)=>a+rnd()*(b-a);
+const ri=(a,b)=>Math.floor(a+rnd()*(b-a+1));
+function hash2(x,y,s){let h=x*374761393+y*668265263+s*1274126177;h=(h^(h>>>13))*1274126177;return((h^(h>>>16))>>>0)/4294967296;}
+
+/* материалы */
+const M={EMPTY:0,HULL:1,ACCENT:2,GLASS:3,ENGINE:4,GLOW:5,METAL:6};
+const mk=(w,h)=>({w,h,d:new Uint8Array(w*h)});
+const at=(g,x,y)=>(x<0||y<0||x>=g.w||y>=g.h)?0:g.d[y*g.w+x];
+const set=(g,x,y,v)=>{if(x>=0&&y>=0&&x<g.w&&y<g.h)g.d[y*g.w+x]=v;};
+
+/* ============================================================
+   1. ПАРАМЕТРЫ
+   ============================================================ */
+const DEF={
+  // основное
+  algo:'ca', w:34, h:46, symmetry:'vertical', seed:1337,
+
+  // силуэт (огибающая)
+  beam:0.85, taper:1.35, waist:0.22, tailWidth:0.9, bulge:0.05, envSoft:0.05,
+
+  // клеточный автомат
+  caFill:0.55, caIter:3, caBirth:5, caSurvive:4, caSpine:true,
+
+  // агенты
+  agCount:6, agSteps:110, agBrush:2, agTurn:0.28,
+
+  // каркас
+  skModules:8, skMin:2, skMax:8, skSpine:0.45, skWings:0.7, skFins:0.5,
+
+  // wfc
+  wfcSample:'hull', wfcN:3, wfcMirror:true, wfcAttempts:12, wfcBorder:true, wfcSeedCore:true,
+
+  // очистка
+  clIsolated:true, clHoles:true, clLargest:true, clSmooth:0, clGrow:0,
+
+  // детали
+  ftCockpit:true, cockpitPos:0.13, cockpitSize:0.55,
+  ftEngines:true, engMax:4, engMin:2, engSize:0.7, glow:true,
+  guns:0.5, greebles:0.22, accentPlates:0.3,
+
+  // свет и тень
+  light:'tl', edge:true, ao:true, outline:true, contrast:1.0,
+  panels:0.45, panelW:5, panelH:6, dither:0.08,
+
+  // палитра
+  palette:'steel', hueShift:0, satMul:1, lightMul:1, accentHue:32,
+
+  // вывод
+  scale:8, bg:'dock', crop:true, fleetCount:12, showSlots:true
+};
+let P=Object.assign({},DEF);
+let current=null;            // {grid,stats}
+const modelCache=new Map();
+
+/* ============================================================
+   2. ОГИБАЮЩАЯ СИЛУЭТА
+   ------------------------------------------------------------
+   Все алгоритмы генерируют «материал» внутри огибающей: без неё
+   любой шумовой метод даёт кляксу, а не корабль. t = 0 — нос,
+   t = 1 — корма.
+   ============================================================ */
+function halfWidthAt(t){
+  let p=Math.pow(clamp(t,0,1),P.taper);
+  p*=1-P.waist*Math.sin(Math.PI*t);
+  p*=1-(1-P.tailWidth)*smoothstep(0.68,1,t);
+  p=Math.min(1,p+P.bulge*Math.sin(Math.PI*Math.pow(t,0.8)));
+  return Math.max(0.02,p);
+}
+function buildEnv(gw,gh){
+  const e=new Uint8Array(gw*gh);
+  const maxHalf=(P.w/2)*P.beam;
+  for(let y=0;y<gh;y++){
+    const t=P.symmetry==='quad'?1-(y+0.5)/gh:(y+0.5)/gh;
+    const hw=maxHalf*halfWidthAt(t);
+    for(let x=0;x<gw;x++) e[y*gw+x]=(x<=hw||rnd()<P.envSoft)?1:0;
+  }
+  return e;
+}
+
+/* ============================================================
+   3. АЛГОРИТМЫ ФОРМЫ  (работают в «полусетке»: x = удаление от оси)
+   ============================================================ */
+
+/* 3.1 Клеточный автомат — шум + правило B/S. Даёт органичные,
+       «выеденные» корпуса. Классика жанра. */
+function algoCA(gw,gh,env){
+  let a=new Uint8Array(gw*gh);
+  for(let i=0;i<a.length;i++) a[i]=(env[i]&&rnd()<P.caFill)?1:0;
+  if(P.caSpine) for(let y=0;y<gh;y++) if(env[y*gw]) a[y*gw]=1;
+  for(let it=0;it<P.caIter;it++){
+    const b=new Uint8Array(gw*gh);
+    for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){
+      let n=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        let nx=x+dx,ny=y+dy;
+        if(nx<0)nx=(P.symmetry==='none')?-1:0;   // отражение у оси
+        if(nx<0||ny<0||nx>=gw||ny>=gh)continue;
+        n+=a[ny*gw+nx];
+      }
+      const alive=a[y*gw+x];
+      let v=alive?(n>=P.caSurvive?1:0):(n>=P.caBirth?1:0);
+      if(!env[y*gw+x])v=0;
+      b[y*gw+x]=v;
+    }
+    a=b;
+  }
+  return a;
+}
+
+/* 3.2 Агенты-строители — «черви» с инерцией. Плавные обтекаемые
+       формы, хорошо для органики и истребителей. */
+function algoAgents(gw,gh,env){
+  const a=new Uint8Array(gw*gh);
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  for(let k=0;k<P.agCount;k++){
+    let x=0,y=ri(0,gh-1),d=dirs[ri(0,3)];
+    for(let s=0;s<P.agSteps;s++){
+      const r=P.agBrush;
+      for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+        if(dx*dx+dy*dy>r*r+0.6)continue;
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=gw||ny>=gh)continue;
+        if(env[ny*gw+nx])a[ny*gw+nx]=1;
+      }
+      if(rnd()<P.agTurn)d=dirs[ri(0,3)];
+      let nx=x+d[0],ny=y+d[1];
+      if(nx<0){nx=0;d=dirs[ri(0,3)];}
+      if(nx>=gw||ny<0||ny>=gh){d=[-d[0],-d[1]];nx=x+d[0];ny=y+d[1];}
+      if(nx<0||ny<0||nx>=gw||ny>=gh)break;
+      if(!env[ny*gw+nx]&&rnd()<0.85){d=[-d[0],-d[1]];continue;}
+      x=nx;y=ny;
+    }
+  }
+  return a;
+}
+
+/* 3.3 Каркас и модули — хребет + прямоугольные секции + крылья.
+       Читается как инженерная конструкция, а не как биомасса. */
+function algoSkeleton(gw,gh,env){
+  const a=new Uint8Array(gw*gh);
+  const fill=(x0,y0,w,h)=>{for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++){
+    if(x<0||y<0||x>=gw||y>=gh)continue; if(env[y*gw+x])a[y*gw+x]=1;}};
+  for(let y=0;y<gh;y++){
+    let edge=1;
+    for(let x=0;x<gw;x++) if(env[y*gw+x]) edge=x+1;
+    fill(0,y,Math.max(1,Math.round(edge*P.skSpine)),1);
+  }
+  for(let i=0;i<P.skModules;i++){
+    const mh=ri(P.skMin,P.skMax),mw=ri(P.skMin,P.skMax);
+    fill(ri(0,Math.max(0,gw-mw)),ri(0,Math.max(0,gh-mh)),mw,mh);
+  }
+  if(rnd()<P.skWings) fill(0,ri(Math.floor(gh*0.35),Math.floor(gh*0.8)),gw,ri(1,3));
+  if(rnd()<P.skWings*0.6) fill(0,ri(Math.floor(gh*0.2),Math.floor(gh*0.6)),gw,ri(1,2));
+  if(rnd()<P.skFins){const y0=Math.floor(gh*0.76);fill(0,y0,Math.max(2,Math.floor(gw*0.55)),gh-y0);}
+  return a;
+}
+
+/* 3.4 WAVE FUNCTION COLLAPSE (overlapping model, N×N)
+   ------------------------------------------------------------
+   Из образца достаём все NxN-паттерны и их частоты, строим таблицу
+   совместимости по 4 направлениям, дальше — классический цикл
+   «наблюдение минимальной энтропии → распространение ограничений».
+   Противоречие = рестарт с новым состоянием ГПСЧ.
+   ============================================================ */
+const SAMPLES={
+  hull:[
+    "......##......",
+    ".....####.....",
+    ".....####.....",
+    "....######....",
+    "....##..##....",
+    "...########...",
+    "..##########..",
+    "..##.####.##..",
+    "..##########..",
+    ".####....####.",
+    ".####....####.",
+    "..##########..",
+    "...##.##.##...",
+    "..####..####..",
+    "..##......##..",
+    ".............."
+  ],
+  modular:[
+    "..............",
+    "..###....###..",
+    "..#.#....#.#..",
+    "..###....###..",
+    "..............",
+    ".####....####.",
+    ".#..#....#..#.",
+    ".####....####.",
+    "..............",
+    "..##########..",
+    "..#........#..",
+    "..#.######.#..",
+    "..#........#..",
+    "..##########..",
+    ".............."
+  ],
+  organic:[
+    ".....####.....",
+    "...########...",
+    "..##########..",
+    ".############.",
+    ".####....####.",
+    "..##......##..",
+    "..##......##..",
+    ".####....####.",
+    ".############.",
+    "..##########..",
+    "...########...",
+    ".....####.....",
+    ".............."
+  ],
+  greeble:[
+    "##############",
+    "#..#.##.#..#.#",
+    "####.##.####.#",
+    "#.##.##.##.#.#",
+    "#.##....##.#.#",
+    "##############",
+    "#....##....#.#",
+    "#.##.##.##.#.#",
+    "#.##....##.#.#",
+    "##############"
+  ],
+  lattice:[
+    "..............",
+    ".##.##.##.##..",
+    ".##.##.##.##..",
+    "..............",
+    "##############",
+    "..............",
+    ".####...####..",
+    ".#..#...#..#..",
+    ".####...####..",
+    "..............",
+    "##############",
+    ".............."
+  ]
+};
+
+function agrees(p1,p2,dx,dy,N){
+  const xmin=dx<0?0:dx, xmax=dx<0?dx+N:N;
+  const ymin=dy<0?0:dy, ymax=dy<0?dy+N:N;
+  for(let y=ymin;y<ymax;y++)for(let x=xmin;x<xmax;x++)
+    if(p1[y*N+x]!==p2[(y-dy)*N+(x-dx)])return false;
+  return true;
+}
+function buildModel(rows,N,mirror){
+  const key=rows.join('|')+'#'+N+(mirror?'m':'');
+  if(modelCache.has(key))return modelCache.get(key);
+  const H=rows.length,W=rows[0].length;
+  const map=new Map(),patterns=[],weights=[];
+  const variants=[rows];
+  if(mirror)variants.push(rows.map(r=>r.split('').reverse().join('')));
+  for(const s of variants){
+    for(let y=0;y+N<=H;y++)for(let x=0;x+N<=W;x++){
+      const p=new Uint8Array(N*N);
+      for(let dy=0;dy<N;dy++)for(let dx=0;dx<N;dx++) p[dy*N+dx]=s[y+dy][x+dx]==='#'?1:0;
+      const k=p.join('');
+      let idx=map.get(k);
+      if(idx===undefined){idx=patterns.length;map.set(k,idx);patterns.push(p);weights.push(0);}
+      weights[idx]++;
+    }
+  }
+  const T=patterns.length,DX=[-1,0,1,0],DY=[0,1,0,-1],prop=[];
+  for(let d=0;d<4;d++){
+    const row=[];
+    for(let t=0;t<T;t++){
+      const list=[];
+      for(let t2=0;t2<T;t2++) if(agrees(patterns[t],patterns[t2],DX[d],DY[d],N)) list.push(t2);
+      row.push(list);
+    }
+    prop.push(row);
+  }
+  const hasEmpty=patterns.some(p=>p.every(v=>v===0));
+  const model={patterns,weights,T,N,prop,DX,DY,hasEmpty};
+  modelCache.set(key,model);
+  return model;
+}
+function runWFC(model,gw,gh,opts){
+  const {T,prop,weights,DX,DY,patterns}=model;
+  const cells=gw*gh, opposite=[2,3,0,1];
+  const wave=new Uint8Array(cells*T).fill(1);
+  const compatible=new Int32Array(cells*T*4);
+  const sumOnes=new Int32Array(cells).fill(T);
+  const logW=weights.map(w=>w*Math.log(w));
+  const totalW=weights.reduce((a,b)=>a+b,0);
+  const totalLog=logW.reduce((a,b)=>a+b,0);
+  const sumW=new Float64Array(cells).fill(totalW);
+  const sumLog=new Float64Array(cells).fill(totalLog);
+  const stack=[];
+  for(let i=0;i<cells;i++)for(let t=0;t<T;t++)for(let d=0;d<4;d++)
+    compatible[(i*T+t)*4+d]=prop[opposite[d]][t].length;
+
+  function ban(i,t){
+    if(!wave[i*T+t])return true;
+    wave[i*T+t]=0;
+    for(let d=0;d<4;d++)compatible[(i*T+t)*4+d]=0;
+    stack.push(i,t);
+    sumOnes[i]--; sumW[i]-=weights[t]; sumLog[i]-=logW[t];
+    return sumOnes[i]>0;
+  }
+  function propagate(){
+    while(stack.length){
+      const t=stack.pop(),i=stack.pop();
+      const x=i%gw,y=(i/gw)|0;
+      for(let d=0;d<4;d++){
+        const nx=x+DX[d],ny=y+DY[d];
+        if(nx<0||ny<0||nx>=gw||ny>=gh)continue;
+        const j=ny*gw+nx,list=prop[d][t];
+        for(let q=0;q<list.length;q++){
+          const k=(j*T+list[q])*4+d;
+          if(--compatible[k]===0){ if(!ban(j,list[q])) return false; }
+        }
+      }
+    }
+    return true;
+  }
+  // предварительные ограничения: пустая рамка и «зерно» корпуса у оси
+  if(opts.border&&model.hasEmpty){
+    for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){
+      const border=(x===gw-1||y===0||y===gh-1||(opts.none&&x===0));
+      if(!border)continue;
+      const i=y*gw+x;
+      for(let t=0;t<T;t++) if(wave[i*T+t]&&patterns[t].some(v=>v))
+        if(!ban(i,t))return null;
+    }
+  }
+  if(opts.core){
+    const i=((gh>>1)*gw);
+    for(let t=0;t<T;t++) if(wave[i*T+t]&&patterns[t][0]===0) if(!ban(i,t))return null;
+  }
+  if(!propagate())return null;
+
+  for(;;){
+    let min=Infinity,arg=-1;
+    for(let i=0;i<cells;i++){
+      if(sumOnes[i]<=1)continue;
+      const e=Math.log(sumW[i])-sumLog[i]/sumW[i]+rnd()*1e-4;
+      if(e<min){min=e;arg=i;}
+    }
+    if(arg<0)break;                       // всё схлопнуто
+    let r=rnd()*sumW[arg],pick=-1;
+    for(let t=0;t<T;t++) if(wave[arg*T+t]){r-=weights[t];if(r<=0){pick=t;break;}}
+    if(pick<0)for(let t=T-1;t>=0;t--) if(wave[arg*T+t]){pick=t;break;}
+    for(let t=0;t<T;t++) if(t!==pick&&wave[arg*T+t]) ban(arg,t);
+    if(!propagate())return null;          // противоречие
+  }
+  const out=new Uint8Array(cells);
+  for(let i=0;i<cells;i++){
+    for(let t=0;t<T;t++) if(wave[i*T+t]){out[i]=patterns[t][0];break;}
+  }
+  return out;
+}
+function algoWFC(gw,gh,env){
+  const rows=SAMPLES[P.wfcSample]||SAMPLES.hull;
+  const N=clamp(P.wfcN,2,3);
+  const model=buildModel(rows,N,P.wfcMirror);
+  const opts={border:P.wfcBorder,core:P.wfcSeedCore,none:P.symmetry==='none'};
+  for(let k=0;k<P.wfcAttempts;k++){
+    const out=runWFC(model,gw,gh,opts);
+    if(out){
+      let solid=0;
+      for(let i=0;i<out.length;i++){ out[i]&=env[i]; solid+=out[i]; }
+      if(solid>gw*gh*0.06) return out;    // слишком пусто — пробуем ещё
+    }
+  }
+  return algoCA(gw,gh,env);               // страховка: не сошлось — падаем на КА
+}
+
+/* 3.5 Гибрид: силуэт от каркаса + структура от WFC.
+       Каркас отвечает за читаемость формы, WFC — за фактуру. */
+function algoHybrid(gw,gh,env){
+  const base=algoSkeleton(gw,gh,env);
+  const det=algoWFC(gw,gh,env);
+  const out=new Uint8Array(gw*gh);
+  for(let i=0;i<out.length;i++) out[i]=(base[i]|det[i])&env[i];
+  out.detail=det;
+  return out;
+}
+
+/* ============================================================
+   4. СБОРКА, ОЧИСТКА, ДЕТАЛИ
+   ============================================================ */
+/* Полусетка раскладывается на холст. side: 'both' — зеркально,
+   'left'/'right' — только одна сторона (режим без симметрии, где
+   два борта генерируются независимо). */
+function expand(half,gw,gh,f,side){
+  const W=P.w,H=P.h;
+  f=f||mk(W,H);
+  const symH=P.symmetry==='quad';
+  const oddW=W%2===1, oddH=H%2===1, cw=W>>1, ch=H>>1;
+  for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){
+    if(!half[y*gw+x])continue;
+    const right=oddW?cw+x:cw+x, left=oddW?cw-x:cw-1-x;
+    const xs=side==='left'?[left]:side==='right'?[right]:[right,left];
+    const ys=symH?(oddH?[ch+y,ch-y]:[ch+y,ch-1-y]):[y];
+    for(const X of xs)for(const Y of ys) set(f,X,Y,1);
+  }
+  return f;
+}
+function dilate(g,times){
+  for(let k=0;k<times;k++){
+    const c=g.d.slice();
+    for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
+      if(c[y*g.w+x])continue;
+      if((x>0&&c[y*g.w+x-1])||(x<g.w-1&&c[y*g.w+x+1])||(y>0&&c[(y-1)*g.w+x])||(y<g.h-1&&c[(y+1)*g.w+x]))
+        g.d[y*g.w+x]=1;
+    }
+  }
+}
+function removeIsolated(g){
+  for(let pass=0;pass<2;pass++){
+    const c=g.d.slice();
+    for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
+      if(!c[y*g.w+x])continue;
+      const n=(x>0?c[y*g.w+x-1]:0)+(x<g.w-1?c[y*g.w+x+1]:0)+(y>0?c[(y-1)*g.w+x]:0)+(y<g.h-1?c[(y+1)*g.w+x]:0);
+      if(n<2)g.d[y*g.w+x]=0;
+    }
+  }
+}
+function fillHoles(g){
+  const seen=new Uint8Array(g.w*g.h),st=[];
+  const push=(x,y)=>{if(x<0||y<0||x>=g.w||y>=g.h)return;const i=y*g.w+x;if(seen[i]||g.d[i])return;seen[i]=1;st.push(i);};
+  for(let x=0;x<g.w;x++){push(x,0);push(x,g.h-1);}
+  for(let y=0;y<g.h;y++){push(0,y);push(g.w-1,y);}
+  while(st.length){const i=st.pop(),x=i%g.w,y=(i/g.w)|0;push(x+1,y);push(x-1,y);push(x,y+1);push(x,y-1);}
+  for(let i=0;i<g.d.length;i++) if(!g.d[i]&&!seen[i]) g.d[i]=1;
+}
+function keepLargest(g){
+  const lab=new Int32Array(g.w*g.h).fill(-1);
+  let comp=0,best=-1,bestN=0;
+  for(let i=0;i<g.d.length;i++){
+    if(!g.d[i]||lab[i]>=0)continue;
+    const st=[i];lab[i]=comp;let n=0;
+    while(st.length){
+      const c=st.pop();n++;
+      const x=c%g.w,y=(c/g.w)|0;
+      const nb=[[1,0],[-1,0],[0,1],[0,-1]];
+      for(const[dx,dy]of nb){
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=g.w||ny>=g.h)continue;
+        const j=ny*g.w+nx;
+        if(g.d[j]&&lab[j]<0){lab[j]=comp;st.push(j);}
+      }
+    }
+    if(n>bestN){bestN=n;best=comp;}
+    comp++;
+  }
+  if(best<0)return;
+  for(let i=0;i<g.d.length;i++) if(g.d[i]&&lab[i]!==best) g.d[i]=0;
+}
+function smooth(g,times){
+  for(let k=0;k<times;k++){
+    const c=g.d.slice();
+    for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
+      let n=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=g.w||ny>=g.h)continue;
+        n+=c[ny*g.w+nx];
+      }
+      const i=y*g.w+x;
+      if(c[i]&&n<=2)g.d[i]=0;
+      else if(!c[i]&&n>=6)g.d[i]=1;
+    }
+  }
+}
+function setSym(g,x,y,v){
+  set(g,x,y,v);
+  if(P.symmetry!=='none') set(g,P.w-1-x,y,v);
+  if(P.symmetry==='quad'){
+    set(g,x,P.h-1-y,v);
+    if(P.symmetry!=='none') set(g,P.w-1-x,P.h-1-y,v);
+  }
+}
+const isSolid=m=>m!==M.EMPTY&&m!==M.GLOW;
+
+function addCockpit(g,slots){
+  let ytop=-1;
+  for(let y=0;y<g.h&&ytop<0;y++)for(let x=0;x<g.w;x++) if(g.d[y*g.w+x]){ytop=y;break;}
+  if(ytop<0)return;
+  const cy=ytop+Math.round(P.h*P.cockpitPos), cx=(P.w-1)/2;
+  const rx=Math.max(1,P.w*0.5*P.cockpitSize*0.42), ry=Math.max(1,P.h*P.cockpitSize*0.075);
+  let count=0;
+  for(let y=Math.floor(cy-ry);y<=Math.ceil(cy+ry);y++)for(let x=0;x<g.w;x++){
+    const dx=(x-cx)/rx,dy=(y-cy)/ry;
+    if(dx*dx+dy*dy<=1&&at(g,x,y)===M.HULL){set(g,x,y,M.GLASS);count++;}
+  }
+  if(count) slots.push({id:'cockpit-0',type:'cockpit',x:Math.round(cx),y:Math.round(cy),rotation:0,size:{w:Math.round(rx*2+1),h:Math.round(ry*2+1)},mount:'internal'});
+}
+function addEngines(g,slots){
+  let ymax=-1;
+  for(let y=g.h-1;y>=0&&ymax<0;y--)for(let x=0;x<g.w;x++) if(g.d[y*g.w+x]===M.HULL){ymax=y;break;}
+  if(ymax<0)return 0;
+  const half=P.symmetry==='none'?P.w:Math.ceil(P.w/2);
+  let count=0,x=0;
+  const addSlot=(x0,x1)=>slots.push({id:'engine-'+slots.filter(s=>s.type==='engine').length,type:'engine',x:Math.round((x0+x1-1)/2),y:ymax,rotation:180,size:{w:x1-x0,h:Math.max(1,Math.round(P.engSize*3))},mount:'rear',direction:{x:0,y:1}});
+  while(x<half&&count<P.engMax){
+    if(at(g,x,ymax)===M.HULL){
+      let x2=x; while(x2<half&&at(g,x2,ymax)===M.HULL)x2++;
+      const len=x2-x;
+      if(len>=P.engMin){
+        const eh=Math.max(1,Math.round(P.engSize*3));
+        for(let yy=ymax;yy>ymax-eh;yy--)for(let xx=x;xx<x2;xx++) if(at(g,xx,yy)===M.HULL) setSym(g,xx,yy,M.ENGINE);
+        if(P.glow){const pad=len>2?1:0;for(let yy=ymax+1;yy<=ymax+Math.max(1,Math.round(P.engSize*3));yy++)for(let xx=x+pad;xx<x2-pad;xx++) if(!at(g,xx,yy)) setSym(g,xx,yy,M.GLOW);}
+        addSlot(x,x2);
+        if(P.symmetry!=='none'){const mx0=P.w-x2,mx1=P.w-x;if(mx0!==x) addSlot(mx0,mx1);}
+        count++;
+      }
+      x=x2;
+    }else x++;
+  }
+  return slots.filter(s=>s.type==='engine').length;
+}
+function addGuns(g,slots){
+  let n=0;
+  const tries=Math.round(P.guns*7);
+  const addSlot=(x,y,len,side)=>slots.push({id:'weapon-'+slots.filter(s=>s.type==='weapon').length,type:'weapon',x,y:y-len+1,rotation:0,size:{w:1,h:len},mount:side,direction:{x:0,y:-1}});
+  for(let i=0;i<tries;i++){
+    const y=ri(Math.floor(P.h*0.22),Math.floor(P.h*0.72));
+    let bx=-1; const lim=P.symmetry==='none'?P.w:Math.ceil(P.w/2);
+    for(let x=0;x<lim;x++) if(at(g,x,y)){bx=x;break;}
+    if(bx<0)continue;
+    const len=ri(2,Math.max(2,Math.round(P.h*0.13))); let free=true;
+    for(let k=1;k<=len;k++) if(at(g,bx,y-k)){free=false;break;}
+    if(!free)continue;
+    for(let k=0;k<len;k++) setSym(g,bx,y-k,k===len-1?M.ACCENT:M.METAL);
+    addSlot(bx,y,len,'left');
+    if(P.symmetry!=='none'&&P.w-1-bx!==bx)addSlot(P.w-1-bx,y,len,'right');
+    n++;
+  }
+  return slots.filter(s=>s.type==='weapon').length;
+}
+
+function addGreebles(g,detail){
+  const half=P.symmetry==='none'?P.w:Math.ceil(P.w/2);
+  for(let y=0;y<g.h;y++)for(let x=0;x<half;x++){
+    if(at(g,x,y)!==M.HULL)continue;
+    if(detail&&P.accentPlates>0){
+      // в гибридном режиме акценты идут по паттерну WFC — структурно, а не шумом
+      if(rnd()<P.accentPlates&&detail(x,y)) {setSym(g,x,y,M.ACCENT);continue;}
+    }
+    if(rnd()<P.greebles*0.14) setSym(g,x,y,rnd()<0.25?M.METAL:M.ACCENT);
+  }
+}
+/* Exported mount coordinates must land on the visible silhouette. Some
+ * algorithms narrow a section after guns/cockpit are placed, so repair only
+ * invalid anchors by moving them to the nearest solid pixel. */
+function keepSlotsOnHull(g,slots){
+  for(const s of slots){
+    if(isSolid(at(g,s.x,s.y)))continue;
+    let best=null;
+    for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
+      if(!isSolid(at(g,x,y)))continue;
+      const d=Math.abs(x-s.x)+Math.abs(y-s.y);
+      if(!best||d<best.d)best={x,y,d};
+    }
+    if(best){s.x=best.x;s.y=best.y;}
+  }
+}
+
+/* ============================================================
+   5. ГЛАВНЫЙ КОНВЕЙЕР
+   ============================================================ */
+function generate(seed){
+  rnd=mulberry32(seed>>>0);
+  const gw=Math.ceil(P.w/2);
+  const gh=P.symmetry==='quad'?Math.ceil(P.h/2):P.h;
+  const env=buildEnv(gw,gh);
+  const run=()=>{
+    switch(P.algo){
+      case 'agents':   return algoAgents(gw,gh,env);
+      case 'skeleton': return algoSkeleton(gw,gh,env);
+      case 'wfc':      return algoWFC(gw,gh,env);
+      case 'hybrid':   return algoHybrid(gw,gh,env);
+      default:         return algoCA(gw,gh,env);
+    }
+  };
+  let g,detHalf=null;
+  if(P.symmetry==='none'){
+    const a=run(), b=run();
+    g=expand(a,gw,gh,null,'right');
+    expand(b,gw,gh,g,'left');
+    detHalf=a.detail||null;
+  } else {
+    const half=run();
+    detHalf=half.detail||null;
+    g=expand(half,gw,gh,null,'both');
+  }
+  if(P.clGrow>0)    dilate(g,P.clGrow);
+  if(P.clSmooth>0)  smooth(g,P.clSmooth);
+  if(P.clIsolated)  removeIsolated(g);
+  if(P.clHoles)     fillHoles(g);
+  if(P.clLargest)   keepLargest(g);
+
+  const slots=[];
+  let engines=0,guns=0;
+  if(P.ftEngines) engines=addEngines(g,slots);
+  if(P.ftCockpit) addCockpit(g,slots);
+  guns=addGuns(g,slots);
+  const b=bbox(g);
+  slots.push({id:'center-0',type:'utility',x:Math.round((b.x0+b.x1)/2),y:Math.round((b.y0+b.y1)/2),rotation:0,mount:'center'});
+
+  let detFn=null;
+  if(detHalf){
+    const oddW=P.w%2===1,cw=P.w>>1;
+    detFn=(x,y)=>{
+      const dx=P.symmetry!=='none'?(x<cw?(oddW?cw-x:cw-1-x):x-cw):x;
+      const dy=P.symmetry==='quad'?(y<(P.h>>1)?((P.h%2===1)?(P.h>>1)-y:(P.h>>1)-1-y):y-(P.h>>1)):y;
+      return dx>=0&&dx<gw&&dy>=0&&dy<gh?detHalf[dy*gw+dx]:0;
+    };
+  }
+  addGreebles(g,detFn);
+  keepSlotsOnHull(g,slots);
+
+  return {grid:g,stats:measure(g,engines,guns),slots};
+}
+function measure(g,engines,guns){
+  let x0=1e9,x1=-1,y0=1e9,y1=-1,hull=0,glass=0,acc=0;
+  for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
+    const m=g.d[y*g.w+x];
+    if(!isSolid(m))continue;
+    hull++;
+    if(m===M.GLASS)glass++;
+    if(m===M.ACCENT||m===M.METAL)acc++;
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+  }
+  if(x1<0)return{len:0,beam:0,hull:0,mass:0,engines:0,guns:0,cls:'обломки',ratio:0,fill:0};
+  const len=y1-y0+1,beam=x1-x0+1;
+  const mass=Math.round(hull*0.42*10)/10;
+  const cls=hull<90?'перехватчик':hull<220?'корвет':hull<430?'фрегат':hull<800?'крейсер':'капитальный';
+  return{len,beam,hull,glass,acc,mass,engines,guns,cls,
+    ratio:Math.round(len/beam*100)/100,
+    fill:Math.round(hull/(len*beam)*100),
+    twr:Math.round((engines*140/Math.max(1,mass))*100)/100};
+}
+
+/* ============================================================
+   6. ПАЛИТРА И РЕНДЕР
+   ============================================================ */
+const PALETTES={
+  steel:   {hull:[212,.10,.56],accent:[212,.14,.38],glass:[192,.62,.56],engine:[218,.08,.30],glow:[28,1,.62],metal:[210,.05,.72]},
+  rust:    {hull:[24,.32,.50],accent:[16,.42,.32],glass:[186,.55,.55],engine:[20,.20,.26],glow:[42,1,.60],metal:[30,.14,.66]},
+  alien:   {hull:[142,.26,.44],accent:[152,.38,.28],glass:[86,.70,.58],engine:[160,.30,.24],glow:[96,1,.60],metal:[130,.12,.62]},
+  imperial:{hull:[210,.05,.80],accent:[214,.10,.58],glass:[204,.60,.48],engine:[210,.04,.40],glow:[8,.95,.60],metal:[40,.30,.66]},
+  neon:    {hull:[262,.22,.44],accent:[286,.44,.34],glass:[318,.80,.62],engine:[258,.28,.26],glow:[176,1,.60],metal:[230,.20,.68]},
+  void:    {hull:[220,.14,.30],accent:[228,.20,.20],glass:[268,.60,.58],engine:[222,.12,.16],glow:[276,.95,.66],metal:[224,.06,.52]},
+  sand:    {hull:[44,.24,.62],accent:[36,.30,.44],glass:[196,.50,.52],engine:[40,.14,.34],glow:[18,.95,.58],metal:[46,.12,.76]}
+};
+const LIGHT={tl:[-1,-1],t:[0,-1],tr:[1,-1],l:[-1,0],r:[1,0],bl:[-1,1],b:[0,1],br:[1,1]};
+
+function palColor(mat,shade){
+  const base=PALETTES[P.palette]||PALETTES.steel;
+  const key=mat===M.ACCENT?'accent':mat===M.GLASS?'glass':mat===M.ENGINE?'engine':
+            mat===M.GLOW?'glow':mat===M.METAL?'metal':'hull';
+  let[h,s,l]=base[key];
+  if(key==='accent'||key==='metal') h=lerp(h,P.accentHue,0.5);
+  h+=P.hueShift; s*=P.satMul; l*=P.lightMul;
+  const off=[-0.15,0,0.09,0.19][shade]*P.contrast;
+  return `hsl(${((h%360)+360)%360} ${clamp(s*100,0,100).toFixed(1)}% ${clamp((l+off)*100,3,97).toFixed(1)}%)`;
+}
+function shadeOf(g,x,y){
+  const[lx,ly]=LIGHT[P.light]||LIGHT.tl;
+  const front=isSolid(at(g,x+lx,y+ly)), back=isSolid(at(g,x-lx,y-ly));
+  let s=1;
+  if(!front)s=2;
+  else if(!back&&P.ao)s=0;
+  if(P.edge&&!front&&!isSolid(at(g,x+lx*2,y+ly*2)))s=3;
+  if(P.panels>0){
+    const pid=hash2(Math.floor(x/P.panelW),Math.floor(y/P.panelH),7);
+    if(pid<P.panels*0.5)s=Math.max(0,s-1);
+    else if(pid>1-P.panels*0.28)s=Math.min(3,s+1);
+    if(x%P.panelW===0||y%P.panelH===0){ if(hash2(x,y,13)<P.panels*0.4) s=Math.max(0,s-1); }
+  }
+  if(P.dither>0&&hash2(x*3,y*7,5)<P.dither) s=clamp(s+(hash2(x,y,11)<0.5?-1:1),0,3);
+  return s;
+}
+function bbox(g){
+  let x0=1e9,x1=-1,y0=1e9,y1=-1;
+  for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
+    if(!g.d[y*g.w+x])continue;
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+  }
+  if(x1<0)return{x0:0,y0:0,x1:g.w-1,y1:g.h-1};
+  return{x0,y0,x1,y1};
+}
+function drawShip(ctx,g,scale,bg){
+  let ox=0,oy=0,gw=g.w,gh=g.h;
+  if(P.crop){const b=bbox(g);ox=b.x0;oy=b.y0;gw=b.x1-b.x0+1;gh=b.y1-b.y0+1;}
+  const W=gw+2,H=gh+2;
+  ctx.canvas.width=W*scale; ctx.canvas.height=H*scale;
+  ctx.imageSmoothingEnabled=false;
+  ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+  if(bg==='dock'){
+    ctx.fillStyle='#0a0e14';ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
+    ctx.fillStyle='#111926';
+    for(let y=0;y<H;y+=4)for(let x=0;x<W;x+=4) if((x+y)%8===0) ctx.fillRect(x*scale,y*scale,scale*4,scale*4);
+  } else if(bg==='dark'){
+    ctx.fillStyle='#0a0e14';ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
+  }
+  const px=(x,y,c)=>{ctx.fillStyle=c;ctx.fillRect((x-ox+1)*scale,(y-oy+1)*scale,scale,scale);};
+  // контур
+  if(P.outline){
+    const oc=palColor(M.HULL,0);
+    ctx.globalAlpha=1;
+    for(let y=oy-1;y<=oy+gh;y++)for(let x=ox-1;x<=ox+gw;x++){
+      if(isSolid(at(g,x,y)))continue;
+      let near=false;
+      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++) if(isSolid(at(g,x+dx,y+dy))){near=true;break;}
+      if(near) px(x,y,'hsl(220 30% 7%)');
+    }
+    void oc;
+  }
+  // тело
+  for(let y=oy;y<oy+gh;y++)for(let x=ox;x<ox+gw;x++){
+    const m=g.d[y*g.w+x];
+    if(m===M.EMPTY)continue;
+    if(m===M.GLOW){
+      const d=hash2(x,y,3);
+      ctx.globalAlpha=0.55+0.45*d;
+      px(x,y,palColor(M.GLOW,d<0.4?3:2));
+      ctx.globalAlpha=1;
+      continue;
+    }
+    px(x,y,palColor(m,m===M.GLASS?clamp(shadeOf(g,x,y)+1,0,3):shadeOf(g,x,y)));
+  }
+}
+function drawSlots(ctx,g,slots,scale){
+  if(!P.showSlots||!slots)return;
+  let ox=0,oy=0;if(P.crop){const b=bbox(g);ox=b.x0;oy=b.y0;}
+  const colors={engine:'#ffb03a',weapon:'#e2604a',cockpit:'#54cfd8',utility:'#b78cff'};
+  ctx.save();ctx.imageSmoothingEnabled=false;ctx.font=`${Math.max(8,scale)}px ${P.scale>5?'monospace':'sans-serif'}`;ctx.textBaseline='bottom';
+  slots.forEach((s,i)=>{const x=(s.x-ox+1)*scale,y=(s.y-oy+1)*scale,c=colors[s.type]||'#fff';ctx.strokeStyle=c;ctx.fillStyle=c;ctx.lineWidth=Math.max(1,Math.floor(scale/4));ctx.strokeRect(x-scale*.4,y-scale*.4,scale*.8,scale*.8);ctx.beginPath();ctx.moveTo(x-scale,y);ctx.lineTo(x+scale,y);ctx.moveTo(x,y-scale);ctx.lineTo(x,y+scale);ctx.stroke();if(scale>=5)ctx.fillText(String(i+1),x+scale*.7,y-scale*.5);});
+  ctx.restore();
+}
+
+/* ============================================================
+   7. UI: схема настроек
+   ============================================================ */
+const SCHEMA=[
+ {id:'core',title:'Основное',open:true,items:[
+   {k:'algo',t:'select',label:'Алгоритм',opts:[['ca','Клеточный автомат'],['agents','Агенты-строители'],['skeleton','Каркас и модули'],['wfc','Wave Function Collapse'],['hybrid','Гибрид: каркас + WFC']]},
+   {k:'symmetry',t:'select',label:'Симметрия',opts:[['vertical','Продольная (бортовая)'],['quad','Четвертная (станция)'],['none','Без симметрии']]},
+   {k:'w',t:'range',label:'Ширина холста',min:12,max:64,step:2},
+   {k:'h',t:'range',label:'Высота холста',min:12,max:80,step:2},
+   {k:'seed',t:'number',label:'Seed'},
+   {k:'_class',t:'buttons',label:'Готовый типаж',
+     opts:[['fighter','Истребитель'],['cruiser','Крейсер'],['station','Станция'],['hauler','Тягач'],['organic','Органика']]}
+ ]},
+ {id:'shape',title:'Силуэт',open:true,items:[
+   {k:'beam',t:'range',label:'Ширина корпуса',min:0.2,max:1,step:0.01},
+   {k:'taper',t:'range',label:'Заострение носа',min:0.15,max:3,step:0.05},
+   {k:'waist',t:'range',label:'Талия',min:0,max:0.8,step:0.01},
+   {k:'tailWidth',t:'range',label:'Ширина кормы',min:0.2,max:1,step:0.01},
+   {k:'bulge',t:'range',label:'Раздутие борта',min:0,max:0.5,step:0.01},
+   {k:'envSoft',t:'range',label:'Рыхлость границы',min:0,max:0.4,step:0.01}
+ ]},
+ {id:'ca',title:'Клеточный автомат',show:p=>p.algo==='ca',items:[
+   {k:'caFill',t:'range',label:'Плотность шума',min:0.2,max:0.8,step:0.01},
+   {k:'caIter',t:'range',label:'Итераций',min:0,max:10,step:1},
+   {k:'caBirth',t:'range',label:'Порог рождения',min:3,max:8,step:1},
+   {k:'caSurvive',t:'range',label:'Порог выживания',min:1,max:8,step:1},
+   {k:'caSpine',t:'check',label:'Держать хребет у оси'}
+ ]},
+ {id:'agents',title:'Агенты-строители',show:p=>p.algo==='agents',items:[
+   {k:'agCount',t:'range',label:'Число агентов',min:1,max:20,step:1},
+   {k:'agSteps',t:'range',label:'Шагов на агента',min:10,max:400,step:5},
+   {k:'agBrush',t:'range',label:'Радиус кисти',min:1,max:5,step:1},
+   {k:'agTurn',t:'range',label:'Вероятность поворота',min:0.02,max:0.9,step:0.01}
+ ]},
+ {id:'skeleton',title:'Каркас и модули',show:p=>p.algo==='skeleton'||p.algo==='hybrid',items:[
+   {k:'skSpine',t:'range',label:'Толщина хребта',min:0,max:1,step:0.01},
+   {k:'skModules',t:'range',label:'Число секций',min:0,max:24,step:1},
+   {k:'skMin',t:'range',label:'Мин. размер секции',min:1,max:10,step:1},
+   {k:'skMax',t:'range',label:'Макс. размер секции',min:2,max:20,step:1},
+   {k:'skWings',t:'range',label:'Шанс крыльев',min:0,max:1,step:0.01},
+   {k:'skFins',t:'range',label:'Шанс кормовых плоскостей',min:0,max:1,step:0.01}
+ ]},
+ {id:'wfc',title:'Wave Function Collapse',show:p=>p.algo==='wfc'||p.algo==='hybrid',items:[
+   {k:'wfcSample',t:'select',label:'Образец',opts:[['hull','Корпус'],['modular','Модульный'],['organic','Органика'],['greeble','Гриблы (фактура)'],['lattice','Ферма'],['custom','Свой (из текущего)']]},
+   {k:'wfcN',t:'range',label:'Размер паттерна N',min:2,max:3,step:1},
+   {k:'wfcMirror',t:'check',label:'Учитывать зеркальные паттерны'},
+   {k:'wfcBorder',t:'check',label:'Пустая рамка по краям'},
+   {k:'wfcSeedCore',t:'check',label:'Затравка корпуса у оси'},
+   {k:'wfcAttempts',t:'range',label:'Попыток до отката',min:1,max:40,step:1},
+   {k:'_sample',t:'buttons',label:'',opts:[['grab','Взять текущий как образец']]}
+ ]},
+ {id:'clean',title:'Очистка',items:[
+   {k:'clGrow',t:'range',label:'Наращивание корпуса',min:0,max:3,step:1},
+   {k:'clSmooth',t:'range',label:'Сглаживание, проходов',min:0,max:4,step:1},
+   {k:'clIsolated',t:'check',label:'Убирать одиночные пиксели'},
+   {k:'clHoles',t:'check',label:'Заливать внутренние пустоты'},
+   {k:'clLargest',t:'check',label:'Оставлять только главный кусок'}
+ ]},
+ {id:'details',title:'Оснащение',items:[
+   {k:'ftCockpit',t:'check',label:'Кабина'},
+   {k:'cockpitPos',t:'range',label:'Положение кабины',min:0,max:0.6,step:0.01},
+   {k:'cockpitSize',t:'range',label:'Размер кабины',min:0.1,max:1.4,step:0.01},
+   {k:'ftEngines',t:'check',label:'Двигатели'},
+   {k:'engMax',t:'range',label:'Максимум двигателей',min:0,max:8,step:1},
+   {k:'engMin',t:'range',label:'Мин. ширина сопла',min:1,max:8,step:1},
+   {k:'engSize',t:'range',label:'Длина сопла и факела',min:0.2,max:2,step:0.05},
+   {k:'glow',t:'check',label:'Факел двигателя'},
+   {k:'guns',t:'range',label:'Орудия и штанги',min:0,max:1.5,step:0.02},
+   {k:'greebles',t:'range',label:'Гриблы',min:0,max:1,step:0.01},
+   {k:'accentPlates',t:'range',label:'Панели по паттерну (гибрид)',min:0,max:1,step:0.01}
+ ]},
+ {id:'light',title:'Свет и материал',items:[
+   {k:'light',t:'select',label:'Источник света',opts:[['tl','Сверху-слева'],['t','Сверху'],['tr','Сверху-справа'],['l','Слева'],['r','Справа'],['bl','Снизу-слева'],['b','Снизу'],['br','Снизу-справа']]},
+   {k:'edge',t:'check',label:'Блик по кромке'},
+   {k:'ao',t:'check',label:'Затенение теневой кромки'},
+   {k:'outline',t:'check',label:'Контур'},
+   {k:'contrast',t:'range',label:'Контраст',min:0.2,max:2.2,step:0.05},
+   {k:'panels',t:'range',label:'Бронеплиты',min:0,max:1,step:0.01},
+   {k:'panelW',t:'range',label:'Ширина плиты',min:2,max:14,step:1},
+   {k:'panelH',t:'range',label:'Высота плиты',min:2,max:14,step:1},
+   {k:'dither',t:'range',label:'Дизеринг',min:0,max:0.5,step:0.01}
+ ]},
+ {id:'palette',title:'Палитра',items:[
+   {k:'palette',t:'select',label:'Схема',opts:[['steel','Сталь'],['rust','Ржавчина'],['imperial','Имперская белая'],['alien','Чужие'],['neon','Неон'],['void','Пустота'],['sand','Песок']]},
+   {k:'hueShift',t:'range',label:'Сдвиг тона',min:-180,max:180,step:1},
+   {k:'satMul',t:'range',label:'Насыщенность',min:0,max:2.5,step:0.05},
+   {k:'lightMul',t:'range',label:'Светлота',min:0.4,max:1.6,step:0.02},
+   {k:'accentHue',t:'range',label:'Тон акцентов',min:0,max:360,step:1},
+   {k:'_pal',t:'buttons',label:'',opts:[['rndpal','Случайная палитра']]}
+ ]},
+ {id:'out',title:'Вывод',items:[
+   {k:'scale',t:'range',label:'Масштаб пикселя',min:1,max:20,step:1},
+   {k:'bg',t:'select',label:'Фон',opts:[['dock','Док'],['dark','Тёмный'],['none','Прозрачный']]},
+   {k:'crop',t:'check',label:'Обрезать по габариту'},
+   {k:'fleetCount',t:'range',label:'Эскизов во флоте',min:0,max:36,step:1},
+   {k:'showSlots',t:'check',label:'Показывать слоты на превью'}
+ ]}
+];
+
+/* --- построение панели --- */
+const controlsEl=document.getElementById('controls');
+const refresh=[];
+function buildUI(){
+  controlsEl.innerHTML='';
+  for(const grp of SCHEMA){
+    const d=document.createElement('details');
+    d.className='group'; d.open=grp.open!==false&&!grp.show;
+    if(grp.show)d.open=true;
+    d.innerHTML=`<summary>${grp.title}</summary>`;
+    const body=document.createElement('div'); body.className='body';
+    for(const it of grp.items) body.appendChild(makeControl(it));
+    d.appendChild(body);
+    controlsEl.appendChild(d);
+    if(grp.show) refresh.push(()=>{d.style.display=grp.show(P)?'':'none';});
+  }
+  refresh.forEach(f=>f());
+}
+function makeControl(it){
+  const row=document.createElement('div');
+  if(it.t==='check'){
+    row.className='row inline';
+    row.innerHTML=`<input type="checkbox" id="c_${it.k}"><label for="c_${it.k}">${it.label}</label>`;
+    const el=row.querySelector('input');
+    el.checked=!!P[it.k];
+    el.addEventListener('change',()=>{P[it.k]=el.checked;onParamChange();});
+    refresh.push(()=>{el.checked=!!P[it.k];});
+  } else if(it.t==='select'){
+    row.className='row';
+    row.innerHTML=`<label for="c_${it.k}">${it.label}</label><span></span>
+      <select id="c_${it.k}">${it.opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+    const el=row.querySelector('select');
+    el.value=P[it.k];
+    el.addEventListener('change',()=>{P[it.k]=el.value;onParamChange();});
+    refresh.push(()=>{el.value=P[it.k];});
+  } else if(it.t==='number'){
+    row.className='row';
+    row.innerHTML=`<label for="c_${it.k}">${it.label}</label><span></span><input type="number" id="c_${it.k}">`;
+    const el=row.querySelector('input');
+    el.value=P[it.k];
+    el.addEventListener('change',()=>{P[it.k]=parseInt(el.value,10)||0;onParamChange();});
+    refresh.push(()=>{el.value=P[it.k];});
+  } else if(it.t==='buttons'){
+    row.className='row';
+    row.innerHTML=(it.label?`<label>${it.label}</label><span></span>`:'')+
+      `<div class="btns" style="grid-column:1/-1">${it.opts.map(o=>`<button class="btn mini" data-act="${o[0]}">${o[1]}</button>`).join('')}</div>`;
+    row.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>action(b.dataset.act)));
+  } else {
+    row.className='row';
+    row.innerHTML=`<label for="c_${it.k}">${it.label}</label><span class="val"></span>
+      <input type="range" id="c_${it.k}" min="${it.min}" max="${it.max}" step="${it.step}">`;
+    const el=row.querySelector('input'), val=row.querySelector('.val');
+    const sync=()=>{el.value=P[it.k];val.textContent=(+P[it.k]).toFixed(it.step<1?2:0);};
+    sync();
+    el.addEventListener('input',()=>{P[it.k]=parseFloat(el.value);val.textContent=(+P[it.k]).toFixed(it.step<1?2:0);onParamChange();});
+    refresh.push(sync);
+  }
+  return row;
+}
+
+/* --- типажи --- */
+const CLASSES={
+  fighter:{algo:'ca',symmetry:'vertical',w:28,h:38,beam:0.9,taper:1.6,waist:0.28,tailWidth:0.85,caFill:0.47,caIter:4,engMax:3,guns:0.7,greebles:0.2,palette:'steel'},
+  cruiser:{algo:'skeleton',symmetry:'vertical',w:32,h:66,beam:0.62,taper:0.7,waist:0.1,tailWidth:0.9,skModules:12,skSpine:0.5,skWings:0.4,engMax:5,guns:0.9,greebles:0.35,palette:'imperial'},
+  station:{algo:'wfc',symmetry:'quad',w:48,h:48,beam:0.95,taper:0.25,waist:0.4,tailWidth:1,wfcSample:'modular',ftCockpit:false,ftEngines:false,guns:0.2,greebles:0.5,palette:'void'},
+  hauler:{algo:'hybrid',symmetry:'vertical',w:38,h:58,beam:0.8,taper:0.55,waist:0.05,tailWidth:0.95,skModules:14,skMin:3,skMax:10,wfcSample:'lattice',engMax:4,guns:0.15,greebles:0.4,palette:'rust'},
+  organic:{algo:'agents',symmetry:'vertical',w:34,h:46,beam:0.9,taper:1.1,waist:0.35,tailWidth:0.7,agCount:8,agSteps:150,agBrush:3,clSmooth:2,guns:0.2,greebles:0.15,palette:'alien'}
+};
+
+/* --- действия кнопок --- */
+function action(a){
+  if(CLASSES[a]){ Object.assign(P,CLASSES[a]); refresh.forEach(f=>f()); regen(true); toast('Типаж применён'); return; }
+  if(a==='rndpal'){
+    const keys=Object.keys(PALETTES);
+    P.palette=keys[Math.floor(Math.random()*keys.length)];
+    P.hueShift=Math.round(Math.random()*360-180);
+    P.satMul=+(0.5+Math.random()*1.4).toFixed(2);
+    P.lightMul=+(0.8+Math.random()*0.5).toFixed(2);
+    P.accentHue=Math.round(Math.random()*360);
+    refresh.forEach(f=>f()); regen(); return;
+  }
+  if(a==='grab'){ grabSample(); return; }
+}
+function grabSample(){
+  if(!current){return;}
+  const g=current.grid;
+  let x0=1e9,x1=-1,y0=1e9,y1=-1;
+  for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++) if(isSolid(g.d[y*g.w+x])){
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+  if(x1<0){toast('Нечего брать: корабль пуст');return;}
+  const W=x1-x0+1,H=y1-y0+1;
+  const tw=Math.min(16,W),th=Math.min(20,H);
+  const rows=[];
+  for(let y=0;y<th;y++){
+    let s='';
+    for(let x=0;x<tw;x++){
+      const sx=x0+Math.floor(x*W/tw), sy=y0+Math.floor(y*H/th);
+      s+=isSolid(at(g,sx,sy))?'#':'.';
+    }
+    rows.push(s);
+  }
+  rows.unshift('.'.repeat(tw)); rows.push('.'.repeat(tw));
+  SAMPLES.custom=rows;
+  P.wfcSample='custom';
+  if(P.algo!=='wfc'&&P.algo!=='hybrid')P.algo='wfc';
+  refresh.forEach(f=>f()); regen(true);
+  toast('Образец взят: '+tw+'×'+rows.length);
+}
+
+/* ============================================================
+   8. РЕНДЕР СЦЕНЫ
+   ============================================================ */
+const mainCv=document.getElementById('main'), mainCtx=mainCv.getContext('2d');
+const specEl=document.getElementById('spec');
+const fleetEl=document.getElementById('fleet');
+let redrawTimer=null, fleetTimer=null;
+
+function onParamChange(){
+  refresh.forEach(f=>f());
+  clearTimeout(redrawTimer); clearTimeout(fleetTimer);
+  redrawTimer=setTimeout(()=>regen(false),80);      // док — сразу
+  fleetTimer=setTimeout(buildFleet,500);            // флот — когда ползунок отпущен
+}
+function regen(rebuildFleet){
+  P.w=Math.max(8,P.w|0); P.h=Math.max(8,P.h|0);
+  const t0=performance.now();
+  current=generate(P.seed);
+  const ms=Math.round(performance.now()-t0);
+  drawShip(mainCtx,current.grid,P.scale,P.bg);
+  drawSlots(mainCtx,current.grid,current.slots,P.scale);
+  document.getElementById('seedTag').textContent='seed '+P.seed;
+  document.getElementById('rulerTop').textContent=current.stats.beam+' px';
+  document.getElementById('rulerSide').textContent=current.stats.len+' px';
+  showSpec(current.stats,ms);
+  document.getElementById('dataPreview').textContent=JSON.stringify(buildShipData(),null,2);
+  if(rebuildFleet!==false) buildFleet();
+}
+function showSpec(s,ms){
+  const rows=[
+    ['Класс',s.cls,true],['Длина',s.len+' px'],['Ширина',s.beam+' px'],
+    ['Пикселей корпуса',s.hull],['Масса',s.mass+' т'],['Удлинение',s.ratio],
+    ['Заполнение габарита',s.fill+' %'],['Двигателей',s.engines],['Орудий',s.guns],
+    ['Тяговооружённость',s.twr,true],['Всего слотов',current.slots.length,true],['Расчёт',ms+' мс']
+  ];
+  specEl.innerHTML=rows.map(r=>`<div><dt>${r[0]}</dt><dd class="${r[2]?'hi':''}">${r[1]}</dd></div>`).join('');
+}
+function buildFleet(){
+  fleetEl.innerHTML='';
+  const saveSeed=P.seed;
+  for(let i=0;i<P.fleetCount;i++){
+    const seed=(saveSeed+i*7919+1)>>>0;
+    const fig=document.createElement('figure');
+    const cv=document.createElement('canvas');
+    const ctx=cv.getContext('2d');
+    const res=generate(seed);
+    drawShip(ctx,res.grid,3,'dark');
+    cv.title='seed '+seed+' · '+res.stats.cls;
+    cv.addEventListener('click',()=>{P.seed=seed;refresh.forEach(f=>f());regen(false);});
+    const cap=document.createElement('figcaption');
+    cap.textContent=res.stats.cls;
+    fig.appendChild(cv);fig.appendChild(cap);
+    fleetEl.appendChild(fig);
+  }
+  P.seed=saveSeed;
+}
+
+/* ============================================================
+   9. ПРЕСЕТЫ (window.storage → память, плюс файл)
+   ============================================================ */
+const KEY='shipyard:presets';
+let presets={};
+async function loadPresets(){
+  try{
+    const r=await window.storage.get(KEY);
+    if(r&&r.value) presets=JSON.parse(r.value);
+  }catch(e){ /* хранилище недоступно — работаем в памяти */ }
+  renderPresets();
+}
+async function savePresets(){
+  renderPresets();
+  try{ await window.storage.set(KEY,JSON.stringify(presets)); }
+  catch(e){ /* тихо: пресеты живут до перезагрузки, экспорт файла всегда доступен */ }
+}
+function renderPresets(){
+  const list=document.getElementById('presetList');
+  const names=Object.keys(presets);
+  if(!names.length){ list.innerHTML='<div class="empty">Пресетов нет. Настройте корабль и сохраните.</div>'; return; }
+  list.innerHTML='';
+  for(const n of names){
+    const el=document.createElement('div');
+    el.className='preset';
+    el.innerHTML=`<span title="${n}">${n}</span>
+      <button class="btn mini" data-l="1">Загрузить</button>
+      <button class="btn mini" data-d="1">✕</button>`;
+    el.querySelector('[data-l]').addEventListener('click',()=>{
+      Object.assign(P,DEF,presets[n]); refresh.forEach(f=>f()); regen(true); toast('Загружено: '+n);
+    });
+    el.querySelector('[data-d]').addEventListener('click',()=>{delete presets[n];savePresets();});
+    list.appendChild(el);
+  }
+}
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),1600);
+}
+
+/* ============================================================
+   10. ЭКСПОРТ
+   ============================================================ */
+function download(name,blobOrUrl){
+  const a=document.createElement('a');
+  a.download=name;
+  a.href=typeof blobOrUrl==='string'?blobOrUrl:URL.createObjectURL(blobOrUrl);
+  a.click();
+}
+function buildShipData(){
+  const b=bbox(current.grid);
+  return {format:'pixel-shipyard/v1',seed:P.seed,algorithm:P.algo,palette:P.palette,image:{gridWidth:current.grid.w,gridHeight:current.grid.h,scale:P.scale,crop:P.crop,bounds:b,background:P.bg,origin:'top-left',axis:{x:'right',y:'down'},slotCoordinates:'grid-pixels-before-scale'},stats:current.stats,slots:current.slots,parameters:JSON.parse(JSON.stringify(P))};
+}
+function exportJSON(){
+  const data=JSON.stringify(buildShipData(),null,2);
+  download(`ship_${P.seed}_${P.algo}.json`,new Blob([data],{type:'application/json'}));
+}
+function exportPackage(){exportPNG();setTimeout(exportJSON,120);toast('Экспортированы PNG и JSON');}
+function exportPNG(){
+  const cv=document.createElement('canvas');
+  drawShip(cv.getContext('2d'),current.grid,P.scale,P.bg==='none'?'none':P.bg);
+  download(`ship_${P.seed}_${P.algo}.png`,cv.toDataURL('image/png'));
+}
+function exportSheet(){
+  const n=Math.max(1,P.fleetCount||12), cols=Math.ceil(Math.sqrt(n));
+  const rows=Math.ceil(n/cols), s=3, cw=(P.w+2)*s, chh=(P.h+2)*s;
+  const sheet=document.createElement('canvas');
+  sheet.width=cols*cw; sheet.height=rows*chh;
+  const sctx=sheet.getContext('2d');
+  sctx.imageSmoothingEnabled=false;
+  const tmp=document.createElement('canvas'), tctx=tmp.getContext('2d');
+  const saveSeed=P.seed;
+  for(let i=0;i<n;i++){
+    P.seed=(saveSeed+i*7919+1)>>>0;
+    const res=generate(P.seed);
+    drawShip(tctx,res.grid,s,'none');
+    sctx.drawImage(tmp,(i%cols)*cw,Math.floor(i/cols)*chh);
+  }
+  P.seed=saveSeed;
+  download(`fleet_${saveSeed}.png`,sheet.toDataURL('image/png'));
+}
+
+/* ============================================================
+   11. ПРИВЯЗКИ
+   ============================================================ */
+document.getElementById('bNew').addEventListener('click',()=>{P.seed=(Math.random()*1e9)|0;refresh.forEach(f=>f());regen(true);});
+document.getElementById('bRegen').addEventListener('click',()=>regen(true));
+document.getElementById('bRandom').addEventListener('click',()=>{
+  const keys=Object.keys(CLASSES);
+  Object.assign(P,CLASSES[keys[Math.floor(Math.random()*keys.length)]]);
+  P.seed=(Math.random()*1e9)|0;
+  P.taper=+rf(0.4,2.4).toFixed(2); P.waist=+rf(0,0.5).toFixed(2);
+  P.beam=+rf(0.5,1).toFixed(2); P.light=Object.keys(LIGHT)[Math.floor(Math.random()*8)];
+  action('rndpal');
+});
+document.getElementById('bPng').addEventListener('click',exportPNG);
+document.getElementById('bJson').addEventListener('click',exportJSON);
+document.getElementById('bPackage').addEventListener('click',exportPackage);
+document.getElementById('bSheet').addEventListener('click',exportSheet);
+document.getElementById('bSave').addEventListener('click',()=>{
+  const inp=document.getElementById('pName');
+  const name=(inp.value||'').trim()||`${P.algo}-${P.seed}`;
+  presets[name]=JSON.parse(JSON.stringify(P));
+  inp.value=''; savePresets(); toast('Сохранено: '+name);
+});
+document.getElementById('bCopy').addEventListener('click',async()=>{
+  const txt=JSON.stringify(buildShipData(),null,2);
+  try{ await navigator.clipboard.writeText(txt); toast('JSON в буфере'); }
+  catch(e){ toast('Копирование недоступно — используйте экспорт файла'); }
+});
+document.getElementById('bExport').addEventListener('click',()=>{
+  const data=JSON.stringify({presets,current:P},null,2);
+  download('shipyard-presets.json',new Blob([data],{type:'application/json'}));
+});
+document.getElementById('bImport').addEventListener('click',()=>document.getElementById('fileIn').click());
+document.getElementById('fileIn').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const j=JSON.parse(r.result);
+      if(j.presets)Object.assign(presets,j.presets);
+      if(j.current)Object.assign(P,DEF,j.current);
+      refresh.forEach(x=>x()); savePresets(); regen(true); toast('Импортировано');
+    }catch(err){ toast('Файл не читается: нужен JSON от этого генератора'); }
+  };
+  r.readAsText(f);
+  e.target.value='';
+});
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)){
+    e.preventDefault(); P.seed=(Math.random()*1e9)|0; refresh.forEach(f=>f()); regen(true);
+  }
+});
+
+buildUI();
+loadPresets();
+P.seed=(Math.random()*1e9)|0;
+regen(true);
+</script>
+</body>
+</html>

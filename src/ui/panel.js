@@ -25,6 +25,33 @@ export class Panel {
     this.refresh();
   }
   h(html){ const d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild; }
+  /** Run every panel action through the same error path.  Many gameplay APIs
+   * intentionally return false or {ok:false}; exposing that result here keeps
+   * a missing part/resource from looking like an unresponsive button. */
+  invoke(run,scene){
+    const before=scene?.message??scene?.msg??"";
+    const finish=result=>{
+      const after=scene?.message??scene?.msg??"";
+      if(after&&after!==before){
+        const level=/^(?:error|ошиб)|невозмож|недоступ|нет /i.test(String(after))?"error":"info";
+        this.mgr.notify(after,{level});
+      }else this.mgr.actionResult(result);
+      this.refresh();
+      return result;
+    };
+    try{
+      const result=run?.();
+      return result?.then?result.then(finish,error=>this.actionError(error)):finish(result);
+    }catch(error){return this.actionError(error);}
+  }
+  actionError(error){
+    /* Do not expose a stack trace to the player; dev tools still receive the
+     * original exception in the console. */
+    console.error(error);
+    this.mgr.notify(t("ui.actionError"),{level:"error"});
+    this.refresh();
+    return false;
+  }
   refresh(){
     const mgr = this.mgr, scene = mgr.current;
     if (!scene) return;
@@ -122,7 +149,7 @@ export class Panel {
     const prim = scene.primary?.();
     if (prim){
       const b = this.h(`<button class="big">${tr(prim.label)}</button>`);
-      b.addEventListener("click", prim.run);
+      b.addEventListener("click", () => this.invoke(prim.run,scene));
       root.appendChild(b);
     }
 
@@ -154,9 +181,15 @@ export class Panel {
       sel.value = s.get();
       sel.addEventListener("change", () => { s.set(sel.value); this.refresh(); });
       root.appendChild(row);
+    } else if (s.kind === "text"){
+      const row=this.h(`<div class="row"><label>${tr(s.label)}</label><input type="text" placeholder="${tr(s.placeholder||"")}"></div>`),input=row.querySelector("input");
+      input.value=s.get?.()||"";
+      input.addEventListener("input",()=>{s.set(input.value);if(s.live)this.refresh();});
+      input.addEventListener("change",()=>{s.set(input.value);this.refresh();});
+      root.appendChild(row);
     } else if (s.kind === "action"){
       const b = this.h(`<button class="big" style="margin-bottom:10px">${tr(s.label)}</button>`);
-      b.addEventListener("click", s.run);
+      b.addEventListener("click", () => this.invoke(s.run,scene));
       root.appendChild(b);
     } else if (s.kind === "rows"){
       const box = this.h(`<div class="list" style="max-height:none"></div>`);
@@ -166,14 +199,14 @@ export class Panel {
         const row = this.h(`<div class="itemrow${r.sel ? " sel" : ""}"></div>`);
         const head = this.h(`<button class="itemhead"><span class="itag">${r.tag || ""}</span>` +
           `${tr(r.label)}<small>${tr(r.note || "")}</small></button>`);
-        head.addEventListener("click", () => { r.run?.(); this.refresh(); });
+        head.addEventListener("click", () => this.invoke(r.run,scene));
         row.appendChild(head);
         if (r.sub) row.appendChild(this.h(`<div class="itemsub">${tr(r.sub)}</div>`));
         if (r.actions && r.actions.length){
           const acts = this.h(`<div class="itemacts"></div>`);
           for(const a of r.actions){
             const b = this.h(`<button${a.warn ? ' class="warn"' : ""}>${tr(a.label)}</button>`);
-            b.addEventListener("click", e => { e.stopPropagation(); a.run(); this.refresh(); });
+            b.addEventListener("click", e => { e.stopPropagation(); this.invoke(a.run,scene); });
             acts.appendChild(b);
           }
           row.appendChild(acts);
@@ -190,7 +223,7 @@ export class Panel {
       const row = this.h(`<div class="btns" style="margin-bottom:8px"></div>`);
       for(const b of s.items){
         const el = this.h(`<button${b.sel ? ' class="clsbtn sel"' : ""}>${tr(b.label)}</button>`);
-        el.addEventListener("click", () => { b.run(); this.refresh(); });
+        el.addEventListener("click", () => this.invoke(b.run,scene));
         row.appendChild(el);
       }
       root.appendChild(row);
@@ -200,6 +233,19 @@ export class Panel {
       inp.checked = s.get();
       inp.addEventListener("change", () => { s.set(inp.checked); this.refresh(); });
       root.appendChild(row);
+    } else if (s.kind === "shipyardImport"){
+      const box=document.createElement("div");
+      box.className="surface-profile";
+      const buttons=document.createElement("div");
+      buttons.className="surface-profile-buttons";
+      const json=document.createElement("input");json.type="file";json.accept="application/json,.json";json.hidden=true;
+      const png=document.createElement("input");png.type="file";png.accept="image/png,.png";png.hidden=true;
+      const add=(label,run)=>{const button=document.createElement("button");button.textContent=label;button.addEventListener("click",run);buttons.appendChild(button);};
+      add(s.generatorLabel,()=>s.open());add(s.jsonLabel,()=>json.click());add(s.pngLabel,()=>png.click());add(s.clearLabel,()=>{s.clear();this.refresh();});
+      json.addEventListener("change",()=>{const file=json.files?.[0];if(file)s.json(file);json.value="";});
+      png.addEventListener("change",()=>{const file=png.files?.[0];if(file)s.png(file);png.value="";});
+      const notice=document.createElement("small");notice.className="surface-profile-notice";notice.textContent=s.notice();
+      box.append(buttons,json,png,notice);root.appendChild(box);
     } else if (s.kind === "surfaceProfile"){
       const box = document.createElement("div");
       box.className = "surface-profile";
@@ -262,6 +308,11 @@ export class Panel {
         if (notice.textContent) box.appendChild(notice);
       }
       root.appendChild(box);
+    } else if (s.kind === "balanceTools"){
+      const box=document.createElement("div"),file=document.createElement("input");file.type="file";file.accept="application/json";file.hidden=true;
+      const add=(label,run)=>{const button=document.createElement("button");button.textContent=label;button.addEventListener("click",()=>this.invoke(run,scene));box.appendChild(button);};
+      add(s.saveLabel,s.save);add(s.exportLabel,s.export);add(s.importLabel,()=>file.click());
+      file.addEventListener("change",()=>{const selected=file.files?.[0];if(selected)s.import(selected);file.value="";});box.appendChild(file);root.appendChild(box);
     }
   }
 }

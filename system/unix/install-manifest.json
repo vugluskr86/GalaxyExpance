@@ -8,6 +8,7 @@
     {"path": "/bin", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/sbin", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/usr", "mode": "0755", "uid": 0, "gid": 0},
+    {"path": "/usr/bin", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/usr/src", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/usr/src/pcos", "mode": "0755", "uid": 0, "gid": 0},
     {"path": "/usr/src/pcos/system", "mode": "0755", "uid": 0, "gid": 0},
@@ -44,6 +45,7 @@
     {"source": "build/make.bin", "path": "/bin/make.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "build/assembler.bin", "path": "/bin/assembler.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "build/linker.bin", "path": "/bin/linker.bin", "mode": "0755", "uid": 0, "gid": 0},
+    {"source": "build/scanner.bin", "path": "/usr/bin/scanner.bin", "mode": "0755", "uid": 0, "gid": 0},
     {"source": "Makefile", "path": "/usr/src/pcos/system/unix/Makefile", "mode": "0644", "uid": 0, "gid": 0}
   ]
 }

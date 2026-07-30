@@ -3,12 +3,12 @@
  * wants to do; orders and combat are continuous controls run every frame.
  */
 export const AGENT_PROFILES=Object.freeze({
-  trader:{role:"Торговец",faction:"civilian",cadence:[90,180],goalWeights:{trade:9,delivery:6,explore:1,flee:2},risk:.2,engagementRange:38,followDistance:28},
-  patrol:{role:"Патруль",faction:"security",cadence:[55,125],goalWeights:{patrol:8,defend:6,trade:1,hunt:2},risk:.5,engagementRange:55,followDistance:42},
+  trader:{role:"Торговец",faction:"civilian",cadence:[90,180],goalWeights:{trade:9,haul:7,delivery:6,explore:1,flee:2},risk:.2,engagementRange:38,followDistance:28},
+  patrol:{role:"Патруль",faction:"security",cadence:[55,125],goalWeights:{patrol:8,escort:7,defend:6,repair:3,hunt:2},risk:.5,engagementRange:55,followDistance:42},
   geologist:{role:"Геолог",faction:"civilian",cadence:[110,230],goalWeights:{survey:9,mine:7,trade:2,flee:2},risk:.25,engagementRange:28,followDistance:30},
-  courier:{role:"Курьер",faction:"civilian",cadence:[65,145],goalWeights:{delivery:10,trade:4,explore:2,flee:3},risk:.3,engagementRange:30,followDistance:26},
-  ranger:{role:"Рейнджер",faction:"security",cadence:[70,160],goalWeights:{explore:8,patrol:4,defend:4,survey:3},risk:.55,engagementRange:50,followDistance:40},
-  pirate:{role:"Пират",faction:"pirate",cadence:[45,100],goalWeights:{hunt:9,raid:7,explore:1,flee:2},risk:.75,engagementRange:75,followDistance:48}
+  courier:{role:"Курьер",faction:"civilian",cadence:[65,145],goalWeights:{delivery:10,haul:8,trade:4,explore:2,flee:3},risk:.3,engagementRange:30,followDistance:26},
+  ranger:{role:"Рейнджер",faction:"security",cadence:[70,160],goalWeights:{explore:8,patrol:4,escort:4,defend:4,survey:3,repair:2},risk:.55,engagementRange:50,followDistance:40},
+  pirate:{role:"Пират",faction:"pirate",cadence:[45,100],goalWeights:{raid:10,hunt:9,explore:1,flee:2},risk:.75,engagementRange:75,followDistance:48}
 });
 
 const clone=value=>({...value,goalWeights:{...(value.goalWeights||{})},rules:[...(value.rules||[])],hooks:{...(value.hooks||{})}});
@@ -46,6 +46,9 @@ export class AgentController {
   hostileTarget(npc,sys){
     const all=[sys.playerShip,...(sys.npcs||[]).map(other=>other.ship)].filter(target=>target&&target!==npc.ship&&this.isHostile(npc,target,sys));
     if(!all.length)return null;
+    if(this.config.faction==="pirate"&&sys.npcEconomy?.valuableRaidTarget){
+      const valuable=sys.npcEconomy.valuableRaidTarget(npc,sys);if(valuable)return valuable;
+    }
     const [x,y]=npc.ship.globPos(sys);
     return all.sort((a,b)=>{const ap=a.globPos(sys),bp=b.globPos(sys);return Math.hypot(ap[0]-x,ap[1]-y)-Math.hypot(bp[0]-x,bp[1]-y);})[0];
   }
@@ -76,12 +79,26 @@ export class AgentController {
   }
   pickGoal(npc,sys){
     for(const rule of this.config.rules||[])if(this.condition(rule,npc,sys))return {goal:rule.action||"flee",target:rule.target?.({agent:this,npc,sys})};
-    const weights=this.config.goalWeights||{},sum=Object.values(weights).reduce((n,v)=>n+Math.max(0,v),0)||1;let cursor=this.random()*sum;
+    /* Events alter intent only at the normal decision cadence. Security ships
+       answer a dangerous system with defence, pirates exploit it with raids,
+       and civilians become more risk-averse; no render-frame randomness. */
+    const danger=sys.worldPressure?.danger?.()||0,weights={...(this.config.goalWeights||{})};
+    if(danger>.05){
+      if(this.config.faction==="security"){weights.defend=(weights.defend||0)+Math.ceil(danger*14);weights.escort=(weights.escort||0)+Math.ceil(danger*8);}
+      else if(this.config.faction==="pirate")weights.raid=(weights.raid||0)+Math.ceil(danger*9);
+      else weights.flee=(weights.flee||0)+Math.ceil(danger*7);
+    }
+    const sum=Object.values(weights).reduce((n,v)=>n+Math.max(0,v),0)||1;let cursor=this.random()*sum;
     for(const [goal,weight] of Object.entries(weights)){cursor-=Math.max(0,weight);if(cursor<=0)return {goal};}return {goal:"explore"};
   }
   act(npc,sys,choice){
     const ship=npc.ship,goal=choice.goal,target=choice.target||this.chooseTarget(ship,sys);this.state.goal=goal;this.state.target=target;this.remember("goal",{goal,target});this.config.hooks?.onGoal?.({agent:this,npc,sys,goal,target});
     if(goal==="hunt"||goal==="raid"||goal==="defend"){const enemy=this.hostileTarget(npc,sys);if(enemy){this.state.blackboard.enemy=enemy===sys.playerShip?"player":"npc";this.combat(npc,enemy,sys);return;}}
+    if(goal==="trade"||goal==="haul"||goal==="delivery"){if(sys.npcEconomy?.updateNpcEconomy(npc,sys))return;}
+    if(goal==="escort"){
+      const escort=sys.npcs?.find(other=>other.name===npc.economy?.targetName)?.ship;
+      if(escort){this.follow(npc,escort,{distance:this.config.followDistance},sys);return;}
+    }
     if(goal==="flee"){const all=this.targets(sys),away=all.find(item=>!same(item,ship.primary))||target;if(away)ship.fsdTo(away,28+this.random()*18);return;}
     if(target&&!same(target,ship.primary))ship.fsdTo(target,12+this.random()*24);
   }

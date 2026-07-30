@@ -162,7 +162,14 @@ export const SYSCALLS=Object.freeze({
   SLEEP:0x51,
   UNAME:0x52,
   SYSINFO:0x53,
-  /* 0x54–0x5F reserved: gettimeofday, clock_gettime, nanosleep */
+  /** B=output buffer, C=capacity.  Returns the number of UTF-8 bytes.
+   * The report is a snapshot of the current computer's fitted parts, internal
+   * slots and exposed ports; it deliberately contains no other process data. */
+  HARDWARE_INFO:0x54,
+  /** Open the system-scanner UI associated with the current on-board PC.
+   * It succeeds only while that PC is installed in an active system scene. */
+  SCANNER_OPEN:0x55,
+  /* 0x56–0x5F reserved: gettimeofday, clock_gettime, nanosleep */
 
   /* --- графика (0x60–0x6F) --- */
   GFX_PIXEL:0x60,
@@ -409,6 +416,8 @@ export const UTSNAME_LAYOUT=Object.freeze({
 /** SYSCALL_DUP2: A=0x14, B=old_fd, C=new_fd */
 /** SYSCALL_UNAME: A=0x52, B=utsname_buf_ptr */
 /** SYSCALL_SYSINFO: A=0x53, B=sysinfo_buf_ptr */
+/** SYSCALL_HARDWARE_INFO: A=0x54, B=buf_ptr, C=buf_bytes */
+/** SYSCALL_SCANNER_OPEN: A=0x55 */
 /** SYSCALL_DEBUG_READ_REGS: A=0x80, B=pid, C=debug_regs_buf_ptr */
 /** SYSCALL_DEBUG_READ_MEM: A=0x81, B=pid, C=vaddr, D=buf_and_len */
 
@@ -471,6 +480,8 @@ export const SYSCALL_ARG_SPECS=Object.freeze({
   [SYSCALLS.SLEEP]:      {B:"ms"},
   [SYSCALLS.UNAME]:      {B:"utsname_buf_ptr"},
   [SYSCALLS.SYSINFO]:    {B:"sysinfo_buf_ptr"},
+  [SYSCALLS.HARDWARE_INFO]:{B:"buf_ptr", C:"buf_bytes"},
+  [SYSCALLS.SCANNER_OPEN]:{},
   // graphics
   [SYSCALLS.GFX_PIXEL]:  {B:"x", C:"y"},
   [SYSCALLS.GFX_LINE]:   {B:"x1", C:"y1", D:"x2(ext)"},

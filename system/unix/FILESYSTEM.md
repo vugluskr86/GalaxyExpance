@@ -75,3 +75,12 @@ security-sensitive defaults are `/etc/shadow` `0600 root:root`, `/root`
 execute/search permission on every directory component, including normalized
 `..` paths. Setuid and setgid file mode bits are rejected until executable
 credential transitions are implemented completely.
+
+## Installed scanner
+
+The manifest installs `build/scanner.bin` as `/usr/bin/scanner.bin` and its
+Assembly source under `/usr/src/pcos/system/unix/bin/scanner.asm`. It is a
+standalone PCVM program: it enters terminal graphics mode, renders a spectrum
+and uses the bounded `SCANNER_OPEN` syscall (`0x55`) to request the interactive
+system-scanning driver. The call is unavailable outside an active system, so a
+saved drive cannot contain fabricated scan results.

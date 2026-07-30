@@ -4,8 +4,9 @@ import { CLS } from "../gen/starclass.js";
 import { lightAt } from "../gen/system.js";
 import { NEB_SPAN } from "../gen/nebula.js";
 import { planetStats, statsTooltipHTML } from "../game/stats.js";
-import { LandingScene } from "./landing.js";
 import { primaryState } from "../game/physics.js";
+import { knownTier } from "../game/intel.js";
+import { t } from "../i18n/index.js";
 
 export class BodyScene {
   constructor(sysScene, selRef){
@@ -228,9 +229,10 @@ export class BodyScene {
       if (!mp) continue;
       const d = Math.hypot(mp.x - mx, mp.y - my);
       if (d < mp.size + 5){
-        const st = planetStats(this.sys.S, m, "moon", src.dist);
-        const label = this.sys.label({ kind:"moon", i:this.selRef.i, j:i });
-        return st ? statsTooltipHTML(label, st) : `<b>${label}</b><br>${PT_RU[m.type]}`;
+      const st = planetStats(this.sys.S, m, "moon", src.dist);
+      const label = this.sys.label({ kind:"moon", i:this.selRef.i, j:i });
+      if(this.sys.world&&!knownTier(this.sys.world,this.sys,{kind:"moon",i:this.selRef.i,j:i}))return `<b>${label}</b><br>${t("scan.unknownBody")}`;
+      return st ? statsTooltipHTML(label, st) : `<b>${label}</b><br>${PT_RU[m.type]}`;
       }
     }
     return null;
@@ -277,6 +279,8 @@ export class BodyScene {
       const m = src && src.moonList ? src.moonList[this.moonSel.i] : null;
       if (m){
         const st = planetStats(this.sys.S, m, "moon", src.dist);
+        if(this.sys.world&&!knownTier(this.sys.world,this.sys,{kind:"moon",i:this.selRef.i,j:this.moonSel.i}))
+          return {name:this.sys.label({kind:"moon",i:this.selRef.i,j:this.moonSel.i}),detail:t("scan.unknownBody")};
         return {
           name: this.sys.label({ kind:"moon", i:this.selRef.i, j:this.moonSel.i }),
           detail: "спутник · " + PT_RU[m.type] +
@@ -306,11 +310,7 @@ export class BodyScene {
       const ship = this.sys.playerShip;
       if (this.canLandOnMoon()){
         return { label:"Посадка на спутник", run: () => {
-          ship.land(this.moonRef());
-          const src = this.sys.obj(this.selRef);
-          const m = src.moonList[this.moonSel.i];
-          const st = planetStats(this.sys.S, m, "moon", src.dist);
-          this.mgr.push(new LandingScene(this.sys, this.moonRef(), st));
+          this.sys.landOn(this.moonRef(),this.sys.statsOf(this.moonRef()));
         } };
       }
       if (ship && this.sys.canApproachForLanding(this.moonRef())){

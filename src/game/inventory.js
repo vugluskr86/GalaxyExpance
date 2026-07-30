@@ -39,6 +39,9 @@ export class FloatingItem {
     this.rvx = rvx; this.rvy = rvy;
     this.spin = Math.random()*6.28;
     this.landed = null;          // если сброшен на поверхность: selRef тела
+    /* Space cargo is observable immediately. Cargo on a planetary surface is
+       intentionally hidden until a planetary probe reports its position. */
+    this.discovered = true;
   }
   globPos(sys){
     const ps = primaryState(sys, this.primary);
@@ -65,6 +68,7 @@ export class FloatingItem {
       this.rx = Math.cos(a)*ps.bodyR; this.ry = Math.sin(a)*ps.bodyR;
       this.rvx = 0; this.rvy = 0;
       this.landed = { ...this.primary };
+      this.discovered = false;
     }
     this.spin += dt*0.4;
   }
@@ -81,19 +85,14 @@ export class FloatingItem {
 export function starterInventory(){
   return new Inventory([
     makeItem("eng_lite"), makeItem("tank_s"), makeItem("scoop_basic"),
-    makeItem("hull_scout"), makeItem("hull_hauler"), makeItem("hull_courier"), makeItem("hull_interceptor"), makeItem("hull_miner"),
-    makeItem("hull_explorer"), makeItem("hull_gunship"), makeItem("hull_corvette"),
-    makeItem("hull_frigate"), makeItem("hull_freighter"), makeItem("hull_carrier"), makeItem("hull_dreadnought"),
-    makeItem("gpu_graphics"), makeItem("cpu_dual"),
-    makeItem("ram_32"), makeItem("ram_64"),
-    makeItem("drive_chip"), makeItem("drive_crystal"),
+    /* The old debug loadout carried every hull at once.  Hand inventory is
+       now physically carried, so the actual starter kit remains flyable. */
+    makeItem("gpu_graphics"), makeItem("cpu_dual"), makeItem("ram_32"), makeItem("drive_chip"),
     makeItem("drive_installer"),
-    makeItem("wpn_laser"), makeItem("wpn_energy"), makeItem("wpn_kinetic"),
-    makeItem("wpn_missile"), makeItem("wpn_torpedo"), makeItem("wpn_emp"),
-    makeItem("wpn_nuclear"), makeItem("wpn_mine"),
-    makeItem("reactor_mk1"), makeItem("reactor_mk3"), makeItem("reactor_mk4"),
-    makeItem("shield_s"), makeItem("shield_m"), makeItem("shield_l"), makeItem("shield_x"),
-    makeItem("droid_s"), makeItem("droid_m"), makeItem("droid_l"), makeItem("droid_x"),
-    makeItem("ore_fe", 4), makeItem("probe", 1)
+    makeItem("term_graphics"), makeItem("antenna_short"), makeItem("scanner_basic"),
+    makeItem("wpn_laser"), makeItem("reactor_mk1"), makeItem("shield_s"), makeItem("droid_s"),
+    makeItem("cap_s"),makeItem("hyper_s"),makeItem("miner_basic"),makeItem("gyro_basic"),
+    makeItem("nic_basic"),makeItem("switch_8"),
+    makeItem("antimatter",2),makeItem("ore_fe", 4), makeItem("probe", 1),makeItem("probe_space",1)
   ]);
 }

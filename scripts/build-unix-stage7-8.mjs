@@ -16,7 +16,10 @@ const utilities=compile("lib/utilities.asm");
 const shellParser=compile("lib/shell-parser.asm");
 const names=["ls","cat","grep","cp","mv","mkdir","rm","link","chown","chgrp","user","find","ps"];
 const programs=[["bin/sh.asm","sh.bin",[shellParser]],
-  ...names.map(name=>[`bin/${name}.asm`,`${name}.bin`,[utilities]])];
+  ...names.map(name=>[`bin/${name}.asm`,`${name}.bin`,[utilities]]),
+  // Applications belong to /usr/bin in the install manifest.  Keep this
+  // separate from the small core-utility list above: scanner only needs libc.
+  ["bin/scanner.asm","scanner.bin",[]]];
 
 let stale=false;
 for(const [source,name,extra] of programs){

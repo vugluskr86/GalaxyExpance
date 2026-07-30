@@ -773,7 +773,7 @@ function buildWorld(){
   }
 
   /* 7.2 мозаика грунта */
-  let ground=null;
+  let ground=null;/*
   if(P.showWFCGround){
     const tiles=groundTiles(),cs=6,gw=Math.ceil(W/cs),gh=6;
     const idOf=m=>tiles.findIndex(t=>t.id===m+m);
@@ -785,7 +785,7 @@ function buildWorld(){
       return list;
     };
     ground={cs,gw,gh,idx:wfc2d(tiles,gw,gh,rnd,pre),tiles};
-  }
+  }*/
 
   /* 7.3 флора: спрайты из L-систем + расстановка по слоям */
   const plants={sprites:[],items:[]};

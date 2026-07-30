@@ -15,6 +15,7 @@ import { planCircularize, planHohmann, hohmannBudget, orbitAfterNode,
          stateAtNode, ManeuverNode } from "../game/maneuver.js";
 import { fmtSpeed, fmtDist, fmtDv, fmtTime, fmtMass, fmtAcc, DU_M } from "../game/units.js";
 import { OutfitScene } from "./outfit.js";
+import { ContactScene } from "./contact.js";
 import { FloatingItem } from "../game/inventory.js";
 import { makeItem } from "../game/items.js";
 import { timeToApo, timeToPeri, timeToNu, pointAt } from "../game/physics.js";
@@ -22,14 +23,31 @@ import { player } from "../game/player.js";
 import { planetStats, smallBodyStats, statsTooltipHTML, starTooltipHTML } from "../game/stats.js";
 import { execCommand } from "../game/console.js";
 import { WeaponProjectile } from "../game/weapons.js";
-/** Максимальный зум: планета на весь экран (как на уровне «Тело»). */
-const ZOOM_MAX = 12;
-/** Минимальный зум: вся система видна целиком. */
-const ZOOM_MIN = 0.15;
-/** Зум по умолчанию при входе в систему. */
-const ZOOM_DEFAULT = 0.3;
-/** Коэффициент шага колёсика мыши. */
-const ZOOM_WHEEL_STEP = 1.18;
+import { ensureEconomy, landingAccess, marketQuote, rewardPiracy, rewardProtection, stableSystemId } from "../game/economy.js";
+import { t } from "../i18n/index.js";
+import { progressContracts } from "../game/contracts.js";
+import { economicNpcTick, initializeNpcEconomy, onNpcDestroyed, updateNpcEconomy, valuableRaidTarget } from "../game/npc-economy.js";
+import { eventAt, recordEventCombat, registerSystemMarkets, systemControl, systemDanger } from "../game/events.js";
+import { gainSkill, recordStat } from "../game/progression.js";
+import { settings } from "../ui/settings.js";
+import { communicationStatus, equipmentReason, scannerStatus } from "../game/equipment.js";
+import { mineRock, scanRock } from "../game/mining.js";
+import { deliverProbeReports, launchProbe, updateProbes } from "../game/probes.js";
+import { EffectPool } from "../game/effects.js";
+import { ensureSystemMap, knownRecord, knownTier } from "../game/intel.js";
+import { IntelDirectoryScene, ScannerScene } from "./scanner.js";
+import { BalanceLabScene } from "./balance-lab.js";
+import { configValue } from "../config/balance.js";
+
+/** Hit-test priority is intentional: a tiny belt rock must never steal a click
+ * from a planet, moon or cargo container that visually overlaps it. */
+export const SYSTEM_HIT_PRIORITY=Object.freeze({ship:0,planet:1,moon:1,cargo:2,comet:3,rock:4,star:5});
+export function chooseSystemHit(candidates){
+  return [...candidates].sort((a,b)=>
+    (SYSTEM_HIT_PRIORITY[a.s.kind]??99)-(SYSTEM_HIT_PRIORITY[b.s.kind]??99)||
+    a.d/Math.max(1,a.r)-b.d/Math.max(1,b.r)||a.d-b.d)[0]||null;
+}
+const sameSystemObject=(a,b)=>!!a&&!!b&&a.kind===b.kind&&a.i===b.i&&a.j===b.j;
 
 export class SystemScene {
   constructor(galaxy, star, options={}){
@@ -38,6 +56,7 @@ export class SystemScene {
     this.crumb = "Система";
     this.S = buildSystem(galaxy, star);
     this.sel = this.S.planets.length ? { kind:"planet", i:0, j:0 } : null;
+    this.hover = null;
     this.cam = { x:0, y:0 };
     this.follow = false;
     this.orbitAlt = 20;
@@ -47,31 +66,54 @@ export class SystemScene {
     this.agentConfig=options.agentConfig||{};
     this.npcs = makeNpcs(this, galaxy.systemSeedOf ? galaxy.systemSeedOf(star) : 1,this.agentConfig);
     this.followShip = false;
-    this.zoom = ZOOM_DEFAULT;
+    this.zoom = configValue("render.systemZoomDefault");
     this.cargoField = [];        // контейнеры, брошенные в космос
     this.scoopMsg = "";
     this.nodeStep = 10;          // шаг ручки манёвра, м/с
     this._handles = [];          // экранные ручки узла (KSP-стиль)
     this.projectiles = [];
+    this.effects=new EffectPool(this.S.seed);
+    this.probes=[];
     this.combatMsg = "";
     this.lockedNpc = null;
     this.playerOrder = null;
     this.world = options.world || null;
     this.world?.restore(this);
+    if(this.playerShip){player.shipProp=this.playerShip.prop;player.ship=this.playerShip;this.playerShip.prop.networkShip=this.playerShip;}
+    /* The scanner must be started by its installed PCOS binary.  The runtime
+       callback is deliberately scoped to this scene and never serialised. */
+    for(const computer of this.playerShip?.prop?.computers||[]){
+      computer.runtime.openSystemScanner=()=>{
+        if(!this.world||!this.mgr)return false;
+        this.mgr.push(new ScannerScene(this,this.sel,computer.instanceId));return true;
+      };
+    }
+    if(this.world){ensureEconomy(this.world);registerSystemMarkets(this.world,this.S);ensureSystemMap(this.world,this);}
+    /* Expose the adapter to configurable AgentController hooks without making
+       agents import a scene or market implementation directly. */
+    this.npcEconomy={initializeNpcEconomy,economicNpcTick,updateNpcEconomy,onNpcDestroyed,valuableRaidTarget};
+    this.worldPressure={danger:()=>this.world?systemDanger(this.world,this.S.id):0};
+    initializeNpcEconomy(this);
   }
-  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = ZOOM_DEFAULT; }
+  leave(){
+    if(!this.world) return;
+    economicNpcTick(this);
+    this.world.capture(this,this.world.data.galaxyIndex);
+    this.world.persist();
+  }
+  fit(){ this.cam.x = 0; this.cam.y = 0; this.zoom = configValue("render.systemZoomDefault"); }
   configureAgents(config={}){
     this.agentConfig=config;
     for(const npc of this.npcs)npc.agent.configure(config[npc.agent.profileId]||config.default||{});
   }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
   ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
-  zoomBy(f){ this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom*f)); }
+  zoomBy(f){ this.zoom = Math.min(configValue("render.systemZoomMax"), Math.max(configValue("render.systemZoomMin"), this.zoom*f)); }
   execConsoleCommand(input, print){ execCommand(this, input, print); }
   onWheel(mx, my, deltaY){
     const wx = (mx - this.ctx.SCR/2)/this.zoom + this.cam.x;
     const wy = (my - this.ctx.SCR/2)/this.zoom + this.cam.y;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * (deltaY < 0 ? ZOOM_WHEEL_STEP : 1/ZOOM_WHEEL_STEP)));
+    const wheel=configValue("render.systemZoomWheel");this.zoom = Math.min(configValue("render.systemZoomMax"), Math.max(configValue("render.systemZoomMin"), this.zoom * (deltaY < 0 ? wheel : 1/wheel)));
     this.cam.x = wx - (mx - this.ctx.SCR/2)/this.zoom;
     this.cam.y = wy - (my - this.ctx.SCR/2)/this.zoom;
   }
@@ -121,6 +163,7 @@ export class SystemScene {
    * destruction behave identically regardless of who fired the shot. */
   launchWeapon(source,spec,target=null){
     this.projectiles.push(new WeaponProjectile(source,spec,target,this));
+    this.effects.muzzle(source,spec,this,settings.lod);
   }
   fireNpcWeapon(npc,target){
     const ship=npc?.ship;
@@ -163,6 +206,12 @@ export class SystemScene {
       return Math.hypot(this.ssx(x)-mx,this.ssy(y)-my)<=radius;
     })||null;
   }
+  npcContactStatus(npc){
+    const player=this.playerShip,ship=npc?.ship;
+    if(!player||!ship)return {distance:Infinity,comm:{ok:false,reason:"out-of-range"},scan:{ok:false,reason:"out-of-range"}};
+    const a=player.globPos(this),b=ship.globPos(this),distance=Math.hypot(a[0]-b[0],a[1]-b[1]);
+    return {distance,comm:communicationStatus(player.prop,distance),scan:scannerStatus(player.prop,distance)};
+  }
   updateProjectiles(dt){
     for(const shot of this.projectiles){
       if(!shot.update(dt,this)||shot.hit)continue;
@@ -175,13 +224,32 @@ export class SystemScene {
         if(distance>radius)continue;
         const factor=shot.spec.splash?Math.max(.2,1-distance/radius):1;
         let damage=shot.spec.damage*factor;
-        const shield=target.prop?.shield;
+        const shield=target.prop?.shield;let shielded=false;
         if(shield?.charge>0){const absorbed=Math.min(shield.charge,damage);shield.charge-=absorbed;damage-=absorbed;}
+        shielded=damage<shot.spec.damage*factor;
         target.integrity=(target.integrity??100)-damage;
         if(shot.spec.emp)target.empTimer=Math.max(target.empTimer||0,shot.spec.emp);
         target.lastStatus=target.integrity<=0?"корабль уничтожен":(shot.spec.emp?"ЭМИ: системы подавлены":"попадание");
-        if(target.integrity<=0)target.destroyed=true;
-        shot.detonate();break;
+        if(target.integrity<=0){
+          target.destroyed=true;
+          /* A lost hauler affects its destination no matter who fired the
+             decisive shot. Reputation, in contrast, belongs only to player
+             actions and is resolved by the block below. */
+          const npc=this.npcs.find(entry=>entry.ship===target);
+          if(npc)onNpcDestroyed(npc,this);
+          if(shot.source===this.playerShip&&this.world){
+            const body=this.S.planets.find(planet=>planet.settlement);
+            const context={settlement:body?.settlement,body};
+            if(npc?.agent?.config?.faction==="pirate"){
+              if(body?.settlement)recordEventCombat(this.world,body.settlement.id,context);
+              gainSkill(this.world,"combat",10,"pirate eliminated");recordStat(this.world,"piratesDestroyed",1,"pirate eliminated");
+              rewardProtection(this.world,context,"pirate eliminated");
+              if(body?.settlement)progressContracts(this.world,body.settlement.id,"pirate-eliminated");
+            }
+            else if(npc){gainSkill(this.world,"combat",4,"civilian attack");recordStat(this.world,"shipsDestroyed",1,"civilian attack");rewardPiracy(this.world,context,"civilian attacked");}
+          }
+        }
+        this.effects.impact(shot,target,shielded,settings.lod);shot.detonate();break;
       }
     }
     this.projectiles=this.projectiles.filter(shot=>shot.detonating>0||(!shot.hit&&shot.life>0));
@@ -224,6 +292,7 @@ export class SystemScene {
       if (Math.hypot(p[0]-gx, p[1]-gy) > sc.grabRange) continue;
       if (Math.hypot(v[0]-gvx, v[1]-gvy) > sc.grabSpeed) continue;
       const prop = sh.prop;
+      if(!prop.canAddMass(f.item.mass)){this.scoopMsg="подбор отменён: перегрузка";continue;}
       const target = f.item.slot === "cargo" && prop.cargoMass + f.item.mass <= prop.cargoCap
         ? prop.cargo : prop.inventory;
       target.add(f.item);
@@ -239,8 +308,22 @@ export class SystemScene {
     const a = Math.random()*Math.PI*2;
     const f = new FloatingItem(item, sh.primary, sh.rx, sh.ry,
       sh.rvx + Math.cos(a)*0.0008, sh.rvy + Math.sin(a)*0.0008);
-    if (sh.mode === "landed"){ f.landed = { ...sh.primary }; f.rvx = 0; f.rvy = 0; }
+    if (sh.mode === "landed"){
+      f.landed = { ...(sh.landedOn||sh.primary) }; f.rvx = 0; f.rvy = 0;
+      f.discovered = false;
+    }
     this.cargoField.push(f);
+  }
+  /** Entering a landing is a world-state transition, so save it immediately.
+   * Waiting for the periodic autosave made a reload immediately after landing
+   * put the player back into orbit. */
+  landOn(selRef,stats=this.statsOf(selRef)){
+    const ship=this.playerShip;if(!ship)return false;
+    ship.land(selRef);this.sel={...selRef};
+    const landing=new LandingScene(this,{...selRef},stats,{arrival:true});
+    if(this.world){this.world.capture(this);this.world.persist();}
+    this.mgr.push(landing);
+    return true;
   }
   /** Варп режется на активном участке: под тягой физика идёт шагами. */
   warpLimit(){
@@ -302,6 +385,7 @@ export class SystemScene {
     if (sel.kind === "rock") return smallBodyStats(this.S, "rock", o, o.dist);
     return null;
   }
+  researchRecord(sel){return this.world?knownRecord(this.world,this,sel):null;}
   posOf(s){
     if (s.kind === "cargo"){
       const f = this.cargoField[s.i];
@@ -350,8 +434,16 @@ export class SystemScene {
     if (this.playerShip) this.playerShip.update(dt, this);
     for(const f of this.cargoField) f.update(dt, this);
     this._scoopAndGrab(dt);
+    updateProbes(this,dt);
+    const reports=deliverProbeReports(this);if(reports.length)this.combatMsg=reports.at(-1);
     for(const n of this.npcs) n.update(dt, this);
+    /* Route transitions are edge-triggered by physical arrival; calling the
+       state machine here does not perform a market tick every frame. */
+    for(const n of this.npcs) updateNpcEconomy(n,this);
     this.updateProjectiles(dt);
+    this.effects.engine(this.playerShip,this,dt,settings.lod);
+    for(const npc of this.npcs)this.effects.engine(npc.ship,this,dt,settings.lod);
+    this.effects.update(dt);
     let camTgt = null;
     if (this.followShip && this.playerShip) camTgt = this.playerShip.globPos(this);
     else if (this.follow && this.sel) camTgt = this.posOf(this.sel);
@@ -555,12 +647,14 @@ export class SystemScene {
     }
     /* дрейфующий груз */
     for(const f of this.cargoField){
+      if(f.landed&&!f.discovered)continue;
       const p = f.globPos(this);
       const X = this.ssx(p[0]), Y = this.ssy(p[1]);
       if (X < -6 || Y < -6 || X > SCR+6 || Y > SCR+6) continue;
       f.draw(sctx, X, Y, t);
     }
     for(const shot of this.projectiles)shot.draw(sctx,(x)=>this.ssx(x),(y)=>this.ssy(y),t);
+    this.effects.draw(sctx,(x)=>this.ssx(x),(y)=>this.ssy(y),settings.lod);
     /* корабли */
     for(const n of this.npcs){
       const [nx, ny] = n.ship.globPos(this);
@@ -579,19 +673,22 @@ export class SystemScene {
       const [px, py] = sh.globPos(this);
       sh.draw(sctx, this.ssx(px), this.ssy(py), t, this.zoom);
     }
-    if (this.sel){
-      const pos = this.posOf(this.sel);
-      const o = this.obj(this.sel);
+    const drawBracket=(target,color)=>{
+      const pos = this.posOf(target);
+      const o = this.obj(target);
       if (pos && o){
         const X = Math.round(this.ssx(pos[0])), Y = Math.round(this.ssy(pos[1]));
         const hr = Math.round((o.size ? o.size/2 : 4) + 5);
-        sctx.fillStyle = "#ffd166";
+        sctx.fillStyle = color;
         for(const [ox, oy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){
           sctx.fillRect(X + ox*hr - (ox<0?0:3), Y + oy*hr, 4, 1);
           sctx.fillRect(X + ox*hr, Y + oy*hr - (oy<0?0:3), 1, 4);
         }
       }
-    }
+    };
+    if(this.hover&&!sameSystemObject(this.hover,this.sel))
+      drawBracket(this.hover,"#7ee0ff");
+    if(this.sel)drawBracket(this.sel,"#ffd166");
   }
   drawLabels(){
     if (this.S.bhOnly) return;
@@ -606,10 +703,14 @@ export class SystemScene {
         toLbl(this.ctx, this.ssx(pos[0])) + 12, toLbl(this.ctx, this.ssy(pos[1])) + 20, "#ffd166", 13);
     }
     for(const n of this.npcs){
-      if (n.ship.mode !== "newton") continue;
+      // Important contacts retain a label even while travelling; ordinary NPC
+      // labels follow the global setting so dense systems remain readable.
+      if(!settings.labels&&n!==this.lockedNpc)continue;
       const [nx, ny] = n.ship.globPos(this);
+      const X=this.ssx(nx),Y=this.ssy(ny);
+      if(X<-20||Y<-20||X>this.ctx.SCR+20||Y>this.ctx.SCR+20)continue;
       lblText(this.ctx, n.name,
-        toLbl(this.ctx, this.ssx(nx)) + 6, toLbl(this.ctx, this.ssy(ny)) - 5, "#6fb7ff", 10);
+        toLbl(this.ctx, X) + 6, toLbl(this.ctx, Y) - 5, n===this.lockedNpc?"#ffd166":"#6fb7ff", 10);
     }
     /* HUD: режим, элементы орбиты, состояние двигателя */
     const sh = this.playerShip;
@@ -651,7 +752,10 @@ export class SystemScene {
     }
   }
   /** Кандидаты попадания в точку (общая логика для клика и тултипа). */
-  hitAt(wx, wy, pad){
+  hitAt(wx, wy, padPx=0){
+    // Hit padding belongs to the pointer, not to a belt cell: keep it a
+    // constant screen radius at every zoom level before comparing world data.
+    const pad=padPx/Math.max(this.zoom,0.0001);
     const cands = [];
     this.S.planets.forEach((p, i) => {
       p.moonList.forEach((m, j) => {
@@ -672,6 +776,7 @@ export class SystemScene {
       });
     }
     this.cargoField.forEach((f, i) => {
+      if(f.landed&&!f.discovered)return;
       const p = f.globPos(this);
       const d = Math.hypot(p[0] - wx, p[1] - wy);
       if (d < 4 + pad) cands.push({ s:{kind:"cargo", i, j:0}, d, r:2.5 });
@@ -680,9 +785,7 @@ export class SystemScene {
       const d = Math.hypot(wx, wy);
       if (d < this.S.sun.D/2 + pad) cands.push({ s:{kind:"star", i:0, j:0}, d, r:1000 });
     }
-    if (!cands.length) return null;
-    cands.sort((a, b) => (a.r - b.r) || (a.d - b.d));
-    return cands[0].s;
+    return chooseSystemHit(cands)?.s||null;
   }
   /** Тултип характеристик при наведении — для любого тела, включая звезду. */
   /** Экранные px → мировые координаты. */
@@ -693,13 +796,29 @@ export class SystemScene {
     };
   }
   onHover(mx, my){
-    if (this.S.bhOnly) return null;
+    if (this.S.bhOnly){this.hover=null;return null;}
+    const npc=this.hitNpcAt(mx,my,12);
+    if(npc){
+      const status=this.npcContactStatus(npc);
+      const faction=npc.agent?.config?.faction||npc.agent?.profileId||"неизвестна";
+      const relation=npc.agent?.state?.goal==="attack"?"враждебен":faction==="pirate"?"опасен":"нейтрален";
+      return `<b>${npc.name}</b><br>${npc.role||"корабль"} · ${faction} · ${relation}<br>дистанция ${status.distance.toFixed(1)} DU`+
+        `<br>связь: ${status.comm.ok?Math.round(status.comm.signal*100)+"%":equipmentReason(status.comm.reason)}`+
+        `<br>сканер: ${status.scan.ok?"уровень "+status.scan.resolution:equipmentReason(status.scan.reason)}`;
+    }
     const { wx, wy } = this.toWorld(mx, my);
     const hit = this.hitAt(wx, wy, 6);
+    this.hover=hit;
     if (!hit) return null;
     if (hit.kind === "star")
       return starTooltipHTML(this.S.name, CLS[this.star.ci], this.S.sun.D) +
         "<br>μ = " + MU_SUN.toLocaleString("ru-RU");
+    if(hit.kind==="cargo"){
+      const floating=this.cargoField[hit.i];
+      return floating?t("ui.cargoTooltip",{name:floating.item.name,mass:floating.item.mass.toFixed(1),state:t(floating.landed?"ui.cargoOnSurface":"ui.cargoDrifting")}):null;
+    }
+    if((hit.kind==="planet"||hit.kind==="moon")&&this.world&&!knownTier(this.world,this,hit))
+      return `<b>${this.label(hit)}</b><br>${t("scan.unknownBody")}`;
     const st = this.statsOf(hit);
     if (!st) return null;
     let html = statsTooltipHTML(this.label(hit), st);
@@ -709,6 +828,7 @@ export class SystemScene {
     }
     return html;
   }
+  clearHover(){this.hover=null;}
   /** Посадка: корабль в ньютоне, в раме выбранного твёрдого тела, низко и небыстро. */
   canLand(){
     const sh = this.playerShip;
@@ -718,6 +838,7 @@ export class SystemScene {
     if (k === "star" || k === "cargo") return false;
     const o = this.obj(this.sel);
     if (!o) return false;
+    if(this.world&&!landingAccess(this.world,{settlement:o.settlement,body:o}).ok)return false;
     if ((k === "planet" || k === "moon") && o.type === "gas") return false;
     const els = sh.els(this);
     if (!els) return false;
@@ -757,7 +878,7 @@ export class SystemScene {
       }
     }
     const npc=this.hitNpcAt(mx,my,10);
-    if(npc){ this.lockNpc(npc); return; }
+    if(npc){ this.mgr.push(new ContactScene(this,npc)); return; }
     const { wx, wy } = this.toWorld(mx, my);
     /* 2. клик по собственной орбите — поставить или перенести узел */
     if (this.tryPlaceNode(wx, wy)) return;
@@ -765,6 +886,10 @@ export class SystemScene {
     const hit = this.hitAt(wx, wy, 9);
     if (!hit) return;
     if (this.sel && hit.kind === this.sel.kind && hit.i === this.sel.i && hit.j === this.sel.j){
+      /* Cargo has no separate body screen: a second click keeps it selected
+         and starts camera following instead of constructing BodyScene from a
+         non-planet object. */
+      if(hit.kind==="cargo"){this.follow=true;this.followShip=false;this.mgr.onChange?.();return;}
       this.mgr.push(new BodyScene(this, hit));
     } else {
       this.sel = hit;
@@ -810,6 +935,9 @@ export class SystemScene {
         detail:"роль: " + npc.role + " · цель: " + npc.agent.state.goal +
           "<br>прочность " + Math.max(0,Math.round(ship.integrity||hull)) + "/" + hull +
           " · дистанция " + fmtDist(distance) +
+          (npc.economy?.kind==="trade" ? t("ui.npcTradeRoute",{good:npc.economy.goodId||"—",quantity:npc.economy.quantity||0,
+            origin:npc.economy.originId||"—",destination:npc.economy.destinationId||"—",profit:Math.round(npc.economy.estimatedProfit||0)}) :
+            t("ui.npcTask",{task:npc.economy?.kind||t("ui.npcPatrol")})) +
           "<br>приказ: " + ({follow:"следовать",attack:"следовать и атаковать"}[this.playerOrder?.mode]||"нет")};
     }
     if (!this.sel) return { name: S.name, detail: "кликните по любому телу: планете, луне, комете, обломку или звезде" };
@@ -841,10 +969,13 @@ export class SystemScene {
     if (this.sel.kind === "rock")
       return { name: this.label(this.sel),
         detail: "обломок пояса · орбита " + Math.round(o.dist) +
-          (st ? "<br>недра: " + st.minerals : "") };
+          (st ? "<br>недра: " + st.minerals : "") +
+          (o.deposit?.scanned?`<br>жила: ${o.deposit.resourceId} · ${o.deposit.remaining} т · нагрев ${Math.round((o.deposit.heat||0)*100)}%` : "<br>жила: требуется сканирование") };
     const base = this.sel.kind === "planet"
       ? PT_RU[o.type] + " · орбита " + o.dist + " · спутников: " + o.moonList.length
       : "спутник · " + PT_RU[o.type] + " · Ø " + o.size + " px";
+    if((this.sel.kind==="planet"||this.sel.kind==="moon")&&this.world&&!this.researchRecord(this.sel))
+      return {name:this.label(this.sel),detail:base+"<br>"+t("scan.unknownBody")};
     return {
       name: this.label(this.sel),
       detail: base + (st ? "<br>T ср: " + (st.tempC > 0 ? "+" : "") + st.tempC +
@@ -853,10 +984,17 @@ export class SystemScene {
   }
   primary(){
     if (this.S.bhOnly) return { label:"← к галактике", run: () => this.mgr.pop() };
+    if(this.playerShip?.mode==="landed")return {label:t("ui.takeoff"),run:()=>{
+      if(!this.playerShip.takeoff(this,this.orbitAlt)){this.combatMsg="Взлёт невозможен: перегрузка";this.mgr.onChange?.();return;}
+      if(this.world){this.world.capture(this);this.world.persist();}
+      this.mgr.onChange?.();
+    }};
+    const selectedBody=this.sel&&this.obj(this.sel);
+    const permission=this.world&&selectedBody?landingAccess(this.world,{settlement:selectedBody.settlement,body:selectedBody}):{ok:true};
+    if(!permission.ok&&this.canApproachForLanding())return {label:t("ui.landingDenied"),run:()=>{this.combatMsg=t("ui.tradeError.landingBan");this.mgr.onChange?.();}};
     if (this.canLand()){
       return { label:"Посадка", run: () => {
-        this.playerShip.land(this.sel);
-        this.mgr.push(new LandingScene(this, { ...this.sel }, this.statsOf(this.sel)));
+        this.landOn(this.sel,this.statsOf(this.sel));
       } };
     }
     if (this.playerShip && this.canApproachForLanding()){
@@ -894,6 +1032,14 @@ export class SystemScene {
           (g > 0 ? p.twr(g).toFixed(2) : "—") +
           "<br>запас ΔV " + fmtDv(p.deltaV) + " · топливо " +
           p.fuel.toFixed(1) + " / " + p.tank.fuel + " т" });
+      if(p.overloadStatus){
+        const load=p.overloadStatus();
+        spec.push({kind:"readout",label:"Взлётная масса",value:
+          `${fmtMass(load.mass)} / ${fmtMass(load.limit)}${load.overloaded?`<br><span style='color:#ff7569'>перегрузка +${fmtMass(load.excess)}: взлёт и тяга заблокированы</span>`:"<br>допустимо"}`});
+      }
+      spec.push({kind:"readout",label:"Энергия",value:p.capacitor
+        ? `${p.energy.toFixed(1)} / ${p.energyCap} Э · ${p.hyperdrive?p.hyperdrive.name:"гипердвигатель не установлен"}`
+        : "нужен конденсатор для гиперпрыжка"});
       spec.push({ kind:"range", label:"РУД (Shift/Ctrl, Z, X)", min:0, max:100, step:5,
         get:() => Math.round(p.throttle*100), set:v => { p.throttle = v/100; },
         fmt:v => v + " %" });
@@ -915,6 +1061,16 @@ export class SystemScene {
     if(this.world){
       spec.push({kind:"sect",label:"Мир"});
       spec.push({kind:"action",label:"Сохранить мир",run:()=>{this.world.capture(this);this.world.persist();this.combatMsg="мир сохранён";}});
+      const economy=ensureEconomy(this.world);
+      const marketBody=this.S.planets.find(planet=>planet.settlement);
+      const marketId=marketBody?.settlement?.id||stableSystemId(this.g,this.star);
+      const quote=marketQuote(this.world,marketId,"food",{settlement:marketBody?.settlement,body:marketBody});
+      spec.push({kind:"sect",label:t("ui.economyDebug")});
+      spec.push({kind:"readout",label:t("ui.credits"),value:t("ui.creditsValue",{credits:economy.credits,day:economy.day})});
+      spec.push({kind:"readout",label:t("ui.market"),value:t("ui.marketDebug",{good:t(`ui.goods.${quote.good.id}`),base:quote.basePrice,stock:quote.stock,demand:quote.demand,price:quote.finalPrice,modifiers:quote.modifiers.map(modifier=>`${modifier.id} ×${modifier.factor}`).join(", ")})});
+      spec.push({kind:"readout",label:t("ui.marketLocation"),value:quote.locationId});
+      const control=systemControl(this.world,this.S.id),danger=systemDanger(this.world,this.S.id);
+      spec.push({kind:"readout",label:t("events.systemControl"),value:t("events.systemControlValue",{faction:t(`ui.factions.${control.factionId}`),defense:control.defense,supply:control.supply,danger:Math.round(danger*100)})});
     }
 
     if(sh && this.lockedNpc){
@@ -1015,8 +1171,20 @@ export class SystemScene {
 
     /* ---------- груз и снаряжение ---------- */
     spec.push({ kind:"sect", label:"Снаряжение" });
+    if(this.world)spec.push({kind:"action",label:t("ui.balanceLab"),run:()=>this.mgr.push(new BalanceLabScene(this))});
     spec.push({ kind:"action", label:"Экран корабля · экипировка (B)",
       run: () => this.mgr.push(new OutfitScene(this)) });
+    if(this.world){
+      /* This convenience control follows the exact terminal path: it asks a
+         booted PCOS instance to execute scanner.bin instead of bypassing the
+         executable and pushing ScannerScene directly. */
+      spec.push({kind:"action",label:t("scan.open"),run:()=>{
+        const runtime=sh?.prop?.computers?.find(computer=>computer.runtime?.os)?.runtime;
+        if(!runtime?.os)throw new Error(t("scan.error.no-computer"));
+        runtime.os.execute("scanner");
+      }});
+      spec.push({kind:"action",label:t("scan.directory"),run:()=>this.mgr.push(new IntelDirectoryScene(this))});
+    }
     if (sh){
       const sc = sh.prop.scoop;
       spec.push({ kind:"readout", label:"Захват",
@@ -1030,6 +1198,26 @@ export class SystemScene {
       if (this.sel && this.sel.kind === "cargo"){
         spec.push({ kind:"action", label:"FSD к контейнеру",
           run: () => { sh.fsdTo(this.sel, 4); this.mgr.onChange?.(); } });
+      }
+      if(this.sel?.kind==="rock"){
+        const rock=this.S.belt?.rocks[this.sel.i],miner=sh.prop.miner;
+        spec.push({kind:"readout",label:"Добыча",value:miner&&rock?.deposit
+          ? `${miner.name} · ${rock.deposit.scanned?`${rock.deposit.resourceId} · ${rock.deposit.remaining} т · нагрев ${Math.round((rock.deposit.heat||0)*100)}%`:"сначала сканируйте астероид"}`
+          : miner?"жила выработана":"нужен добывающий модуль"});
+        if(rock?.deposit&&!rock.deposit.scanned)spec.push({kind:"action",label:"Сканировать астероид",run:()=>{
+          const result=scanRock(this,this.sel.i);this.scoopMsg=result.ok?`скан: ${result.deposit.resourceId} · ${result.deposit.remaining} т`:`скан: ${result.reason}`;this.mgr.onChange?.();
+        }});
+        if(miner&&rock?.deposit?.remaining>0)spec.push({kind:"action",label:"Добыть 1 т",run:()=>{
+          const result=mineRock(this,this.sel.i,4);
+          this.scoopMsg=result.ok?`добыто: ${result.item.name} ×${result.quantity}${result.collapse?" · жила разрушена":""}`:`добыча: ${result.reason}`;
+          this.mgr.onChange?.();
+        }});
+      }
+      if(this.sel&&(this.sel.kind==="planet"||this.sel.kind==="moon"||this.sel.kind==="rock")){
+        spec.push({kind:"buttons",items:[
+          {label:"Планетарный зонд",run:()=>{const result=launchProbe(this,"planet",this.sel);this.combatMsg=result.ok?"зонд запущен":"зонд: "+result.reason;this.mgr.onChange?.();}},
+          {label:"Космический зонд",run:()=>{const result=launchProbe(this,"space",this.sel);this.combatMsg=result.ok?"зонд запущен":"зонд: "+result.reason;this.mgr.onChange?.();}}
+        ]});
       }
     }
 

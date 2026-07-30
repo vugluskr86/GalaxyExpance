@@ -1023,12 +1023,9 @@ test("OS shell assembles, links and schedules a binary process",async()=>{
   os.execute("link app.bin main.obj math.obj --dynamic");
   os.execute("run app.bin");
   await new Promise(resolve=>setTimeout(resolve,10));
-  const process=os.processes.processes[0];
-  assert.equal(process.state,"exited");
-  assert.ok(process.output.includes("42"));
+  assert.equal(os.processes.processes.length,0,"host-launched command is auto-reaped");
+  assert.ok(terminal.lines.some(line=>line.includes("42")));
   assert.equal(os.memory.freeBytes(),os.memory.size);
-  os.processes.send(0,process.pid,"hello");
-  assert.deepEqual(os.processes.receive(process.pid),{from:0,data:"hello"});
 });
 
 test("new PixelOS assemblies default to protected PCVM v3",()=>{

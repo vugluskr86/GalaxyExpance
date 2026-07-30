@@ -4,8 +4,8 @@
   "entries": [
     {
       "path": "/.pcfd-directories.json",
-      "size": 645,
-      "checksum": 981285646,
+      "size": 695,
+      "checksum": 1643091386,
       "uid": 0,
       "gid": 0,
       "mode": 384
@@ -156,8 +156,8 @@
     },
     {
       "path": "/bin/sh.bin",
-      "size": 11650,
-      "checksum": 4129759097,
+      "size": 11696,
+      "checksum": 1295833266,
       "uid": 0,
       "gid": 0,
       "mode": 493
@@ -254,6 +254,14 @@
       "path": "/sbin/logger.bin",
       "size": 4068,
       "checksum": 1635189770,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/usr/bin/scanner.bin",
+      "size": 5601,
+      "checksum": 2996986355,
       "uid": 0,
       "gid": 0,
       "mode": 493
@@ -427,9 +435,17 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/bin/scanner.asm",
+      "size": 2478,
+      "checksum": 3793916904,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/bin/sh.asm",
-      "size": 15675,
-      "checksum": 1607036873,
+      "size": 15926,
+      "checksum": 1968587609,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -643,9 +659,17 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/build/scanner.bin",
+      "size": 5601,
+      "checksum": 2996986355,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/build/sh.bin",
-      "size": 11650,
-      "checksum": 4129759097,
+      "size": 11696,
+      "checksum": 1295833266,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -716,16 +740,16 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/FILESYSTEM.md",
-      "size": 3264,
-      "checksum": 2588064150,
+      "size": 3727,
+      "checksum": 1376953567,
       "uid": 0,
       "gid": 0,
       "mode": 420
     },
     {
       "path": "/usr/src/pcos/system/unix/include/abi.inc",
-      "size": 6213,
-      "checksum": 3546585527,
+      "size": 6270,
+      "checksum": 1602424490,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -796,8 +820,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/include/syscall.inc",
-      "size": 1728,
-      "checksum": 2029252292,
+      "size": 1785,
+      "checksum": 3927758667,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -812,8 +836,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/install-manifest.json",
-      "size": 3687,
-      "checksum": 2038735950,
+      "size": 3854,
+      "checksum": 1700996081,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -972,8 +996,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/Makefile",
-      "size": 9324,
-      "checksum": 1096507007,
+      "size": 9681,
+      "checksum": 3134893153,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -987,6 +1011,6 @@
       "mode": 420
     }
   ],
-  "requiredBytes": 820179,
+  "requiredBytes": 835353,
   "bootFile": "kernel.bin"
 }

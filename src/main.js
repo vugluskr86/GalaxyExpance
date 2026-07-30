@@ -9,7 +9,8 @@ import { attachInput } from "./core/input.js";
 import { settings, warpStep } from "./ui/settings.js";
 import { toggleConsole } from "./game/console.js";
 import { ComputerTerminal } from "./game/terminal.js";
-import { WorldSave, loadWorld } from "./game/savegame.js";
+import { WorldSave, landedBodyRef, loadWorld } from "./game/savegame.js";
+import { LandingScene } from "./scenes/landing.js";
 import { applyDocument, tr } from "./i18n/index.js";
 
 const SCR = 420;
@@ -23,7 +24,27 @@ const dpr = Math.min(2, window.devicePixelRatio || 1);
 const ctx = { scene, sctx, lbl, lctx, SCR, LW: 560 };
 applyDocument();
 window.addEventListener("pixel-cosmos:locale", () => applyDocument());
+const bootSplash=document.getElementById("bootSplash");
+let bootDismissed=!bootSplash;
+function dismissBootSplash(event){
+  if(bootDismissed)return;bootDismissed=true;bootSplash?.classList.add("hidden");bootSplash?.setAttribute("aria-hidden","true");
+  event?.preventDefault?.();event?.stopImmediatePropagation?.();
+}
+bootSplash?.addEventListener("pointerdown",dismissBootSplash);
+bootSplash?.addEventListener("click",dismissBootSplash);
+/* Capture prevents the first keypress from also steering or firing the ship. */
+document.addEventListener("keydown",event=>{if(!bootDismissed)dismissBootSplash(event);},true);
 window._pixelCosmosTerminal = new ComputerTerminal(document.getElementById("computerTerminal"));
+const terminalFrame=document.querySelector(".terminal-frame");
+function activePropulsion(scene){
+  return scene?.prop || scene?.playerShip?.prop || scene?.sys?.playerShip?.prop || null;
+}
+/** A terminal is a fitted, cabled item, not a permanently available HUD.
+ * The single canvas represents whichever terminal the player has selected. */
+function syncTerminalVisibility(){
+  const prop=activePropulsion(mgr?.current);
+  terminalFrame?.classList.toggle("hidden",!!prop&&!prop.hasConnectedTerminal?.());
+}
 
 function sizeLabels(){
   const rect = lbl.parentElement.getBoundingClientRect();
@@ -38,6 +59,21 @@ window.addEventListener("resize", sizeLabels);
 const mgr = new SceneManager(ctx);
 window._pixelCosmosMgr = mgr;
 new Panel(document.getElementById("panel"), mgr);
+const toast=document.getElementById("gameToast");
+let toastTimer=null;
+mgr.onNotice=notice=>{
+  if(!toast)return;
+  clearTimeout(toastTimer);
+  toast.textContent=tr(notice.message);
+  toast.dataset.level=notice.level;
+  toast.classList.remove("hidden");
+  toastTimer=setTimeout(()=>toast.classList.add("hidden"),notice.timeout);
+};
+/* A last-resort visible error for exceptions outside a panel callback.  The
+ * console keeps technical details for debugging, while the player receives a
+ * concise, non-technical notification. */
+window.addEventListener("error",()=>mgr.notify(t("ui.actionError"),{level:"error"}));
+window.addEventListener("unhandledrejection",()=>mgr.notify(t("ui.actionError"),{level:"error"}));
 
 /** Поместить игрока в случайную систему со старта. */
 function startInSystem(){
@@ -62,6 +98,15 @@ function startInSystem(){
   mgr.push(gscene);
   mgr.push(sys);
 
+  /* The system owns the physics state, while LandingScene is the active view.
+     Restore that view after the ship itself has been restored, otherwise a
+     reload on a planet exposed an incorrect new-landing route in SystemScene. */
+  const landedOn=landedBodyRef(sys.playerShip);
+  if(landedOn){
+    const stats=sys.statsOf(landedOn);
+    if(stats)mgr.push(new LandingScene(sys,landedOn,stats));
+  }
+
   /* выбрать случайную планету или спутник */
   if (!world && sys.S && sys.S.planets.length){
     const pi = Math.floor(Math.random() * sys.S.planets.length);
@@ -73,6 +118,41 @@ function startInSystem(){
     sys.sel = sel;
     sys.playerShip?.fsdTo(sel, sys.orbitAlt);
   }
+  mgr.returnToShip=()=>{
+    const existing=mgr.stack.find(scene=>scene instanceof SystemScene);
+    if(existing){
+      const index=mgr.stack.indexOf(existing);
+      mgr.setStack(mgr.stack.slice(0,index+1));
+      return;
+    }
+    /* The system scene was popped while browsing the map. Recreate it from
+     * the persisted ship location, rather than navigating to the map choice. */
+    const shipCluster=new Cluster(game.data.clusterSeed);
+    const shipGalaxyIndex=game.data.galaxyIndex;
+    const shipGalDef=shipCluster.galaxies[shipGalaxyIndex]||shipCluster.galaxies[0];
+    if(!shipGalDef) return;
+    const shipGalaxy=new Galaxy(shipGalDef.def);
+    const location=game.data.location?.star;
+    const sector=location&&shipGalaxy.sectorStars(Math.floor(location.x/SECT),Math.floor(location.y/SECT));
+    const special=[...shipGalaxy.quasars,shipGalaxy.smbhObj()].filter(Boolean);
+    const shipStar=special.find(candidate=>candidate.kind===location?.kind&&candidate.x===location?.x&&candidate.y===location?.y)
+      ||shipGalaxy.beacons.find(candidate=>candidate.x===location?.x&&candidate.y===location?.y)
+      ||(sector||[]).find(candidate=>candidate.x===location?.x&&candidate.y===location?.y)
+      ||shipGalaxy.beacons[0];
+    if(!shipStar) return;
+    const restoredSystem=new SystemScene(shipGalaxy,shipStar,{world:game});
+    const restoredPath=[
+      new ClusterScene(shipCluster,game),
+      new GalaxyScene(shipGalDef,game),
+      restoredSystem
+    ];
+    const restoredLanding=landedBodyRef(restoredSystem.playerShip);
+    if(restoredLanding){
+      const stats=restoredSystem.statsOf(restoredLanding);
+      if(stats)restoredPath.push(new LandingScene(restoredSystem,restoredLanding,stats));
+    }
+    mgr.setStack(restoredPath);
+  };
   const persist=()=>{const active=[...mgr.stack].reverse().find(scene=>scene instanceof SystemScene);if(active)game.capture(active,game.data.galaxyIndex);game.persist();};
   window.addEventListener("beforeunload",persist,{once:true});
   document.addEventListener("visibilitychange",()=>{if(document.hidden)persist();});
@@ -102,7 +182,10 @@ scene.addEventListener("pointermove", e => {
     tooltip.style.top = ty + "px";
   } else tooltip.classList.add("hidden");
 });
-scene.addEventListener("pointerleave", () => tooltip.classList.add("hidden"));
+scene.addEventListener("pointerleave", () => {
+  tooltip.classList.add("hidden");
+  mgr.current?.clearHover?.();
+});
 
 attachInput(scene, {
   onTap: (mx, my) => mgr.current?.onTap?.(mx, my),
@@ -157,6 +240,7 @@ function loop(nowMs){
   const dt = rawDt * warp;
   const t = nowMs/1000;
   mgr.update(dt, t);
+  syncTerminalVisibility();
   mgr.draw(t);
   const st = mgr.current?.status?.();
   if (st){

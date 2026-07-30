@@ -42,6 +42,15 @@ test("stage 3 PID is reused only after reap",()=>{
   assert.equal(after.pid,child.pid);
 });
 
+test("host-prompt commands are auto-reaped instead of lingering as exited",()=>{
+  const os=makeOS(),binary=new Assembler().assembleBinary(".protected\nHALT");
+  const command=os.processes.spawn("cat",binary);
+  os.processes.runNext();
+  assert.equal(os.processes.processes.some(process=>process.pid===command.pid),false);
+  const replacement=os.processes.spawn("chown",binary);
+  assert.equal(replacement.pid,command.pid,"auto-reaped PID is reusable");
+});
+
 test("stage 5 child inherits credentials and environment unless root overrides them",()=>{
   const os=makeOS(),binary=new Assembler().assembleBinary(".protected\nHALT");
   const parent=os.processes.spawn("login.bin",binary,

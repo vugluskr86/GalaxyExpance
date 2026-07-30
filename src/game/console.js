@@ -150,7 +150,7 @@ cmd("fsd", CAT_LEGAL, "FSD к планете по букве", (ctx, args, print
 
 cmd("land", CAT_LEGAL, "посадка", (ctx, args, print) => {
   if (ctx.canLand()){
-    ctx.playerShip.land(ctx.sel);
+    ctx.landOn?.(ctx.sel,ctx.statsOf?.(ctx.sel)) ?? ctx.playerShip.land(ctx.sel);
     print("посадка выполнена");
     ctx.mgr?.onChange?.();
   } else {
@@ -161,7 +161,8 @@ cmd("land", CAT_LEGAL, "посадка", (ctx, args, print) => {
 cmd("takeoff", CAT_LEGAL, "взлёт", (ctx, args, print) => {
   const sh = ctx.playerShip;
   if (!sh || sh.mode !== "landed"){ print("корабль не на поверхности"); return; }
-  sh.takeoff(ctx, ctx.orbitAlt);
+  if(!sh.takeoff(ctx, ctx.orbitAlt)){print("взлёт невозможен: перегрузка");return;}
+  if(ctx.world){ctx.world.capture(ctx);ctx.world.persist();}
   print(`взлёт · высота ${fmtDist(ctx.orbitAlt)}`);
   ctx.mgr?.onChange?.();
 });

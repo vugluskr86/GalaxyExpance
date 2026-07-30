@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixel Cosmos</title>
-  <script type="module" crossorigin src="/GalaxyExpance/assets/game-JIyVgCeD.js"></script>
-  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/i18n-DdSGEHG7.js">
-  <link rel="stylesheet" crossorigin href="/GalaxyExpance/assets/game-XTVbCqlm.css">
+  <script type="module" crossorigin src="/GalaxyExpance/assets/game-CzE7gDma.js"></script>
+  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/landing-view-renderer.generated-CMubKigj.js">
+  <link rel="stylesheet" crossorigin href="/GalaxyExpance/assets/game-DGPHOh31.css">
 </head>
 <body>
 <h1>Pixel Cosmos</h1>
@@ -16,6 +16,7 @@
       <canvas id="scene"></canvas>
       <canvas id="labels"></canvas>
       <div class="nameplate"><span id="npTitle">—</span><small id="npInfo">—</small></div>
+      <div id="gameToast" class="game-toast hidden" role="status" aria-live="polite"></div>
       <button id="btnBack" class="stagebtn hidden" data-i18n="ui.back">← назад</button>
       <button id="btnZin" class="stagebtn">+</button>
       <button id="btnFit" class="stagebtn" data-i18n="ui.overview">Обзор</button>
@@ -31,5 +32,12 @@
   <div class="panel" id="panel"></div>
 </div>
 <div class="sub" data-i18n="ui.worldDescription">кластер галактик → галактика → система → тело · всё из одного зерна</div>
+<div id="bootSplash" class="boot-splash" role="button" tabindex="0" aria-live="polite">
+  <div class="boot-splash-box">
+    <div class="boot-splash-title">PIXEL COSMOS</div>
+    <div class="boot-splash-mark" aria-hidden="true">✦</div>
+    <div class="boot-splash-prompt" data-i18n="ui.bootContinue">Нажмите для продолжения</div>
+  </div>
+</div>
 </body>
 </html>

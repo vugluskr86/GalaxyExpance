@@ -1,8 +1,10 @@
 /** Персистентное состояние игрока (живёт поверх стека сцен). */
 export const player = {
   fuel: 100,
+  credits: 250000000,
   lastGal: null,
   lastPos: null,
+  shipProp: null,
   jumpCost(galSeed, x, y){
     if (this.lastGal !== galSeed || !this.lastPos) return 20;
     return Math.max(4, Math.round(Math.hypot(x - this.lastPos[0], y - this.lastPos[1])/25));

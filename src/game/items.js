@@ -24,7 +24,22 @@ export const SLOTS = [
   { id:"weapon3",name:"Оружие 3", icon:"✦", itemSlot:"weapon" },
   { id:"weapon4",name:"Оружие 4", icon:"✦", itemSlot:"weapon" },
   { id:"weapon5",name:"Оружие 5", icon:"✦", itemSlot:"weapon" },
-  { id:"computer", name:"Борт. компьютер", icon:"◈" }
+  { id:"computer1", name:"Компьютер 1", icon:"◈", itemSlot:"computer" },
+  { id:"computer2", name:"Компьютер 2", icon:"◈", itemSlot:"computer" },
+  { id:"computer3", name:"Компьютер 3", icon:"◈", itemSlot:"computer" },
+  { id:"computer4", name:"Компьютер 4", icon:"◈", itemSlot:"computer" },
+  { id:"computer5", name:"Компьютер 5", icon:"◈", itemSlot:"computer" },
+  { id:"terminal1", name:"Терминал 1", icon:"▣", itemSlot:"terminal" },
+  { id:"terminal2", name:"Терминал 2", icon:"▣", itemSlot:"terminal" },
+  { id:"terminal3", name:"Терминал 3", icon:"▣", itemSlot:"terminal" },
+  { id:"terminal4", name:"Терминал 4", icon:"▣", itemSlot:"terminal" },
+  { id:"terminal5", name:"Терминал 5", icon:"▣", itemSlot:"terminal" },
+  { id:"antenna", name:"Антенна", icon:"⌁" },
+  { id:"scanner", name:"Сканер", icon:"◉" }
+  ,{ id:"hyperdrive", name:"Гипердвигатель", icon:"✦" }
+  ,{ id:"capacitor", name:"Конденсатор", icon:"▤" }
+  ,{ id:"mining", name:"Добывающий модуль", icon:"⛏" }
+  ,{ id:"gyro", name:"Гироскоп", icon:"↻" }
 ];
 export const COMPUTER_SLOTS = [
   { id:"gpu", name:"GPU", icon:"▦" },
@@ -43,35 +58,40 @@ export const SLOT_RU = Object.fromEntries([...SLOTS, ...COMPUTER_SLOTS].map(s =>
 export const itemSlotFor = slotId => SLOTS.find(slot=>slot.id===slotId)?.itemSlot || slotId;
 
 export const RATING_ORDER = ["E","D","C","B","A"];
+let nextItemInstanceId=1;
+export const ensureItemInstanceId=item=>{
+  if(item&&!item.instanceId)item.instanceId=`item-${nextItemInstanceId++}`;
+  return item?.instanceId;
+};
 
 /** Каталог модулей и груза. */
 export const CATALOG = [
   /* ---------- корпуса ---------- */
-  { id:"hull_scout", slot:"hull", cls:2, rating:"D", name:"Разведчик «Игла»", mass:3.2, price:180000, stats:{ cargo:6,crew:1,hullInt:180,weaponSlots:1,droidSlot:false,hullSprite:"scout" } },
-  { id:"hull_std", slot:"hull", cls:4, rating:"C", name:"Универсал «Веста»", mass:5, price:640000, stats:{ cargo:16,crew:2,hullInt:340,weaponSlots:2,hullSprite:"vesta" } },
-  { id:"hull_hauler", slot:"hull", cls:6, rating:"C", name:"Грузовик «Тяга»", mass:9.4, price:1850000, stats:{ cargo:48,crew:3,hullInt:520,weaponSlots:2,scoopSlot:false,hullSprite:"hauler" } },
-  { id:"hull_courier", slot:"hull", cls:2, rating:"B", name:"Курьер «Стриж»", mass:2.8, price:310000, stats:{ cargo:4,crew:1,hullInt:150,weaponSlots:1,shieldSlot:false,hullSprite:"courier" } },
-  { id:"hull_interceptor", slot:"hull", cls:3, rating:"A", name:"Перехватчик «Зенит»", mass:3.9, price:820000, stats:{ cargo:5,crew:1,hullInt:230,weaponSlots:3,hullSprite:"interceptor" } },
-  { id:"hull_miner", slot:"hull", cls:4, rating:"C", name:"Рудокоп «Ковш»", mass:6.2, price:990000, stats:{ cargo:30,crew:2,hullInt:370,weaponSlots:2,shieldSlot:false,hullSprite:"miner" } },
-  { id:"hull_explorer", slot:"hull", cls:4, rating:"B", name:"Эксплорер «Полярис»", mass:5.6, price:1150000, stats:{ cargo:20,crew:3,hullInt:320,weaponSlots:2,droidSlot:false,hullSprite:"explorer" } },
-  { id:"hull_gunship", slot:"hull", cls:5, rating:"B", name:"Канонерка «Гром»", mass:7.3, price:1680000, stats:{ cargo:10,crew:3,hullInt:560,weaponSlots:4,hullSprite:"gunship" } },
-  { id:"hull_corvette", slot:"hull", cls:5, rating:"A", name:"Корвет «Ладога»", mass:8.1, price:2100000, stats:{ cargo:18,crew:4,hullInt:610,weaponSlots:3,shieldSlot:false,hullSprite:"corvette" } },
-  { id:"hull_frigate", slot:"hull", cls:6, rating:"B", name:"Фрегат «Меридиан»", mass:11.2, price:3300000, stats:{ cargo:26,crew:6,hullInt:820,weaponSlots:5,hullSprite:"frigate" } },
-  { id:"hull_freighter", slot:"hull", cls:6, rating:"C", name:"Транспорт «Атлант»", mass:12.8, price:2700000, stats:{ cargo:72,crew:5,hullInt:700,weaponSlots:2,hullSprite:"freighter" } },
-  { id:"hull_carrier", slot:"hull", cls:7, rating:"A", name:"Носитель «Орбита»", mass:16.5, price:5900000, stats:{ cargo:54,crew:12,hullInt:1100,weaponSlots:4,hullSprite:"carrier" } },
-  { id:"hull_dreadnought", slot:"hull", cls:8, rating:"A", name:"Дредноут «Бастион»", mass:24, price:9800000, stats:{ cargo:38,crew:18,hullInt:1600,weaponSlots:5,hullSprite:"dreadnought" } },
+  { id:"hull_scout", slot:"hull", cls:2, rating:"D", name:"Разведчик «Игла»", mass:3.2, price:180000, stats:{ cargo:6,crew:1,hullInt:180,weaponSlots:1,droidSlot:false,computerSlots:0,terminalSlots:0,antennaSlot:true,scannerSlot:true,hyperdriveSlot:false,capacitorSlot:true,miningSlot:false,maxTakeoffMass:15,hullSprite:"scout" } },
+  { id:"hull_std", slot:"hull", cls:4, rating:"C", name:"Универсал «Веста»", mass:5, price:640000, stats:{ cargo:16,crew:2,hullInt:340,weaponSlots:2,computerSlots:1,terminalSlots:1,antennaSlot:true,scannerSlot:true,maxTakeoffMass:65,hullSprite:"vesta" } },
+  { id:"hull_hauler", slot:"hull", cls:6, rating:"C", name:"Грузовик «Тяга»", mass:9.4, price:1850000, stats:{ cargo:48,crew:3,hullInt:520,weaponSlots:2,scoopSlot:false,computerSlots:2,terminalSlots:1,antennaSlot:true,scannerSlot:true,maxTakeoffMass:95,hullSprite:"hauler" } },
+  { id:"hull_courier", slot:"hull", cls:2, rating:"B", name:"Курьер «Стриж»", mass:2.8, price:310000, stats:{ cargo:4,crew:1,hullInt:150,weaponSlots:1,shieldSlot:false,computerSlots:1,terminalSlots:0,antennaSlot:true,scannerSlot:false,hyperdriveSlot:false,capacitorSlot:true,miningSlot:false,maxTakeoffMass:14,hullSprite:"courier" } },
+  { id:"hull_interceptor", slot:"hull", cls:3, rating:"A", name:"Перехватчик «Зенит»", mass:3.9, price:820000, stats:{ cargo:5,crew:1,hullInt:230,weaponSlots:3,computerSlots:1,terminalSlots:1,antennaSlot:true,scannerSlot:true,maxTakeoffMass:23,hullSprite:"interceptor" } },
+  { id:"hull_miner", slot:"hull", cls:4, rating:"C", name:"Рудокоп «Ковш»", mass:6.2, price:990000, stats:{ cargo:30,crew:2,hullInt:370,weaponSlots:2,shieldSlot:false,computerSlots:2,terminalSlots:1,antennaSlot:true,scannerSlot:true,maxTakeoffMass:62,hullSprite:"miner" } },
+  { id:"hull_explorer", slot:"hull", cls:4, rating:"B", name:"Эксплорер «Полярис»", mass:5.6, price:1150000, stats:{ cargo:20,crew:3,hullInt:320,weaponSlots:2,droidSlot:false,computerSlots:2,terminalSlots:2,antennaSlot:true,scannerSlot:true,maxTakeoffMass:48,hullSprite:"explorer" } },
+  { id:"hull_gunship", slot:"hull", cls:5, rating:"B", name:"Канонерка «Гром»", mass:7.3, price:1680000, stats:{ cargo:10,crew:3,hullInt:560,weaponSlots:4,computerSlots:2,terminalSlots:2,antennaSlot:true,scannerSlot:true,maxTakeoffMass:45,hullSprite:"gunship" } },
+  { id:"hull_corvette", slot:"hull", cls:5, rating:"A", name:"Корвет «Ладога»", mass:8.1, price:2100000, stats:{ cargo:18,crew:4,hullInt:610,weaponSlots:3,shieldSlot:false,computerSlots:2,terminalSlots:2,antennaSlot:true,scannerSlot:true,maxTakeoffMass:58,hullSprite:"corvette" } },
+  { id:"hull_frigate", slot:"hull", cls:6, rating:"B", name:"Фрегат «Меридиан»", mass:11.2, price:3300000, stats:{ cargo:26,crew:6,hullInt:820,weaponSlots:5,computerSlots:3,terminalSlots:3,antennaSlot:true,scannerSlot:true,maxTakeoffMass:82,hullSprite:"frigate" } },
+  { id:"hull_freighter", slot:"hull", cls:6, rating:"C", name:"Транспорт «Атлант»", mass:12.8, price:2700000, stats:{ cargo:72,crew:5,hullInt:700,weaponSlots:2,computerSlots:3,terminalSlots:2,antennaSlot:true,scannerSlot:true,maxTakeoffMass:145,hullSprite:"freighter" } },
+  { id:"hull_carrier", slot:"hull", cls:7, rating:"A", name:"Носитель «Орбита»", mass:16.5, price:5900000, stats:{ cargo:54,crew:12,hullInt:1100,weaponSlots:4,computerSlots:5,terminalSlots:5,antennaSlot:true,scannerSlot:true,maxTakeoffMass:150,hullSprite:"carrier" } },
+  { id:"hull_dreadnought", slot:"hull", cls:8, rating:"A", name:"Дредноут «Бастион»", mass:24, price:9800000, stats:{ cargo:38,crew:18,hullInt:1600,weaponSlots:5,computerSlots:5,terminalSlots:5,antennaSlot:true,scannerSlot:true,maxTakeoffMass:220,hullSprite:"dreadnought" } },
 
   /* ---------- двигатели ---------- */
   { id:"eng_ion",   slot:"engine", cls:2, rating:"A", name:"Ионный «Тень»",
-    mass:0.9, price:420000, stats:{ thrust:18,  isp:3800 } },
+    mass:0.9, price:420000, stats:{ thrust:18,  isp:3800, maxLiftMass:18 } },
   { id:"eng_lite",  slot:"engine", cls:2, rating:"D", name:"Маневровый LT-3",
-    mass:0.6, price:75000,  stats:{ thrust:120, isp:340 } },
+    mass:0.6, price:75000,  stats:{ thrust:120, isp:340, maxLiftMass:24 } },
   { id:"eng_main",  slot:"engine", cls:4, rating:"C", name:"Основной M-7",
-    mass:1.4, price:260000, stats:{ thrust:240, isp:380 } },
+    mass:1.4, price:260000, stats:{ thrust:240, isp:380, maxLiftMass:65 } },
   { id:"eng_heavy", slot:"engine", cls:6, rating:"B", name:"Тяжёлый «Овен»",
-    mass:3.2, price:910000, stats:{ thrust:680, isp:310 } },
+    mass:3.2, price:910000, stats:{ thrust:680, isp:310, maxLiftMass:110 } },
   { id:"eng_nuke",  slot:"engine", cls:5, rating:"A", name:"Ядерный NERV-2",
-    mass:2.8, price:1450000,stats:{ thrust:160, isp:850 } },
+    mass:2.8, price:1450000,stats:{ thrust:160, isp:850, maxLiftMass:72 } },
 
   /* ---------- баки ---------- */
   { id:"tank_s", slot:"tank", cls:2, rating:"E", name:"Бак малый",
@@ -98,6 +118,14 @@ export const CATALOG = [
   { id:"reactor_mk2", slot:"reactor", cls:2, rating:"C", name:"Реактор Р-2 «Пульс»", mass:1.3, price:280000, stats:{ grade:2,power:80 } },
   { id:"reactor_mk3", slot:"reactor", cls:3, rating:"B", name:"Реактор Р-3 «Спектр»", mass:2.1, price:610000, stats:{ grade:3,power:150 } },
   { id:"reactor_mk4", slot:"reactor", cls:4, rating:"A", name:"Реактор Р-4 «Гелиос»", mass:3.4, price:1350000, stats:{ grade:4,power:280 } },
+  { id:"cap_s", slot:"capacitor", cls:1, rating:"D", name:"Конденсатор К-20", mass:.5, price:85000, stats:{ capacity:20,chargeRate:4,maxOutput:25 } },
+  { id:"cap_m", slot:"capacitor", cls:3, rating:"B", name:"Конденсатор К-90 «Импульс»", mass:1.2, price:340000, stats:{ capacity:90,chargeRate:12,maxOutput:100 } },
+  { id:"cap_l", slot:"capacitor", cls:5, rating:"A", name:"Конденсатор К-260 «Шторм»", mass:2.7, price:950000, stats:{ capacity:260,chargeRate:28,maxOutput:280 } },
+  { id:"hyper_s", slot:"hyperdrive", cls:2, rating:"D", name:"Гипердвигатель ГД-1 «Скачок»", mass:1.4, price:520000, stats:{ range:140,prepare:3,energy:18,antimatter:.12 } },
+  { id:"hyper_m", slot:"hyperdrive", cls:4, rating:"B", name:"Гипердвигатель ГД-4 «Трасса»", mass:2.8, price:1600000, stats:{ range:420,prepare:6,energy:55,antimatter:.28 } },
+  { id:"hyper_l", slot:"hyperdrive", cls:6, rating:"A", name:"Гипердвигатель ГД-8 «Горизонт»", mass:5.1, price:4200000, stats:{ range:950,prepare:10,energy:145,antimatter:.65 } },
+  { id:"miner_basic", slot:"mining", cls:2, rating:"D", name:"Буровой лазер БЛ-1", mass:.9, price:190000, stats:{ rate:.28,range:9 } },
+  { id:"miner_pro", slot:"mining", cls:4, rating:"B", name:"Добывающий комплекс ДК-4", mass:2.1, price:720000, stats:{ rate:.8,range:15 } },
   { id:"shield_s", slot:"shield", cls:1, rating:"D", name:"Щит СГ-20", mass:0.7, price:150000, stats:{ capacity:20,regen:2 } },
   { id:"shield_m", slot:"shield", cls:2, rating:"C", name:"Щит СГ-55", mass:1.3, price:360000, stats:{ capacity:55,regen:4 } },
   { id:"shield_l", slot:"shield", cls:3, rating:"B", name:"Щит СГ-110 «Купол»", mass:2.4, price:820000, stats:{ capacity:110,regen:7 } },
@@ -118,13 +146,43 @@ export const CATALOG = [
   { id:"wpn_mine", slot:"weapon", cls:3, rating:"C", name:"Минный постановщик МП-8", mass:1.1, price:290000, stats:{ weaponType:"mine", damage:96, range:260, speed:4, cooldown:1.3, ammo:16, splash:14, mine:true, color:"#ff5c4d" } },
 
   /* ---------- груз ---------- */
+  /* Торговые товары намеренно являются обычными Item. Благодаря этому трюм,
+     выброс за борт и сохранение работают для рынка тем же путём, что и для
+     любого другого груза. Цена здесь — лишь справочная; цена сделки живёт в
+     economy.js и зависит от конкретного поселения. */
+  { id:"cargo_food", slot:"cargo", cls:1, rating:"E", name:"Пищевые пайки", mass:1, price:80 },
+  { id:"cargo_water", slot:"cargo", cls:1, rating:"E", name:"Очищенная вода", mass:1, price:45 },
+  { id:"cargo_medicine", slot:"cargo", cls:1, rating:"B", name:"Медицинские наборы", mass:1, price:430 },
+  { id:"cargo_fuel", slot:"cargo", cls:1, rating:"D", name:"Топливные элементы", mass:1, price:160 },
+  { id:"cargo_electronics", slot:"cargo", cls:1, rating:"C", name:"Электроника", mass:1, price:520 },
+  { id:"cargo_components", slot:"cargo", cls:1, rating:"C", name:"Промышленные компоненты", mass:1, price:340 },
+  { id:"cargo_arms", slot:"cargo", cls:1, rating:"A", name:"Военное снаряжение", mass:1, price:860 },
+  { id:"cargo_luxury", slot:"cargo", cls:1, rating:"B", name:"Предметы роскоши", mass:1, price:720 },
+  { id:"cargo_data", slot:"cargo", cls:1, rating:"B", name:"Научные данные", mass:0.2, price:680 },
+  { id:"cargo_contraband", slot:"cargo", cls:1, rating:"A", name:"Контрабандный груз", mass:1, price:980 },
   { id:"ore_fe",   slot:"cargo", cls:1, rating:"E", name:"Железная руда",     mass:1, price:320 },
   { id:"ore_ti",   slot:"cargo", cls:1, rating:"C", name:"Титановая руда",    mass:1, price:1450 },
   { id:"ore_pt",   slot:"cargo", cls:1, rating:"A", name:"Платиновый концентрат", mass:1, price:9800 },
   { id:"ice_h2o",  slot:"cargo", cls:1, rating:"E", name:"Водяной лёд",       mass:1, price:180 },
   { id:"he3",      slot:"cargo", cls:1, rating:"B", name:"Гелий-3",           mass:1, price:5400 },
   { id:"salvage",  slot:"cargo", cls:1, rating:"D", name:"Обломки конструкций", mass:1, price:760 },
-  { id:"probe",    slot:"cargo", cls:2, rating:"C", name:"Исследовательский зонд", mass:2, price:24000 },
+  { id:"antimatter", slot:"cargo", cls:5, rating:"A", name:"Контейнер антиматерии", mass:.1, price:18000 },
+  { id:"probe",    slot:"cargo", cls:2, rating:"C", name:"Планетарный зонд", mass:2, price:24000 },
+  { id:"probe_space", slot:"cargo", cls:3, rating:"B", name:"Космический зонд", mass:1.4, price:42000 },
+  { id:"min_quartz",slot:"cargo",cls:1,rating:"E",name:"Кварц",mass:1,price:140 }, { id:"min_silicate",slot:"cargo",cls:1,rating:"E",name:"Силикаты",mass:1,price:120 },
+  { id:"min_sulfur",slot:"cargo",cls:1,rating:"D",name:"Сера",mass:1,price:210 }, { id:"min_phosphate",slot:"cargo",cls:1,rating:"D",name:"Фосфаты",mass:1,price:260 },
+  { id:"min_lithium",slot:"cargo",cls:2,rating:"C",name:"Литиевая соль",mass:1,price:920 }, { id:"min_crystal",slot:"cargo",cls:2,rating:"C",name:"Кристаллы",mass:1,price:1100 },
+  { id:"min_uranium",slot:"cargo",cls:4,rating:"A",name:"Урановая руда",mass:1,price:6400 }, { id:"min_gem",slot:"cargo",cls:3,rating:"B",name:"Самоцветы",mass:1,price:2800 },
+  { id:"min_salt",slot:"cargo",cls:1,rating:"E",name:"Минеральная соль",mass:1,price:90 }, { id:"min_rare",slot:"cargo",cls:4,rating:"A",name:"Редкоземельный концентрат",mass:1,price:7200 },
+  { id:"ore_cu",slot:"cargo",cls:2,rating:"D",name:"Медная руда",mass:1,price:560 }, { id:"ore_ni",slot:"cargo",cls:2,rating:"C",name:"Никелевая руда",mass:1,price:780 },
+  { id:"ore_al",slot:"cargo",cls:1,rating:"E",name:"Алюминиевая руда",mass:1,price:330 }, { id:"ore_co",slot:"cargo",cls:3,rating:"B",name:"Кобальтовая руда",mass:1,price:1750 },
+  { id:"ore_cr",slot:"cargo",cls:2,rating:"C",name:"Хромовая руда",mass:1,price:960 }, { id:"ore_ag",slot:"cargo",cls:3,rating:"B",name:"Серебряная руда",mass:1,price:2300 },
+  { id:"ore_zn",slot:"cargo",cls:2,rating:"C",name:"Цинковая руда",mass:1,price:740 },
+  { id:"gas_h2",slot:"cargo",cls:1,rating:"E",name:"Водород",mass:1,price:90 }, { id:"gas_o2",slot:"cargo",cls:1,rating:"E",name:"Кислород",mass:1,price:110 },
+  { id:"gas_n2",slot:"cargo",cls:1,rating:"E",name:"Азот",mass:1,price:80 }, { id:"gas_ch4",slot:"cargo",cls:2,rating:"D",name:"Метан",mass:1,price:260 },
+  { id:"gas_ar",slot:"cargo",cls:2,rating:"C",name:"Аргон",mass:1,price:680 }, { id:"gas_ne",slot:"cargo",cls:3,rating:"B",name:"Неон",mass:1,price:1250 },
+  { id:"gas_xe",slot:"cargo",cls:4,rating:"A",name:"Ксенон",mass:1,price:3800 }, { id:"gas_co2",slot:"cargo",cls:1,rating:"E",name:"Углекислый газ",mass:1,price:70 },
+  { id:"gas_nh3",slot:"cargo",cls:2,rating:"C",name:"Аммиак",mass:1,price:520 }, { id:"gas_he",slot:"cargo",cls:2,rating:"C",name:"Гелий",mass:1,price:760 },
 
   /* ---------- бортовые компьютеры ---------- */
   { id:"comp_basic", slot:"computer", cls:3, rating:"C", name:"МК-1 «Пролог»",
@@ -136,6 +194,45 @@ export const CATALOG = [
   { id:"comp_expand", slot:"computer", cls:6, rating:"A", name:"МК-3М «Магистраль»",
     mass:2.1, price:1650000, slots:EXPANSION_COMPUTER_SLOTS,
     defaults:{ gpu:"gpu_graphics", cpu:"cpu_quad", ram:"ram_4096", peripheral1:"drive_floppy", drive:"drive_hard_big" } },
+
+  /* ---------- терминалы, связь и сенсоры ----------
+     Терминал — только экран/клавиатура. Он становится доступен в UI после
+     явного соединения с конкретным бортовым компьютером. */
+  { id:"term_basic", slot:"terminal", cls:1, rating:"D", name:"Терминал Т-1 «Луч»",
+    mass:0.18, price:38000, stats:{ display:"text", ports:1 } },
+  { id:"term_graphics", slot:"terminal", cls:3, rating:"B", name:"Терминал Т-3 «Вектор»",
+    mass:0.32, price:110000, stats:{ display:"graphics", ports:1 } },
+  { id:"antenna_short", slot:"antenna", cls:1, rating:"D", name:"Антенна СВ-8",
+    mass:0.12, price:26000, stats:{ range:80, channels:2, signalQuality:.7 } },
+  { id:"antenna_mid", slot:"antenna", cls:3, rating:"B", name:"Антенна ДВ-30",
+    mass:0.28, price:130000, stats:{ range:300, channels:8, signalQuality:.9 } },
+  { id:"antenna_long", slot:"antenna", cls:5, rating:"A", name:"Антенна ДВ-90",
+    mass:0.46, price:410000, stats:{ range:900, channels:16, signalQuality:1 } },
+  { id:"scanner_basic", slot:"scanner", cls:1, rating:"D", name:"Сканер С-1 «Обзор»",
+    mass:.35, price:68000, stats:{ range:100, resolution:1, modes:["passive"] } },
+  { id:"scanner_tactical", slot:"scanner", cls:3, rating:"B", name:"Сканер С-3 «Контур»",
+    mass:.65, price:220000, stats:{ range:350, resolution:2, modes:["passive","tactical"] } },
+  { id:"scanner_deep", slot:"scanner", cls:5, rating:"A", name:"Сканер С-5 «Спектр»",
+    mass:1.05, price:620000, stats:{ range:800, resolution:3, modes:["passive","tactical","cargo"] } },
+
+  /* Корабельная сеть. NIC занимает универсальный peripheral-разъём компьютера; коммутаторы — отдельные, не
+     редактируемые компьютеры. Их CPU/RAM/прошивка зашиты в stats, а слотов программирования нет. */
+  { id:"nic_basic", slot:"peripheral", cls:1, rating:"D", name:"Сетевая карта NIC-100",
+    mass:.06, price:42000, stats:{ network:true, ports:1, speed:100, driver:"net-100" } },
+  { id:"nic_pro", slot:"peripheral", cls:3, rating:"B", name:"Сетевая карта NIC-1000",
+    mass:.09, price:145000, stats:{ network:true, ports:1, speed:1000, driver:"net-1000" } },
+  { id:"switch_8", slot:"computer", cls:2, rating:"C", name:"Коммутатор SW-8",
+    mass:.7, price:220000, stats:{ networkSwitch:true, ports:8, cpu:"switch-core", ramKb:64, firmware:"swos-1" } },
+  { id:"switch_16", slot:"computer", cls:3, rating:"B", name:"Коммутатор SW-16",
+    mass:1.0, price:410000, stats:{ networkSwitch:true, ports:16, cpu:"switch-core", ramKb:128, firmware:"swos-1" } },
+  { id:"switch_24", slot:"computer", cls:4, rating:"A", name:"Коммутатор SW-24",
+    mass:1.35, price:690000, stats:{ networkSwitch:true, ports:24, cpu:"switch-core+", ramKb:256, firmware:"swos-2" } },
+  { id:"switch_32", slot:"computer", cls:5, rating:"A", name:"Коммутатор SW-32",
+    mass:1.8, price:980000, stats:{ networkSwitch:true, ports:32, cpu:"switch-core+", ramKb:512, firmware:"swos-2" } },
+  { id:"gyro_basic", slot:"gyro", cls:2, rating:"C", name:"Гироскоп ГР-2 «Ось»",
+    mass:.24, price:78000, stats:{ turnRate:1.2, telemetry:true } },
+  { id:"gyro_precise", slot:"gyro", cls:4, rating:"A", name:"Гироскоп ГР-6 «Вектор»",
+    mass:.38, price:280000, stats:{ turnRate:2.4, telemetry:true } },
 
   /* ---------- компоненты компьютера ---------- */
   { id:"gpu_text", slot:"gpu", cls:1, rating:"D", name:"GPU «Литера»",
@@ -190,6 +287,7 @@ export class Item {
     this.def = byId(defId);
     if (!this.def) throw new Error("Неизвестный предмет: " + defId);
     this.qty = qty;
+    this.instanceId=`item-${nextItemInstanceId++}`;
     this.slots = {};
     for (const slot of this.def.slots || []){
       const defaultId = this.def.defaults?.[slot.id];
@@ -270,6 +368,8 @@ export function itemStatLines(def){
     out.push("потоки " + s.threads);
   } else if (def.slot === "ram"){
     out.push("оперативная память " + s.capacityKb + " КБ");
+  } else if (def.slot === "peripheral" && s.network){
+    out.push("сеть " + s.speed + " Мбит/с", "драйвер " + s.driver);
   } else if (def.slot === "drive" || def.slot === "peripheral"){
     const types = { magnetic:"магнитный диск", chip:"чип", crystal:"кристалл", floppy:"дисковод", hard:"жёсткий диск", pcfd:"дисковод с установочным носителем" };
     out.push("тип: " + types[s.driveType], "память " + s.capacityKb + " КБ");
@@ -290,6 +390,8 @@ export function itemStatLines(def){
     out.push("щит " + s.capacity, "реген " + s.regen + "/с");
   } else if (def.slot === "droid"){
     out.push("ремонт " + s.repair + " ед/с");
+  } else if (def.slot === "gyro"){
+    out.push("поворот " + s.turnRate + " рад/с");
   } else if (def.slot === "weapon"){
     const type={laser:"лазер",energy:"энергия",kinetic:"кинетика",missile:"ракеты",torpedo:"торпеды",emp:"ЭМИ",nuclear:"ядерные торпеды",mine:"мины"}[s.weaponType] || "оружие";
     out.push(type, "урон " + s.damage, "дальность " + s.range + " du", s.ammo ? "боезапас " + s.ammo : "боезапас: энергия");

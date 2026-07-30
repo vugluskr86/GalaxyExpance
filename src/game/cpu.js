@@ -716,6 +716,22 @@ export class CPU {
           this.bytes.set(out,at);
           return ok(0);
         }
+        case SYSCALLS.HARDWARE_INFO: {
+          /* The scanner is a normal user program.  Its only privileged input
+           * is this bounded, read-only device snapshot; the program never
+           * receives JavaScript objects or access to another process. */
+          const report=this.system?.deviceInfo?.();
+          if(report===undefined||report===null)return fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+          const data=textEncoder.encode(String(report));
+          const size=Math.min(data.length,Math.max(0,this.r.C));
+          if(size)this.bytes.set(data.subarray(0,size),this.userRange(this.r.B,size,"write"));
+          return ok(size);
+        }
+        case SYSCALLS.SCANNER_OPEN:
+          /* A PCOS binary asks its host computer to expose the radio panel.
+           * The callback is registered only by the active SystemScene, so
+           * running scanner.bin outside a system cannot fabricate survey data. */
+          return this.system?.openSystemScanner?.()?ok(0):fail(SYSCALL_ERRORS.NOT_SUPPORTED);
         case SYSCALLS.GFX_PIXEL:
           this.terminal?.pixel(this.r.A,this.r.B,this.terminal?.fg);return ok(0);
         case SYSCALLS.GFX_LINE:
@@ -1098,7 +1114,12 @@ export class CPU {
             throw new CPUFault(PROTECTED_EXCEPTIONS.PRIVILEGE_FAULT,this.r.CAUSE,
               "KCALL_HOST outside syscall trap");
           const result=this.executeSystemCall(this.r.FAULT_ADDR);
-          Object.assign(this.r,result);this.setZ(result.A);break;
+          Object.assign(this.r,result);this.setZ(result.A);
+          // Host calls issued by the protected kernel may request a scheduler
+          // yield as well.  Honour it here just as the user-mode SYSCALL path
+          // does, otherwise a waiting shell can spin before its child runs.
+          if(this.requestYield){this.requestYield=false;yielded=true;halted=true;}
+          break;
         }
         case "SYSRET": {
           this.requireKernel();
@@ -1337,6 +1358,28 @@ export class ComputerRuntime {
         ...this.computer.slotDefs.filter(s=>s.id.startsWith("peripheral"))
           .map(s=>`${s.name.toUpperCase()}: ${this.computer.slots[s.id]?.name || "пусто"}`)
       ],
+      /** Textual ABI payload for the Assembly scanner.  Keeping formatting
+       * here means the ABI exposes a copy, not mutable host equipment. */
+      deviceInfo:()=>[
+        "ONBOARD HARDWARE",
+        ...[
+          `CPU: ${label(this.parts.cpu)} · ${this.threads} thread(s)`,
+          `RAM: ${label(this.parts.ram)} · ${this.ramBytes/1024} KB`,
+          `GPU: ${label(this.parts.gpu)} · ${this.outputMode || "none"}`,
+          `DRIVE: ${label(this.parts.drive)} · ${this.parts.drive?.stats.capacityKb || 0} KB`,
+          `NVRAM: BIOS ${this.computer.firmware?.biosSource.length || 0} B`
+        ],
+        "INTERNAL SLOTS",
+        ...this.computer.slotDefs.map(slot=>
+          `${slot.name}: ${this.computer.slots[slot.id]?.name || "empty"}`),
+        "PORTS",
+        "DISPLAY: canvas 420x420 text/graphics",
+        "KEYBOARD: browser key events",
+        "MOUSE: x/y/buttons/wheel",
+        ...this.computer.slotDefs.filter(s=>s.id.startsWith("peripheral"))
+          .map(s=>`${s.name.toUpperCase()}: ${this.computer.slots[s.id]?.name || "empty"}`)
+      ].join("\n")+"\n",
+      openSystemScanner:()=>this.openSystemScanner?.()===true,
       pid:()=>context?.pid||0,
       ppid:()=>context?.process?.ppid||0,
       uid:()=>context?.process?.uid||0,

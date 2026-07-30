@@ -252,7 +252,16 @@ CMP_A_D
 JZ shell_error
 MOV_B_A
 LOAD_C shell_status
+shell_wait_child:
 CALL libc_wait
+LOAD_D -1
+CMP_A_D
+JNZ shell_wait_done
+; A child is still running. Yield instead of returning a prompt and leaving
+; one-shot commands such as cat/find as apparent background processes.
+SYSCALL 2
+JMP shell_wait_child
+shell_wait_done:
 LOAD_B shell_status
 LOAD32_A_B
 LOAD_B shell_last_status

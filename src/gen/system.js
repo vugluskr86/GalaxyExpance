@@ -5,6 +5,9 @@ import { bakeBH } from "./blackhole.js";
 import { CLS } from "./starclass.js";
 import { MU_SUN } from "../game/units.js";
 import { muOf, orbitRate, fitMoonOrbits } from "../game/physics.js";
+import { systemId, planetId, moonId } from "../core/ids.js";
+import { authorityFor } from "../game/factions.js";
+import { stationsForSettlement } from "../game/stations.js";
 
 /** Скорость собственного вращения тел (сутки ≈ 6–20 часов симуляции). */
 const SPIN_SCALE = 2.6e-4;
@@ -86,6 +89,44 @@ function zoneTypes(dist){
   return ["gas","ice","titan","methane","alien","gas","moon"];
 }
 
+/**
+ * Поселение — часть базового, а не сохранённого состояния мира. Его свойства
+ * получаются только из seed тела: повторная генерация той же системы создаёт
+ * тот же профиль рынка. В сохранение позже попадут лишь изменения запасов,
+ * репутация и события.
+ */
+function makeSettlement(planet, systemSeed, index, id){
+  if(planet.type === "gas") return null;
+  const rng=mulberry32(hash2i(index,planet.seed,systemSeed));
+  const byType={
+    terran:"agri",ocean:"agri",jungle:"agri",
+    desert:"mining",mars:"mining",moon:"mining",ice:"mining",titan:"mining",methane:"mining",
+    lava:"industrial",venus:"industrial",megacity:rng()<.5?"industrial":"military",alien:"science"
+  };
+  const specialization=byType[planet.type]||"industrial";
+  const roll=rng();
+  /* Events are generated from the same seed as the settlement. They are
+     small, local price nudges for the first market slice; later stages can
+     replace this baseline with saved, world-changing events. */
+  const event=roll<.09 ? {id:"harvest",priceModifiers:{food:.76,water:.84,luxury:.88}}
+    : roll<.17 ? {id:"shortage",priceModifiers:{food:1.28,water:1.2,medicine:1.16}}
+    : roll<.23 ? {id:"industrial-boom",priceModifiers:{ore:1.22,components:1.18,electronics:1.12}}
+    : null;
+  const authority=authorityFor(rng,specialization);
+  const settlement={
+    id:planet.id, settlement:true, specialization,
+    /* Нормированные характеристики: они не претендуют на реалистичные
+       абсолютные числа, но дают экономике объяснимые, стабильные различия. */
+    population:Number((.15+rng()*.8).toFixed(2)), techLevel:1+Math.floor(rng()*4),
+    security:Number((.2+rng()*.75).toFixed(2)), event,
+    ...authority
+  };
+  /* Stations are a deterministic capability map of this settlement. Their
+     mutable effects live in the economy save, not in generated system data. */
+  settlement.stations=stationsForSettlement(settlement,{systemId:id,planetIndex:index});
+  return settlement;
+}
+
 /** Система из звезды галактики. Первые вызовы rng совпадают с Galaxy.starInfo —
  *  карточка каталога и реальная система всегда сходятся. */
 export function buildSystem(galaxy, gs){
@@ -103,10 +144,11 @@ export function buildSystem(galaxy, gs){
         om: rng()*Math.PI*2, th: rng()*Math.PI*2, dir: rng()<0.5?1:-1,
         ci: Math.floor(rng()*5), r:100, x:0, y:0 });
     }
-    return { bhOnly:true, jets: gs.kind === "qso", jetAng: gs.jetAng || 1.2,
+    return { id:systemId(galaxy.def.seed,galaxy.systemSeedOf(gs)),bhOnly:true, jets: gs.kind === "qso", jetAng: gs.jetAng || 1.2,
              bh, sstars, star: gs, name: gs.name, planets: [], comets: [], belt: null };
   }
   const seed = galaxy.systemSeedOf(gs);
+  const id = systemId(galaxy.def.seed,seed);
   const rng = mulberry32(seed);
   const nPlanets = Math.floor(rng()*PLANETS_MAX);
   const hasBelt = rng() < BELT_CHANCE;
@@ -125,6 +167,7 @@ export function buildSystem(galaxy, gs){
     const type = zt[Math.floor(rng()*zt.length)];
     const gas = type === "gas";
     const p = {
+      id:planetId(id,i),
       type, seed: Math.floor(rng()*99999),
       size: gas
         ? GAS_SIZE_BASE + 2*Math.floor(rng()*GAS_SIZE_VAR)
@@ -140,6 +183,8 @@ export function buildSystem(galaxy, gs){
     p.surface=makeSurfaceProfile(p,sun,seed);
     bakePlanet(p);
     genMoons(p, rng,sun,seed);
+    p.moonList.forEach((moon,moonIndex)=>{moon.id=moonId(id,i,moonIndex);});
+    p.settlement=makeSettlement(p,seed,i,id);
     planets.push(p);
   }
   let belt = null;
@@ -151,10 +196,12 @@ export function buildSystem(galaxy, gs){
     const COLS = ["#8d8798","#6b6675","#7a6a55","#57525f","#4a4652"];
     for(let i=0;i<n;i++){
       const dist = rB + (rng()+rng()-1)*width;
+    const resources=["ore_fe","ore_cu","ore_ni","ore_ti","ore_al","ore_co","ore_zn","min_quartz","min_silicate","min_lithium","min_rare","ice_h2o","cargo_water","gas_ch4"];
       rocks.push({ dist, ang: rng()*Math.PI*2,
         w: 200/Math.pow(dist,1.5)*(0.9+rng()*0.2),
         s: rng()<0.2?2:1, c: COLS[Math.floor(rng()*COLS.length)],
-        num: 100 + Math.floor(rng()*8900), rseed: Math.floor(rng()*99999) });
+        num: 100 + Math.floor(rng()*8900), rseed: Math.floor(rng()*99999),
+        deposit:{resourceId:resources[Math.floor(rng()*resources.length)],remaining:4+Math.floor(rng()*18),richness:.6+rng()*.8} });
     }
     belt = { rocks };
   }
@@ -172,7 +219,7 @@ export function buildSystem(galaxy, gs){
     neb = { hue: Math.floor(rng()*5), dens: 0.8 + rng()*0.6,
             scale: 0.8 + rng()*0.8, seed: Math.floor(rng()*1e9) };
   }
-  const S = { star: gs, sun, planets, belt, comets, neb,
+  const S = { id, star: gs, sun, planets, belt, comets, neb,
               name: gs.name || galaxy.fieldName(gs) };
   /* спутники обязаны помещаться в сферу влияния своей планеты */
   fitMoonOrbits(S);

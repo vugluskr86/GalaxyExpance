@@ -26,3 +26,7 @@ npm-debug.log*
 
 # Misc
 *.cache
+
+
+dist/
+.roo

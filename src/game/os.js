@@ -1,6 +1,7 @@
 import { AssemblyCompiler, Linker } from "./toolchain.js";
 import { CONTEXT_LAYOUT,PROTECTED_EXCEPTIONS,PROTECTED_FEATURE } from "./protected-mode.js";
 import {InodeFS,ProcessFDTable,VFSKernel} from "./vfs.js";
+import { networkCommand } from "./network.js";
 
 export class MemoryManager {
   constructor(size){this.size=size;this.blocks=[];}
@@ -135,6 +136,10 @@ export class ProcessManager {
       child.ppid=1;
     const parent=this.processes.find(item=>item.pid===process.ppid);
     if(parent)parent.pendingEvents.push({type:"CHLD",pid:process.pid,status:process.exitCode});
+    // Commands started by the interactive host prompt have no parent process
+    // that could call wait(). They are intentionally auto-reaped instead of
+    // accumulating inert `exited` rows in `ps` forever.
+    if(process.autoReap)this.reap(process);
   }
   exit(pid,status=0){
     const process=this.processes.find(item=>item.pid===pid);
@@ -191,6 +196,7 @@ export class PixelOS {
     this.linker=new Linker(runtime.assembler);
     this.unsubscribe=terminal?.onLine?.(line=>this.execute(line));
     terminal?.setPrompt?.(this.fs?"pcos:/# ":"pcos$ ");
+    terminal?.focus?.();
     terminal?.print(this.fs?"PCOS: установленный PCFS подключён. help — список команд.":"Shell готова. help — список команд.");
   }
   stop(){this.unsubscribe?.();this.terminal?.setPrompt?.("");}
@@ -210,11 +216,26 @@ export class PixelOS {
     if(!file)throw new Error(`файл ${name} не найден`);
     return file;
   }
+  /** Applications are installed under /usr/bin; /bin remains the compatibility
+   * location for the compact base system.  Resolving here keeps `scanner`
+   * usable from the board terminal without duplicating the binary. */
+  commandFile(command){
+    let lastError;
+    for(const directory of ["/usr/bin","/bin"]){
+      try{return this.file(`${directory}/${command}.bin`);}
+      catch(error){lastError=error;}
+    }
+    throw lastError||new Error(`команда не найдена: ${command}`);
+  }
   execute(line){
     const args=line.trim().match(/"[^"]*"|\S+/g)||[],cmd=(args.shift()||"").toLowerCase();
     try{
       if(!cmd)return;
-      if(cmd==="help")this.print("help ls cd ps mem run kill send recv asm link time clear");
+      if(["ip","ping","netstat","dhcp","nslookup","curl"].includes(cmd)){
+        for(const value of networkCommand(this.runtime.networkProp,line))this.print(value);
+      }
+      if(cmd==="help")this.print("help ls cd ps mem run kill send recv asm link time clear ip ping netstat dhcp nslookup curl");
+      else if(["ip","ping","netstat","dhcp","nslookup","curl"].includes(cmd)){}
       else if(cmd==="ls"){
         if(this.fs){
           const path=args[0]||".",directory=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
@@ -237,7 +258,7 @@ export class PixelOS {
       else if(cmd==="clear")this.terminal.clear();
       else if(cmd==="run"){
         const file=this.file(args[0]);if(!file.data)throw new Error("нужен бинарный файл");
-        const p=this.processes.spawn(file.name,file.data,{env:{ARGS:[file.name,...args.slice(1)].join(" "),PATH:"/bin"}});this.print(`PID ${p.pid} запущен`);
+        const p=this.processes.spawn(file.name,file.data,{env:{ARGS:[file.name,...args.slice(1)].join(" "),PATH:"/usr/bin:/bin"}});this.print(`PID ${p.pid} запущен`);
       }else if(cmd==="kill")this.print(this.processes.kill(Number(args[0]))?"остановлен":"процесс не найден или уже выполняется");
       else if(cmd==="send"){this.processes.send(0,Number(args[0]),args.slice(1).join(" "));this.print("отправлено");}
       else if(cmd==="recv"){const m=this.processes.receive(Number(args[0]));this.print(m?`${m.from}: ${m.data}`:"очередь пуста");}
@@ -256,8 +277,8 @@ export class PixelOS {
         const err=this.storage.saveBinary(out,binary);if(err)throw new Error(err);
         this.print(`создан ${out} (${dynamic?"dynamic":"static"})`);
       }else if(this.fs){
-        const file=this.file(`/bin/${cmd}.bin`);
-        const p=this.processes.spawn(cmd,file.data,{env:{ARGS:[cmd,...args].join(" "),PATH:"/bin"}});
+        const file=this.commandFile(cmd);
+        const p=this.processes.spawn(cmd,file.data,{env:{ARGS:[cmd,...args].join(" "),PATH:"/usr/bin:/bin"}});
         this.print(`PID ${p.pid} запущен`);
       }else this.print(`команда не найдена: ${cmd}`);
     }catch(error){this.print("error: "+error.message);}

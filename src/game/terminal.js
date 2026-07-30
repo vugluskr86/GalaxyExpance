@@ -55,7 +55,11 @@ export class ComputerTerminal {
       this.mouse.buttons=e.buttons;
     };
     c.addEventListener("pointermove",mouse);
-    c.addEventListener("pointerdown",e=>{ c.focus(); mouse(e); });
+    c.addEventListener("pointerdown",e=>{ this.focus(); mouse(e); });
+    // The framed display is also a terminal control.  A click on its title or
+    // bezel must restore keyboard focus just like a click on the phosphor.
+    c.closest?.(".terminal-frame")?.addEventListener("pointerdown",()=>this.focus());
+    c.addEventListener("focus",()=>this.renderText());
     c.addEventListener("pointerup",mouse);
     c.addEventListener("wheel",e=>{ this.mouse.wheel+=Math.sign(e.deltaY); e.preventDefault(); },{passive:false});
     c.addEventListener("contextmenu",e=>e.preventDefault());
@@ -117,6 +121,7 @@ export class ComputerTerminal {
     this.ctx.beginPath(); this.ctx.arc(x,y,r,0,Math.PI*2); this.ctx[fill?"fill":"stroke"]();
   }
   readKey(){ return this.keys.shift() || null; }
+  focus(){this.canvas?.focus?.({preventScroll:true});}
   onKey(listener){ this.keyListeners.add(listener);return()=>this.keyListeners.delete(listener); }
   readWheel(){ const v=this.mouse.wheel; this.mouse.wheel=0; return v; }
   setPrompt(prompt){this.prompt=String(prompt);this.renderText();}

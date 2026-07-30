@@ -1,4 +1,5 @@
 /** Canvas renderer for the outfitting hangar. It intentionally contains no text. */
+import { shipyardBindings, shipyardImage, shipyardPngSize } from "../game/shipyard.js";
 const PARTICLES=84;
 /* Each hull has its own pixel-art outline; the shared interior is a modular
  * deck plan rather than a texture, so installed equipment remains readable. */
@@ -42,6 +43,43 @@ export function selectOutfitSlot(scene,x,y){
   if(!hit)return;
   scene.slot=hit.slot;scene.sel=null;scene.mgr?.onChange?.();
 }
+function drawShipyardHull(scene,t,generated,cx,cy){
+  const {sctx}=scene.ctx;
+  // Keep the player's familiar system-map colour as the main hull shade. The
+  // generator palette still changes accents, glass and engine metal per hull.
+  const base=scene.sys.playerShip?.col||null;
+  const layouts={
+    steel:{h:"#6384ad",a:"#9abde5",g:"#b9f2ff",e:"#263957",m:"#d3dfeb"},
+    rust:{h:"#885f46",a:"#c68a5e",g:"#9ee5ed",e:"#38251f",m:"#d5b092"},
+    alien:{h:"#327d69",a:"#59b78a",g:"#d1ff8f",e:"#1c4b42",m:"#9ed6b6"},
+    imperial:{h:"#a6aebc",a:"#edf1f5",g:"#9edfff",e:"#555b68",m:"#f8d786"},
+    neon:{h:"#604d9e",a:"#ad76dc",g:"#ff9ee8",e:"#302450",m:"#8cecff"}
+  };
+  const palette=layouts[generated.palette]||layouts.steel;
+  const colors=base?{h:base,a:"#ffe7a0",g:"#d6f8ff",e:"#6b4c1e",m:"#fff0bd"}:palette;
+  const pngSize=shipyardPngSize(generated.image),fit=Math.min(370/pngSize.width,390/pngSize.height);
+  const width=pngSize.width*fit,height=pngSize.height*fit,left=cx-width/2,top=cy-height/2;
+  const image=shipyardImage(generated.pngDataUrl);
+  if(image){sctx.save();sctx.imageSmoothingEnabled=false;sctx.drawImage(image,Math.round(left),Math.round(top),Math.round(width),Math.round(height));sctx.restore();}
+  else if(generated.raster){
+    // No fillRect behind the raster: the hangar star field deliberately stays
+    // visible through the empty cells, just like a transparent exported PNG.
+    for(let y=0;y<generated.raster.length;y++)for(let x=0;x<generated.raster[y].length;x++){
+      const material=generated.raster[y][x];if(material===".")continue;
+      sctx.fillStyle=colors[material]||colors.h;sctx.fillRect(Math.round(left+(x+1)*fit),Math.round(top+(y+1)*fit),Math.ceil(fit),Math.ceil(fit));
+    }
+  }
+  scene._shipHitboxes=[{slot:"hull",x:left,y:top,w:width,h:height}];
+  for(const binding of shipyardBindings(generated)){
+    const x=left+binding.png.centerX*fit,y=top+binding.png.centerY*fit,size=Math.max(8,generated.image.scale*fit);
+    const selected=binding.gameSlot===scene.slot,col=binding.gameSlot?"#ffd166":"#ff8d5c";
+    if(binding.gameSlot)scene._shipHitboxes.unshift({slot:binding.gameSlot,x:x-size,y:y-size,w:size*2,h:size*2});
+    sctx.strokeStyle=selected?"#fff3b0":col;sctx.lineWidth=selected?2:1;sctx.strokeRect(Math.round(x-size/2)+.5,Math.round(y-size/2)+.5,Math.round(size),Math.round(size));
+    sctx.fillStyle=selected?"rgba(255,209,102,.35)":"rgba(9,15,35,.65)";sctx.fillRect(Math.round(x-1),Math.round(y-1),3,3);
+  }
+  const blink=.55+.45*Math.sin(t*6);
+  if(scene.slot==="hull"){sctx.strokeStyle=`rgba(255,209,102,${blink})`;sctx.lineWidth=2;sctx.strokeRect(left+.5,top+.5,width-1,height-1);}
+}
 export function drawOutfitSilhouette(scene,t){
   const {sctx,SCR}=scene.ctx,p=scene.prop,cx=SCR/2,cy=SCR/2-2;
   const poly=(points,fill,stroke=null)=>{
@@ -74,6 +112,8 @@ export function drawOutfitSilhouette(scene,t){
       sctx.fillRect(Math.round(cx+q.x),Math.round(cy+q.y),q.size,q.size);
     }
   }
+  const generated=p?.slots.hull?.shipyard;
+  if(generated){drawShipyardHull(scene,t,generated,cx,cy);return;}
   const art=HULL_ART[p?.slots.hull?.stats.hullSprite]||HULL_ART.vesta;
   poly(art.body,art.color,"#78bfff");
   poly([[-35,-70],[-74,-29],[-42,-10],[-18,-41]],"#1c3564","#4574ad");poly([[35,-70],[74,-29],[42,-10],[18,-41]],"#1c3564","#4574ad");

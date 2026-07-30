@@ -120,8 +120,10 @@ export class Ship {
 
   land(body){ this.mode = "landed"; this.landedOn = { ...body }; this.burning = false; }
   takeoff(sys, h){
+    if(this.prop?.overloadStatus?.().overloaded)return false;
     if (this.landedOn) this.setCircular(sys, this.landedOn, h ?? this.altitude);
     else this.mode = "newton";
+    return true;
   }
 
   /** Проверка захвата: если после выхода из FSD корабль почему-то
@@ -222,15 +224,18 @@ export class Ship {
     }
   }
   _steer(dt, sys){
-    if (this.ctrl.left) this.nose -= this.turnRate*dt;
-    if (this.ctrl.right) this.nose += this.turnRate*dt;
+    /* A gyro improves manual/SAS rotation, while broken automation never
+       removes the ship's direct controls. */
+    const turnRate=this.prop.gyro?.stats.turnRate||this.turnRate;
+    if (this.ctrl.left) this.nose -= turnRate*dt;
+    if (this.ctrl.right) this.nose += turnRate*dt;
     if (this.ctrl.left || this.ctrl.right) return;
     const want = this._sasTarget(sys);
     if (want === null) return;
     let da = want - this.nose;
     while(da > Math.PI) da -= 2*Math.PI;
     while(da < -Math.PI) da += 2*Math.PI;
-    const step = this.turnRate*2.2*dt;
+    const step = turnRate*2.2*dt;
     this.nose += Math.abs(da) < step ? da : Math.sign(da)*step;
   }
 
@@ -462,6 +467,25 @@ export class Ship {
   draw(sctx, X, Y, t, zoom=0){
     const sprite=this.prop.hullStats.hullSprite||"vesta";
     const size=Math.max(3,Math.min(22,Math.round(3+zoom*10)));
+    const shipyard=this.prop.slots.hull?.shipyard;
+    if(size>=6&&shipyard?.raster){
+      // Stock hulls use the same cell materials as the integrated shipyard.
+      // At this LOD each cell remains a pixel, so the generated silhouette is
+      // recognisable without turning the system map into a full-size sprite.
+      const rows=shipyard.raster,cell=Math.max(1,Math.min(3,size*2.35/Math.max(rows.length,rows[0].length)));
+      const layouts={steel:{a:"#b9d4ef",g:"#c7f7ff",e:"#2c4263",m:"#dbe5ef"},rust:{a:"#d79767",g:"#a7edf1",e:"#4a2c22",m:"#e2b58e"},alien:{a:"#67ca9b",g:"#dcff9c",e:"#205347",m:"#b8dfbf"},imperial:{a:"#f2f4f8",g:"#aee8ff",e:"#666c76",m:"#f7d98a"},neon:{a:"#c483ed",g:"#ffaae9",e:"#37265c",m:"#9cf3ff"}};
+      const colors={h:this.col,...(layouts[shipyard.palette]||layouts.steel)};
+      sctx.save();sctx.translate(Math.round(X),Math.round(Y));sctx.rotate(this.nose+Math.PI/2);sctx.imageSmoothingEnabled=false;
+      for(let y=0;y<rows.length;y++)for(let x=0;x<rows[y].length;x++){
+        const material=rows[y][x];if(material===".")continue;
+        sctx.fillStyle=colors[material]||this.col;sctx.fillRect(Math.round((x-rows[0].length/2)*cell),Math.round((y-rows.length/2)*cell),Math.ceil(cell),Math.ceil(cell));
+      }
+      sctx.restore();
+      if(this.prop.shield&&size>=14){sctx.strokeStyle="rgba(143,208,255,.65)";sctx.beginPath();sctx.arc(Math.round(X),Math.round(Y),size+3,0,Math.PI*2);sctx.stroke();}
+      const fire=this.mode==="cruise"||this.burning;
+      if(fire&&Math.floor(t*12)%2){const c=Math.cos(this.nose),s=Math.sin(this.nose);sctx.fillStyle=this.mode==="cruise"?"#8fd0ff":"#ffd166";sctx.fillRect(Math.round(X-c*(size+3))-1,Math.round(Y-s*(size+3))-1,3,3);}
+      return;
+    }
     if(size>=6){
       const c=Math.cos(this.nose),s=Math.sin(this.nose),shape=SYSTEM_HULLS[sprite]||SYSTEM_HULLS.vesta;
       const point=([x,y])=>[Math.round(X+(x*c-y*s)*size),Math.round(Y+(x*s+y*c)*size)];
@@ -513,15 +537,19 @@ export function makeNpcs(sys, seed,agentConfig={}){
   const S = sys.S;
   if (S.bhOnly || !S.planets.length) return [];
   const rng = mulberry32(seed ^ 0x0c9c);
-  const n = 1 + Math.floor(rng()*2);
+  /* Keep the economic triangle visible in every ordinary system: a hauler to
+     trade, security to escort it and a pirate that can choose it as prey. */
+  const n = 4 + Math.floor(rng()*2);
   const npcs = [];
-  const PROFILES=["trader","patrol","geologist","courier","ranger","pirate"];
+  const PROFILES=["trader","patrol","pirate","geologist","courier","ranger"];
   for(let i=0;i<n;i++){
     const pi = Math.floor(rng()*S.planets.length);
     const ship = new Ship(sys, "#6fb7ff", 300 + rng()*250);
     ship.fsdTo({ kind:"planet", i:pi, j:0 }, 16);
-    const profile=PROFILES[Math.floor(rng()*PROFILES.length)];
+    const profile=i<3?PROFILES[i]:PROFILES[Math.floor(rng()*PROFILES.length)];
     const hullByProfile={trader:"hull_hauler",patrol:"hull_gunship",geologist:"hull_miner",courier:"hull_courier",ranger:"hull_explorer",pirate:"hull_interceptor"};
+    const colourByProfile={trader:"#d6a05a",patrol:"#7baeff",geologist:"#c88955",courier:"#b783e8",ranger:"#67c99a",pirate:"#df6d70"};
+    ship.col=colourByProfile[profile]||ship.col;
     ship.prop.install(makeItem(hullByProfile[profile]||"hull_std"));
     ship.integrity=ship.prop.slots.hull.stats.hullInt;
     ship.prop.install(makeItem(profile==="pirate" ? "wpn_missile" : profile==="patrol"||profile==="ranger" ? "wpn_energy" : "wpn_laser"));

@@ -2,6 +2,12 @@ import { createLandingViewRenderer } from "../gen/landing-view-renderer.generate
 import { player } from "../game/player.js";
 import { lblText } from "../ui/panel.js";
 import { t } from "../i18n/index.js";
+import { TradeScene } from "./trade.js";
+import { StationScene } from "./station.js";
+import { OutfitScene } from "./outfit.js";
+import { BalanceLabScene } from "./balance-lab.js";
+import { configValue } from "../config/balance.js";
+import { communicationStatus, equipmentReason } from "../game/equipment.js";
 
 const PRESETS_KEY="landing:presets";
 const clone=value=>JSON.parse(JSON.stringify(value));
@@ -37,7 +43,7 @@ function fallbackSurface(sys,stats={}){
 /** Landing view.  The whole canvas is delegated to SurfaceRenderer, which is
  * the adapted renderer from the supplied surface-generator reference. */
 export class LandingScene {
-  constructor(sys,selRef,stats){
+  constructor(sys,selRef,stats,options={}){
     this.sys=sys; this.selRef=selRef; this.stats=stats; this.crumb=t("ui.surface");
     this.p=sys.obj(selRef);
     this.surface=this.p.surface||fallbackSurface(sys,stats);
@@ -46,12 +52,14 @@ export class LandingScene {
     /* Render at the game's native canvas size.  No low-resolution frame is
      * stretched into the viewport. */
     this.surfaceCanvas=document.createElement("canvas");
-    this.surfaceCanvas.width=420; this.surfaceCanvas.height=420;
+    const canvasSize=configValue("surface.canvasSize");
+    this.surfaceCanvas.width=canvasSize; this.surfaceCanvas.height=canvasSize;
     this.surfaceCtx=this.surfaceCanvas.getContext("2d");
     this.rebuildRenderer({ seed, moons:this.p.moonList?.length||0, rings:!!this.p.rings });
     this.landingPhase0=this.dayPhase();
-    player.refuel();
-    sys.playerShip?.prop.refuel();
+    /* Refuelling belongs to the real landing transition only. Reconstructing
+       this scene from a save must never grant fuel for free. */
+    if(options.arrival){player.refuel();sys.playerShip?.prop.refuel();}
   }
   update(dt){this.sys.update(dt);}
   rebuildRenderer(extra={}){
@@ -143,9 +151,28 @@ export class LandingScene {
       "<br>жидкость: "+st.liquid+" · облачность: "+Math.round(q.cloudCover*100)+"%"+
       "<br>рельеф: "+Math.round(q.relief*100)+"% · погода: "+this.renderer.weather};
   }
-  primary(){return {label:t("ui.takeoff"),run:()=>{const ship=this.sys.playerShip;if(ship)ship.takeoff(this.sys,this.sys.orbitAlt);this.mgr.pop();}};}
+  primary(){return {label:t("ui.takeoff"),run:()=>{
+    const ship=this.sys.playerShip;
+    if(ship&&!ship.takeoff(this.sys,this.sys.orbitAlt)){
+      this.mgr?.notify(t("ui.takeoffOverloaded"),{level:"error"});
+      this.mgr.onChange?.();
+      return false;
+    }
+    if(this.sys.world){this.sys.world.capture(this.sys);this.sys.world.persist();}
+    this.mgr.pop();
+    return true;
+  }};}
   panelSpec(){
-    return [
+    const comm=communicationStatus(this.sys.playerShip?.prop,0);
+    const spec=[
+      /* This is navigation only: the ship remains landed and the LandingScene
+       * stays on the stack, so Back returns to exactly the same surface. */
+      {kind:"action",label:t("ui.toShip"),run:()=>{this.mgr.push(new OutfitScene(this.sys));return true;}},
+      {kind:"action",label:t("ui.balanceLab"),run:()=>{this.mgr.push(new BalanceLabScene(this.sys));return true;}},
+      ...(this.p.settlement&&comm.ok ? [
+        {kind:"action",label:t("ui.tradeCenter"),run:()=>this.mgr.push(new TradeScene(this.sys,this.selRef))},
+        {kind:"action",label:t("ui.stationServices"),run:()=>this.mgr.push(new StationScene(this.sys,this.selRef))}
+      ] : this.p.settlement ? [{kind:"readout",label:"Связь",value:"Поселение недоступно: "+equipmentReason(comm.reason)}] : []),
       {kind:"sect",label:t("ui.surfaceProfiles")},
       {kind:"surfaceProfile",
         namePlaceholder:t("ui.surfacePresetName"), saveLabel:t("ui.save"), copyLabel:t("ui.copyJson"),
@@ -156,5 +183,6 @@ export class LandingScene {
         import:file=>this.importProfiles(file), notice:()=>this.surfaceNotice()
       }
     ];
+    return spec;
   }
 }
