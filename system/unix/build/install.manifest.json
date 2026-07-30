@@ -260,8 +260,8 @@
     },
     {
       "path": "/usr/bin/scanner.bin",
-      "size": 5601,
-      "checksum": 2996986355,
+      "size": 10337,
+      "checksum": 3389350009,
       "uid": 0,
       "gid": 0,
       "mode": 493
@@ -436,8 +436,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/bin/scanner.asm",
-      "size": 2478,
-      "checksum": 3793916904,
+      "size": 17664,
+      "checksum": 1672424244,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -446,6 +446,14 @@
       "path": "/usr/src/pcos/system/unix/bin/sh.asm",
       "size": 15926,
       "checksum": 1968587609,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/switch.asm",
+      "size": 8216,
+      "checksum": 80367100,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -660,8 +668,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/build/scanner.bin",
-      "size": 5601,
-      "checksum": 2996986355,
+      "size": 10337,
+      "checksum": 3389350009,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -820,8 +828,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/include/syscall.inc",
-      "size": 1785,
-      "checksum": 3927758667,
+      "size": 1917,
+      "checksum": 2557770718,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -862,6 +870,22 @@
       "path": "/usr/src/pcos/system/unix/kernel/memory.asm",
       "size": 238,
       "checksum": 1627688884,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/net-buf.asm",
+      "size": 3474,
+      "checksum": 2942114827,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/kernel/net.asm",
+      "size": 7807,
+      "checksum": 1257255535,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -1011,6 +1035,6 @@
       "mode": 420
     }
   ],
-  "requiredBytes": 835353,
+  "requiredBytes": 879640,
   "bootFile": "kernel.bin"
 }

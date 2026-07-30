@@ -169,7 +169,17 @@ export const SYSCALLS=Object.freeze({
   /** Open the system-scanner UI associated with the current on-board PC.
    * It succeeds only while that PC is installed in an active system scene. */
   SCANNER_OPEN:0x55,
-  /* 0x56–0x5F reserved: gettimeofday, clock_gettime, nanosleep */
+  /** B=device_buf_ptr, C=device_buf_bytes — список сетевых устройств с MAC, типом, портами */
+  NET_INFO:0x56,
+  /** B=mac_ptr — проверка статуса линка для устройства */
+  NET_LINK_STATUS:0x57,
+  /** B=src_mac_ptr, C=dst_mac_ptr, D=frame_ptr — отправка Ethernet-фрейма; длина в поле данных фрейма */
+  NET_SEND:0x58,
+  /** B=mac_ptr, C=buf_ptr, D=buf_bytes — чтение входящего Ethernet-фрейма */
+  NET_RECV:0x59,
+  /** B=mac_ptr, C=cmd, D=data_ptr — device I/O (scanner/antenna/switch) */
+  NET_DEVICE_IO:0x5A,
+  /* 0x5B–0x5F reserved */
 
   /* --- графика (0x60–0x6F) --- */
   GFX_PIXEL:0x60,
@@ -482,6 +492,12 @@ export const SYSCALL_ARG_SPECS=Object.freeze({
   [SYSCALLS.SYSINFO]:    {B:"sysinfo_buf_ptr"},
   [SYSCALLS.HARDWARE_INFO]:{B:"buf_ptr", C:"buf_bytes"},
   [SYSCALLS.SCANNER_OPEN]:{},
+  // network
+  [SYSCALLS.NET_INFO]:       {B:"buf_ptr", C:"buf_bytes"},
+  [SYSCALLS.NET_LINK_STATUS]:{B:"mac_ptr"},
+  [SYSCALLS.NET_SEND]:       {B:"src_mac_ptr", C:"dst_mac_ptr", D:"frame_ptr"},
+  [SYSCALLS.NET_RECV]:       {B:"mac_ptr", C:"buf_ptr", D:"buf_bytes"},
+  [SYSCALLS.NET_DEVICE_IO]:  {B:"mac_ptr", C:"cmd", D:"data_ptr"},
   // graphics
   [SYSCALLS.GFX_PIXEL]:  {B:"x", C:"y"},
   [SYSCALLS.GFX_LINE]:   {B:"x1", C:"y1", D:"x2(ext)"},

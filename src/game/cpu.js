@@ -3,6 +3,9 @@
  *  компилируются в компактное внутреннее представление и исполняются в RAM. */
 import { BIOS_ASM } from "./bios.js";
 import { PixelOS } from "./os.js";
+import { ensureShipNetwork, networkTopology, scannerNetworkReadiness, scannerClientConfig, configureScannerClient, switchConfig, configureSwitch, dhcpLease, dhcpAll, udpSend, sendEthernet } from "./network.js";
+import { NetBufManager } from "./net-buf.js";
+import { ArpTable, macToString } from "./net-protocol.js";
 import { installPCFD } from "./installer.js";
 import {
   CONTEXT_FLAGS,CONTEXT_LAYOUT,PROTECTED_EXCEPTIONS,PROTECTED_FEATURE,
@@ -125,6 +128,7 @@ export class Assembler {
         labels.set(name,value(tokens[0]));continue;
       }
       if(op===".PROTECTED"){featureFlags|=PROTECTED_FEATURE;continue;}
+      if(op===".IMPORT"||op===".EXPORT"||op===".INCLUDE")continue;
       if(op===".ORG"){dataAddress=value(tokens[0]);if(pendingLabel)labels.set(pendingLabel,dataAddress);continue;}
       if(op===".BYTE"){
         if(pendingLabel)labels.set(pendingLabel,dataAddress);
@@ -732,6 +736,82 @@ export class CPU {
            * The callback is registered only by the active SystemScene, so
            * running scanner.bin outside a system cannot fabricate survey data. */
           return this.system?.openSystemScanner?.()?ok(0):fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+        /* --- сетевые сисколлы (0x56–0x5A) ---
+         * Ядро assembly получает через эти сисколлы доступ к симулируемому
+         * сетевому оборудованию (Ethernet, устройства). Пользовательские
+         * программы вызывают SYS_NET_*, ядро транслирует в JS-бридж.
+         * Все протоколы выше Ethernet (ARP, IP, UDP, TCP, DHCP, DNS)
+         * реализуются на assembly в ядре. */
+        case SYSCALLS.NET_INFO: {
+          /* B=device_buf_ptr, C=device_buf_bytes — список сетевых устройств.
+           * Каждый элемент: kind(u8), mac(6 байт), ports(u8), powered(u8).
+           * Ядро читает этот список при инициализации сетевой подсистемы. */
+          const data = this.system?.netInfo?.();
+          if (!data) return fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+          const size = Math.min(data.length, Math.max(0, this.r.C));
+          if (size) this.bytes.set(data.subarray(0, size), this.userRange(this.r.B, size, "write"));
+          return ok(size);
+        }
+        case SYSCALLS.NET_LINK_STATUS: {
+          /* B=mac_ptr — указатель на 6-байтный MAC в user memory.
+           * Возвращает A=1 если устройство подключено к коммутатору, иначе 0. */
+          const mac = this.bytes.subarray(this.userRange(this.r.B, 6, "read"), this.userRange(this.r.B, 6, "read") + 6);
+          const status = this.system?.netLinkStatus?.(mac);
+          return status !== undefined ? ok(status ? 1 : 0) : fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+        }
+        case SYSCALLS.NET_SEND: {
+          /* B=src_mac_ptr (6 байт), C=dst_mac_ptr (6 байт), D=frame_ptr.
+           * Фрейм хранится как: [2 байта длина, N байт данные].
+           * Отправляет Ethernet-фрейм в симулированную сеть. */
+          const srcMac = this.bytes.subarray(this.userRange(this.r.B, 6, "read"), this.userRange(this.r.B, 6, "read") + 6);
+          const dstMac = this.bytes.subarray(this.userRange(this.r.C, 6, "read"), this.userRange(this.r.C, 6, "read") + 6);
+          const framePtr = this.userRange(this.r.D, 2, "read");
+          const length = this.view.getUint16(framePtr, true);
+          const data = this.bytes.subarray(framePtr + 2, framePtr + 2 + length);
+          const result = this.system?.netSend?.(srcMac, dstMac, data);
+          return result?.ok ? ok(result.bytesSent || length) : fail(SYSCALL_ERRORS.IO);
+        }
+        case SYSCALLS.NET_RECV: {
+          /* B=mac_ptr (6 байт), C=buf_ptr, D=buf_bytes.
+           * Читает один входящий фрейм для устройства с данным MAC.
+           * Формат фрейма в буфере: [2 байта src_mac_offset(не используется), 2 байта длина, N байт данные].
+           * Возвращает A=количество прочитанных байт (0 если фреймов нет). */
+          const mac = this.bytes.subarray(this.userRange(this.r.B, 6, "read"), this.userRange(this.r.B, 6, "read") + 6);
+          const maxLen = Math.max(0, this.r.D);
+          if (maxLen < 4) return fail(SYSCALL_ERRORS.INVALID);
+          const frame = this.system?.netRecv?.(mac);
+          if (!frame || !frame.data || frame.data.length === 0) return ok(0);
+          const totalLen = Math.min(4 + frame.data.length, maxLen);
+          const out = this.userRange(this.r.C, totalLen, "write");
+          this.view.setUint16(out, 0, true);                  // резерв (смещение src MAC)
+          this.view.setUint16(out + 2, frame.data.length, true); // длина данных
+          if (totalLen > 4) this.bytes.set(frame.data.subarray(0, totalLen - 4), out + 4);
+          return ok(totalLen);
+        }
+        case SYSCALLS.NET_DEVICE_IO: {
+          /* B=mac_ptr (6 байт), C=cmd (u32), D=data_ptr.
+           * Команды ввода-вывода для устройств (сканер, антенна, коммутатор).
+           * cmd: 1=статус, 2=сканирование, 3=конфигурация DHCP, 4=конфигурация DNS.
+           * data_ptr указывает на структуру в user memory. */
+          const mac = this.bytes.subarray(this.userRange(this.r.B, 6, "read"), this.userRange(this.r.B, 6, "read") + 6);
+          const cmd = this.r.C | 0;
+          const dataPtr = this.r.D ? this.userRange(this.r.D, 256, "read") : 0; // максимум 256 байт данных
+          let payload = null;
+          if (dataPtr) {
+            const dataLen = Math.min(256, this.view.getUint16(dataPtr, true) || 256);
+            payload = this.bytes.subarray(dataPtr + 2, dataPtr + 2 + dataLen);
+          }
+          const result = this.system?.netDeviceIO?.(mac, cmd, payload);
+          if (!result) return fail(SYSCALL_ERRORS.NOT_SUPPORTED);
+          if (!result.ok) return fail(result.errno ? -result.errno : SYSCALL_ERRORS.IO);
+          // Записываем ответные данные, если есть
+          if (result.data && this.r.D) {
+            const outPtr = this.userRange(this.r.D, Math.min(result.data.length + 2, 258), "write");
+            this.view.setUint16(outPtr, result.data.length, true);
+            this.bytes.set(result.data.subarray(0, Math.min(result.data.length, 256)), outPtr + 2);
+          }
+          return ok(result.status || 0);
+        }
         case SYSCALLS.GFX_PIXEL:
           this.terminal?.pixel(this.r.A,this.r.B,this.terminal?.fg);return ok(0);
         case SYSCALLS.GFX_LINE:
@@ -1484,8 +1564,109 @@ export class ComputerRuntime {
         if(!block)return false;
         context.os.memory.freeBlock(block);return true;
       },
-      memInfo:()=>({free:context?.os?.memory.freeBytes()||0,total:context?.os?.memory.size||this.ramBytes})
-      ,sysInfo:()=>{
+      memInfo:()=>({free:context?.os?.memory.freeBytes()||0,total:context?.os?.memory.size||this.ramBytes}),
+      /* --- сетевые bridge-методы для SYS_NET_* сисколлов ---
+       * Каждый метод транслирует вызов из ядра assembly в JS-симуляцию сети.
+       * MAC-адреса передаются как Uint8Array(6). */
+      /** Возвращает бинарный буфер со списком сетевых устройств */
+      netInfo:() => {
+        if (!this._networkProp) return null;
+        const { nodes } = networkTopology(this._networkProp);
+        // Формат: [kind(u8)][mac(6)][ports(u8)][powered(u8)] = 9 байт на устройство
+        const data = new Uint8Array(nodes.length * 9);
+        const view = new DataView(data.buffer);
+        nodes.forEach((node, i) => {
+          const off = i * 9;
+          const kindMap = { computer: 1, switch: 2, scanner: 3, antenna: 4, weapon: 5, engine: 6, gyro: 7 };
+          data[off] = kindMap[node.kind] || 0;
+          const macParts = node.mac.split(":").map(h => parseInt(h, 16));
+          for (let j = 0; j < 6; j++) data[off + 1 + j] = macParts[j] || 0;
+          data[off + 7] = node.ports || 1;
+          data[off + 8] = node.powered ? 1 : 0;
+        });
+        return data;
+      },
+      /** Проверяет, подключён ли MAC к сети (есть хотя бы один линк) */
+      netLinkStatus: (mac) => {
+        if (!this._networkProp) return false;
+        const { nodes, links } = networkTopology(this._networkProp);
+        const macStr = [...mac].map(b => b.toString(16).padStart(2, "0")).join(":");
+        const node = nodes.find(n => n.mac === macStr);
+        if (!node) return false;
+        return links.some(link => link.a === node.id || link.b === node.id);
+      },
+      /** Отправка Ethernet-фрейма */
+      netSend: (srcMac, dstMac, data) => {
+        if (!this._networkProp) return { ok: false, reason: "no-network" };
+        const { nodes, byId } = networkTopology(this._networkProp);
+        const srcMacStr = [...srcMac].map(b => b.toString(16).padStart(2, "0")).join(":");
+        const dstMacStr = [...dstMac].map(b => b.toString(16).padStart(2, "0")).join(":");
+        const srcNode = nodes.find(n => n.mac === srcMacStr);
+        const dstNode = nodes.find(n => n.mac === dstMacStr);
+        if (!srcNode || !dstNode) return { ok: false, reason: "unknown-mac" };
+        const result = udpSend(this._networkProp, srcNode.id, dstNode.id, { raw: data });
+        if (result.ok) return { ok: true, bytesSent: data.length };
+        return { ok: false, reason: result.reason || "send-failed" };
+      },
+      /** Чтение входящего Ethernet-фрейма */
+      netRecv: (mac) => {
+        if (!this._networkProp) return null;
+        const { nodes, network } = networkTopology(this._networkProp);
+        const macStr = [...mac].map(b => b.toString(16).padStart(2, "0")).join(":");
+        const node = nodes.find(n => n.mac === macStr);
+        if (!node) return null;
+        // Ищем последний входящий фрейм для этого узла
+        const frameIndex = network.frames.findLastIndex(f => f.to === node.id);
+        if (frameIndex < 0) return null;
+        const frame = network.frames[frameIndex];
+        network.frames.splice(frameIndex, 1); // Удаляем прочитанный фрейм
+        const payload = frame.payload?.raw;
+        return payload ? { data: payload } : null;
+      },
+      /** Ввод-вывод устройства (сканер, антенна, коммутатор) */
+      netDeviceIO: (mac, cmd, payload) => {
+        if (!this._networkProp) return { ok: false, reason: "no-network" };
+        const { nodes, network } = networkTopology(this._networkProp);
+        const macStr = [...mac].map(b => b.toString(16).padStart(2, "0")).join(":");
+        const node = nodes.find(n => n.mac === macStr);
+        if (!node) return { ok: false, reason: "unknown-mac" };
+        const textEncoder = new TextEncoder();
+        const textDecoder = new TextDecoder();
+        switch (cmd) {
+          case 1: // Статус устройства
+            if (node.kind === "scanner") {
+              const status = JSON.stringify({ range: node.item?.stats?.range || 0, resolution: node.item?.stats?.resolution || 0 });
+              return { ok: true, data: textEncoder.encode(status), status: 1 };
+            }
+            if (node.kind === "antenna") {
+              const status = JSON.stringify({ range: node.item?.stats?.range || 0, channels: node.item?.stats?.channels || 0 });
+              return { ok: true, data: textEncoder.encode(status), status: 1 };
+            }
+            if (node.kind === "switch") {
+              const config = switchConfig(this._networkProp, node.id);
+              const status = JSON.stringify({ dhcpEnabled: config.dhcpEnabled, dnsEnabled: config.dnsEnabled, subnet: config.subnet, domain: config.domain, leaseMinutes: config.leaseMinutes });
+              return { ok: true, data: textEncoder.encode(status), status: 1 };
+            }
+            return { ok: true, data: textEncoder.encode("{}"), status: 0 };
+          case 3: // Конфигурация DHCP
+            if (node.kind === "switch" && payload) {
+              const patch = JSON.parse(textDecoder.decode(payload));
+              configureSwitch(this._networkProp, node.id, patch);
+              return { ok: true, status: 0 };
+            }
+            return { ok: false, reason: "not-switch" };
+          case 4: // Конфигурация DNS
+            if (node.kind === "switch" && payload) {
+              const patch = JSON.parse(textDecoder.decode(payload));
+              configureSwitch(this._networkProp, node.id, patch);
+              return { ok: true, status: 0 };
+            }
+            return { ok: false, reason: "not-switch" };
+          default:
+            return { ok: false, reason: "unknown-cmd" };
+        }
+      },
+      sysInfo:()=>{
         const os=context?.os,now=Date.now(),started=os?.startTime||now;
         const totalDrive=(this.parts.drive?.stats.capacityKb||0)*1024;
         const storage=os?.vfs?.fs?.storageInfo?.();

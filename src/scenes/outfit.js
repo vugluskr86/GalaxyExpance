@@ -429,6 +429,14 @@ export class OutfitScene {
         ]
       })) });
     spec.push(...this.pageControls("cargo",cargo));
+    /* --- сброс прогресса --- */
+    spec.push({ kind:"sect", label:t("ui.resetProgress") });
+    spec.push({ kind:"action", label:t("ui.resetProgress"), run:() => {
+      if (globalThis.confirm?.(t("ui.resetConfirm"))) {
+        globalThis.localStorage?.clear();
+        globalThis.location?.reload();
+      }
+    }});
     return spec;
   }
 }

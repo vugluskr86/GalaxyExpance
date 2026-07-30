@@ -18,7 +18,7 @@ export const HULL_MASS = 5.0;
 
 export class Propulsion {
   constructor(engineId = "eng_main", tankId = "tank_m",
-              hullId = "hull_std", scoopId = "scoop_fuel"){
+              hullId = "hull_dreadnought", scoopId = "scoop_fuel"){
     this.slots = {
       hull:   makeItem(hullId),
       engine: makeItem(engineId),
