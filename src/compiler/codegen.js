@@ -94,14 +94,33 @@ class CodeGen {
     }
   }
 
+  /** Emit a binary operation: moves operands to A/B, emits OP_A_B, moves result to destReg. */
+  emitBinOp(op, leftReg, rightReg, destReg) {
+    if (leftReg !== "A") this.emit(`MOV_A_${leftReg}`);
+    if (rightReg !== "B") {
+      if (rightReg === "A") this.emit("MOV_B_A");
+      else if (rightReg === "C") this.emit("MOV_B_C");
+      else if (rightReg === "D") this.emit("MOV_B_D");
+      // if rightReg is B, already there
+    }
+    this.emit(`${op}_A_B`);
+    if (destReg !== "A") {
+      if (destReg === "B") this.emit("MOV_B_A");
+      else if (destReg === "C") this.emit("MOV_C_A");
+      else if (destReg === "D") this.emit("MOV_D_A");
+    }
+  }
+
   // ─── String literals ──────────────────────────────────────────────────
 
   /** Emit all string literals into the .DATA section. */
   emitStrings() {
     const strings = this.program.strings || [];
+    if (!strings.length) return;
+    this.emit("");
+    this.emit(".DATA");
     for (let i = 0; i < strings.length; i++) {
       const label = this.newStringLabel();
-      this.emit("");
       this.emit(`${label}: .string "${escapeAsm(strings[i])}"`);
     }
   }
@@ -430,19 +449,20 @@ class CodeGen {
   // ─── Function calls ─────────────────────────────────────────────────────
 
   generateCall(node, destReg) {
-    // Push args in reverse order
+    // Push args in reverse order. PCVM only has PUSH_A/POP_A — move to A first.
     for (let i = node.args.length - 1; i >= 0; i--) {
       const argReg = this.allocReg();
       this.generateExpr(node.args[i], argReg);
-      this.emit(`PUSH_${argReg}`);
+      if (argReg !== "A") this.emit(`MOV_A_${argReg}`);
+      this.emit("PUSH_A");
       this.freeReg(argReg);
     }
 
     this.emit(`CALL ${node.callee}`);
 
-    // Pop args
+    // Pop args (discard)
     for (let i = 0; i < node.args.length; i++) {
-      this.emit("POP_B"); // discard
+      this.emit("POP_A");
     }
 
     // Result is in A
@@ -482,10 +502,13 @@ class CodeGen {
         this.loadInt(node.value, destReg);
         break;
 
-      case AST.STRING_LITERAL:
-        // Load address of string constant
-        this.emit(`LOAD_${destReg} ${node.value}`);
+      case AST.STRING_LITERAL: {
+        // Reference the label in the .DATA string pool
+        const idx = this.program.strings ? this.program.strings.indexOf(node.value) : -1;
+        const label = idx >= 0 ? `__c_str${idx}` : `__c_str${this.stringLabelCounter++}`;
+        this.emit(`LOAD_${destReg} ${label}`);
         break;
+      }
 
       case AST.IDENTIFIER:
         // Load variable
@@ -500,10 +523,10 @@ class CodeGen {
         this.generateExpr(node.right, rightReg);
 
         switch (node.op) {
-          case "+": this.emit(`ADD_${leftReg}_${rightReg}`); break;
-          case "-": this.emit(`SUB_${leftReg}_${rightReg}`); break;
-          case "*": this.emit(`MUL_${leftReg}_${rightReg}`); break;
-          case "/": this.emit(`DIV_${leftReg}_${rightReg}`); break;
+          case "+": this.emitBinOp("ADD", leftReg, rightReg, leftReg); break;
+          case "-": this.emitBinOp("SUB", leftReg, rightReg, leftReg); break;
+          case "*": this.emitBinOp("MUL", leftReg, rightReg, leftReg); break;
+          case "/": this.emitBinOp("DIV", leftReg, rightReg, leftReg); break;
           case "%":
             // Modulo via division + multiplication + subtraction
             this.emit(`MOV_C_A`);
@@ -528,16 +551,19 @@ class CodeGen {
             this.emit(`LOAD_${destReg} 0`);
             this.emit(`__c_ne${this.labelCounter++}:`);
             break;
-          case "<":
-            this.emit(`CMP_${leftReg}_${rightReg}`);
-            this.emit(`LOAD_${destReg} 1`);
-            // JLT not available — use subtraction result
-            this.emit(`SUB_${leftReg}_${rightReg}`);
-            this.emit(`LOAD_${destReg} 0`);
-            this.emit(`JPOS __c_lt${this.labelCounter}`);
-            this.emit(`LOAD_${destReg} 1`);
-            this.emit(`__c_lt${this.labelCounter++}:`);
+          case "<": {
+            // left < right  ⇔  (left - right) has sign bit set
+            this.emitBinOp("SUB", leftReg, rightReg, "A");  // A = left - right
+            const skipLt = this.newLabel("lt");
+            if (leftReg !== "A") { this.emit(`MOV_A_${leftReg}`); }
+            this.emit(`LOAD_B 0x80000000`);                 // sign bit mask (int32 min)
+            this.emit("AND_A_B");                           // isolate sign bit
+            this.emit(`LOAD_${destReg} 1`);                 // assume true (negative)
+            this.emit(`JNZ ${skipLt}`);                     // sign bit set → negative → true
+            this.emit(`LOAD_${destReg} 0`);                 // else false
+            this.emit(`${skipLt}:`);
             break;
+          }
           case "<=":
           case ">":
           case ">=":
@@ -545,23 +571,23 @@ class CodeGen {
             this.loadInt(1, destReg);
             break;
           case "&&":
-            this.emit(`AND_${leftReg}_${rightReg}`);
+            this.emitBinOp("AND", leftReg, rightReg, leftReg);
             if (destReg !== leftReg) this.emit(`MOV_${destReg}_${leftReg}`);
             break;
           case "||":
-            this.emit(`OR_${leftReg}_${rightReg}`);
+            this.emitBinOp("OR", leftReg, rightReg, leftReg);
             if (destReg !== leftReg) this.emit(`MOV_${destReg}_${leftReg}`);
             break;
           case "&":
-            this.emit(`AND_${leftReg}_${rightReg}`);
+            this.emitBinOp("AND", leftReg, rightReg, leftReg);
             if (destReg !== leftReg) this.emit(`MOV_${destReg}_${leftReg}`);
             break;
           case "|":
-            this.emit(`OR_${leftReg}_${rightReg}`);
+            this.emitBinOp("OR", leftReg, rightReg, leftReg);
             if (destReg !== leftReg) this.emit(`MOV_${destReg}_${leftReg}`);
             break;
           case "^":
-            this.emit(`XOR_${leftReg}_${rightReg}`);
+            this.emitBinOp("XOR", leftReg, rightReg, leftReg);
             if (destReg !== leftReg) this.emit(`MOV_${destReg}_${leftReg}`);
             break;
           case "<<":

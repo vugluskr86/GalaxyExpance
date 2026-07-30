@@ -3,6 +3,10 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {Assembler} from "../src/game/cpu.js";
 import {AssemblyCompiler,Linker} from "../src/game/toolchain.js";
+import { preprocess } from "../src/compiler/preprocessor.js";
+import { lex, TokenStream } from "../src/compiler/lexer.js";
+import { Parser } from "../src/compiler/parser.js";
+import { generate } from "../src/compiler/codegen.js";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const unix=path.join(root,"system","unix"),build=path.join(unix,"build");
@@ -17,20 +21,47 @@ const shellParser=compile("lib/shell-parser.asm");
 const names=["ls","cat","grep","cp","mv","mkdir","rm","link","chown","chgrp","user","find","ps"];
 const programs=[["bin/sh.asm","sh.bin",[shellParser]],
   ...names.map(name=>[`bin/${name}.asm`,`${name}.bin`,[utilities]]),
-  // Applications belong to /usr/bin in the install manifest.  Keep this
-  // separate from the small core-utility list above: scanner only needs libc.
-  ["bin/scanner.asm","scanner.bin",[]]];
+  // Scanner is now a C program (examples/c/scanner.c).  Compile it with the
+  // host-side C compiler, then assemble + link with libc.
+  [null,"scanner.bin",[]]];
 
 let stale=false;
 for(const [source,name,extra] of programs){
+  if(source===null)continue; // scanner handles itself below
   const binary=linker.link([libc[0],compile(source),...extra,...libc.slice(1)],{entry:"main"});
   const target=path.join(build,name),old=fs.existsSync(target)?fs.readFileSync(target):null;
   if(!old||Buffer.compare(old,Buffer.from(binary))!==0)stale=true;
   if(!check){fs.mkdirSync(build,{recursive:true});fs.writeFileSync(target,binary);}
 }
+
+// Scanner is a C program compiled as a standalone PCVM binary (not PCOS libc).
+// Link with the C compiler's syscall wrappers, not the PCOS assembly libc.
+{
+  const scannerC=path.join(root,"examples","c","scanner.c");
+  const includes=[path.join(root,"libc","include")];
+  const syscallsAsm=path.join(root,"libc","sys","syscalls.asm");
+  console.error("Compiling scanner.c (C compiler)...");
+  const cSource=fs.readFileSync(scannerC,"utf-8");
+  const ppSource=preprocess(cSource,{sourceDir:path.dirname(scannerC),systemDirs:includes});
+  const tokens=lex(ppSource);
+  const stream=new TokenStream(tokens);
+  const parser=new Parser(stream);
+  const ast=parser.parseProgram();
+  const asmSource=generate(ast,{moduleName:"main"});
+  if (!check) fs.writeFileSync(path.join(build,"scanner.asm"), asmSource);
+  const scannerObj=compiler.compile(asmSource,"main");
+  const syscallsObj=compiler.compile(fs.readFileSync(syscallsAsm,"utf-8"),"syscalls");
+  const scannerBin=linker.link([scannerObj,syscallsObj],{entry:"main"});
+  const target=path.join(build,"scanner.bin");
+  const old=fs.existsSync(target)?fs.readFileSync(target):null;
+  if(!old||Buffer.compare(old,Buffer.from(scannerBin))!==0)stale=true;
+  if(!check){fs.mkdirSync(build,{recursive:true});fs.writeFileSync(target,scannerBin);}
+  console.error("  scanner.bin " + (scannerBin.length/1024).toFixed(1) + " KB");
+}
+
 if(check&&stale){
   console.error("Stage 7/8 binaries are stale; run node scripts/build-unix-stage7-8.mjs");
   process.exit(1);
 }
 console.log(check?"OK: Stage 7/8 binaries are current":
-  `OK: built sh and ${names.length} separate utility binaries`);
+  `OK: built sh, ${names.length} utils and scanner (C)`);

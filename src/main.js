@@ -228,9 +228,13 @@ document.addEventListener("keyup", e => {
 
 const npTitle = document.getElementById("npTitle");
 const npInfo = document.getElementById("npInfo");
+const npPerf = document.getElementById("npPerf");
 const btnBack = document.getElementById("btnBack");
 
 let last = performance.now();
+/* ── Профайлинг-аккумуляторы (сброс каждые ~1 сек) ── */
+let perfFrames = 0, perfUpdate = 0, perfDraw = 0, perfLastDump = performance.now();
+const PERF_DUMP_INTERVAL = 1000;
 function loop(nowMs){
   const rawDt = Math.min(0.1, (nowMs - last)/1000);
   last = nowMs;
@@ -239,9 +243,21 @@ function loop(nowMs){
   const warp = Math.min(settings.speed, cap);
   const dt = rawDt * warp;
   const t = nowMs/1000;
+  const t0 = performance.now();
   mgr.update(dt, t);
+  const t1 = performance.now();
   syncTerminalVisibility();
   mgr.draw(t);
+  const t2 = performance.now();
+  /* накопление метрик */
+  perfFrames++; perfUpdate += t1 - t0; perfDraw += t2 - t1;
+  if (nowMs - perfLastDump >= PERF_DUMP_INTERVAL) {
+    const fps = Math.round(perfFrames / ((nowMs - perfLastDump) / 1000));
+    const avgU = (perfUpdate / perfFrames).toFixed(1);
+    const avgD = (perfDraw / perfFrames).toFixed(1);
+    if (npPerf) npPerf.textContent = `FPS:${fps} | upd:${avgU}ms | draw:${avgD}ms`;
+    perfFrames = 0; perfUpdate = 0; perfDraw = 0; perfLastDump = nowMs;
+  }
   const st = mgr.current?.status?.();
   if (st){
     npTitle.textContent = tr(st.title);

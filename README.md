@@ -112,3 +112,40 @@ WebGL-миграция (попытка ускорить рендеринг пл�
 проблем с синхронизацией канвасов (parallax орбит и планет), потерей
 пиксель-арт-текстур и нестабильностью на малом разрешении 420×420.
 Рендеринг остаётся на проверенном Canvas 2D.
+
+## Документация
+
+| Документ | Описание |
+|----------|----------|
+| [GAME_MECHANICS.md](GAME_MECHANICS.md) | **Все игровые механики**: 19 систем, чек-листы, статус, приоритеты P1–P6, дорожная карта (~517ч) |
+| [ROADMAP.md](ROADMAP.md) | Техническая дорожная карта: подсистемы, готовность, оптимизации |
+| [BUGFIX_AND_SYSTEMS_PLAN.md](BUGFIX_AND_SYSTEMS_PLAN.md) | Бэклог B0–B12 с приоритетами и критериями готовности |
+| [C_COMPILER_PLAN.md](C_COMPILER_PLAN.md) | C компилятор: архитектура, статус, этапы |
+| [PERF_PLAN.md](PERF_PLAN.md) | Профилирование CPU и памяти: метрики, утилиты, быстрые победы |
+| [SCAN_DESIGN.md](SCAN_DESIGN.md) | Сканирование, зонды, картографические данные |
+| [ECONOMY_ROADMAP.md](ECONOMY_ROADMAP.md) | Экономика и живой мир |
+| [PHYSICS.md](PHYSICS.md) | Орбитальная механика: патч-коники, единицы |
+| [ASSEMBLER.md](ASSEMBLER.md) | Ассемблер PCVM и PCOB формат |
+| [OS.md](OS.md) | Операционная система PCOS |
+| [NPC_AGENTS.md](NPC_AGENTS.md) | NPC-агенты и их поведение |
+| [COMPUTERS.md](COMPUTERS.md) | Внутриигровые компьютеры |
+| [ALIEN_CIV.md](ALIEN_CIV.md) | Чужие цивилизации |
+
+## Инструменты разработчика
+
+```bash
+# Профилирование CPU
+node scripts/analyze-trace.mjs summary prof/Trace-*.json
+node scripts/parse-perf-marks.mjs prof/Trace-*.json --cut-first 5
+
+# Профилирование памяти
+node scripts/diff-heap-snapshots.mjs prof/snap1.heapsnapshot prof/snap2.heapsnapshot
+node scripts/analyze-heap.mjs prof/Heap-*.heapprofile --by-file
+
+# В игре (консоль DevTools):
+#   window.__PERF_MARKS = true   — включить кастомные метки
+#   mem.start(5000)              — мониторинг JS heap (загрузить scripts/memory-sampler.js)
+#   mem.measure(7)               — тест на утечку при переходах сцен
+#   mem.analyze()                — диагностика сцены и DOM
+```
+

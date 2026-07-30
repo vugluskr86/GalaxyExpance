@@ -212,14 +212,8 @@ passwd.bin: passwd.obj
 	$(LINK) passwd.obj ; mv.bin a.bin passwd.bin
 
 # ======== Applications (/usr/bin) ========
-build/scanner.asm: build/libc.asm bin/scanner.asm
-	cat.bin build/libc.asm > build/scanner.asm ; cat.bin bin/scanner.asm >> build/scanner.asm
-
-scanner.obj: build/scanner.asm
-	$(ASM) build/scanner.asm ; mv.bin a.obj scanner.obj
-
-scanner.bin: scanner.obj
-	$(LINK) scanner.obj ; mv.bin a.bin scanner.bin
+# scanner.bin is pre-built by the host-side C compiler (scripts/build-unix-stage7-8.mjs).
+# It is not rebuildable inside PCVM until the in-game C compiler is available.
 
 # ======== Stage 4: kernel ========
 build/kernel.asm: kernel/entry.asm kernel/syscall.asm kernel/process.asm kernel/scheduler.asm kernel/memory.asm kernel/vfs.asm kernel/permissions.asm kernel/devices.asm

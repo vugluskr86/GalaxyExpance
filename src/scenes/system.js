@@ -429,6 +429,7 @@ export class SystemScene {
     return s.kind === "moon" ? base + " " + (ROM[s.j] || "") : base;
   }
   update(dt){
+    if (window.__PERF_MARKS) performance.mark("sys-upd-start");
     stepSystem(this.S, dt);
     this.updatePlayerOrder();
     if (this.playerShip) this.playerShip.update(dt, this);
@@ -458,8 +459,23 @@ export class SystemScene {
        payload. 3 seconds minimum between saves keeps the same feel at 1× but
        stays safe at 100×. */
     const nowReal=performance.now();
-    if(this.world&&(!this._lastSaveReal||nowReal-this._lastSaveReal>=3000)){
-      this.world.capture(this);this.world.persist();this._lastSaveReal=nowReal;
+    if(this.world&&!this._noSave&&(!this._lastSaveReal||nowReal-this._lastSaveReal>=3000)){
+      if (window.__PERF_MARKS) performance.mark("sys-save-start");
+      this.world.capture(this);this._lastSaveReal=nowReal;
+      /* localStorage.setItem блокирует главный поток на десятки мс —
+         выносим запись в макротаску, чтобы не ронять кадр. */
+      const world = this.world;
+      setTimeout(() => {
+        world.persist();
+        if (window.__PERF_MARKS) {
+          performance.mark("sys-save-end");
+          performance.measure("save", "sys-save-start", "sys-save-end");
+        }
+      }, 0);
+    }
+    if (window.__PERF_MARKS) {
+      performance.mark("sys-upd-end");
+      performance.measure("sys-update", "sys-upd-start", "sys-upd-end");
     }
   }
   drawWorldCircleAt(cx, cy, r, col, skip){
@@ -511,6 +527,7 @@ export class SystemScene {
     }
   }
   draw(t){
+    if (window.__PERF_MARKS) performance.mark("sys-draw-start");
     const { sctx, SCR } = this.ctx;
     const S = this.S;
     if (this.nebCvs){
@@ -696,6 +713,10 @@ export class SystemScene {
     if(this.hover&&!sameSystemObject(this.hover,this.sel))
       drawBracket(this.hover,"#7ee0ff");
     if(this.sel)drawBracket(this.sel,"#ffd166");
+    if (window.__PERF_MARKS) {
+      performance.mark("sys-draw-end");
+      performance.measure("sys-draw", "sys-draw-start", "sys-draw-end");
+    }
   }
   drawLabels(){
     if (this.S.bhOnly) return;
