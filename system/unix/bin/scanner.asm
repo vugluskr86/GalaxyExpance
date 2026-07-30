@@ -169,13 +169,15 @@ main:
 
 main_loop:
   CALL draw_screen
-  YIELD                     ; cooperatively yield to scheduler — redraws once per tick
-  SYSCALL 0x70              ; INPUT_KEY
+  SYSCALL 0x70              ; INPUT_KEY — must check before yielding so the
+                            ; scanner can grab the key before the shell does.
   MOV_A_D
   LOAD_D 0
   CMP_A_D
-  JZ main_loop
+  JZ main_yield
   CALL handle_key
+main_yield:
+  YIELD                     ; cooperatively yield to scheduler — redraws once per tick
   JMP main_loop
 
 ; =============================================================================
