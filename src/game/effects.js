@@ -22,7 +22,7 @@ const weaponKind=spec=>spec?.weaponType==="nuclear"?"nuclearHit":spec?.weaponTyp
 
 export class EffectPool {
   constructor(seed=1){this.seed=seed>>>0;this.sequence=0;this.particles=[];this.engineClock=new WeakMap();}
-  cap(lod=1){const caps=[configValue("effects.lod0Cap"),configValue("effects.lod1Cap"),configValue("effects.lod2Cap")];return caps[Math.max(0,Math.min(caps.length-1,lod|0))];}
+  cap(lod=1){const caps=[configValue("effects.maxParticlesLod0"),configValue("effects.maxParticlesLod1"),configValue("effects.maxParticlesLod2")];return caps[Math.max(0,Math.min(caps.length-1,lod|0))];}
   _rand(salt){return (hash2i(this.seed,this.sequence,salt)>>>0)/0x100000000;}
   emit(kind,x,y,{count=8,scale=1,vx=0,vy=0}={},lod=1){
     const cap=this.cap(lod),colors=palettes[kind]||palettes.hull,available=Math.max(0,cap-this.particles.length),take=Math.min(available,Math.max(0,count|0));

@@ -110,11 +110,30 @@ export class WorldSave {
   constructor(data={}){this.data={version,clusterSeed:data.clusterSeed??null,galaxyIndex:data.galaxyIndex??0,location:data.location??null,player:data.player??{},systems:data.systems??{},economy:data.economy??null,intel:data.intel??null};}
   key(galaxy,star){return systemId(galaxy.def.seed,galaxy.systemSeedOf(star));}
   legacyKey(galaxy,star){return `${galaxy.def.seed}:${galaxy.systemSeedOf(star)}`;}
+  /** Keep only the most recently visited systems. Without a cap the JSON
+   * payload grows without bound as the player explores, turning autosave
+   * + localStorage.setItem into an O(n) pause that grows every visit. */
+  _pruneSystems(currentKey){
+    const entries=Object.entries(this.data.systems);
+    if(entries.length<=5)return;
+    entries.sort(([,a],[,b])=>(b._ts||0)-(a._ts||0));
+    const pruned={};
+    for(let i=0;i<Math.min(5,entries.length);i++){
+      pruned[entries[i][0]]=entries[i][1];
+    }
+    /* Always keep the current system even if it's not in the top 5 by timestamp. */
+    if(!pruned[currentKey]&&this.data.systems[currentKey]){
+      pruned[currentKey]=this.data.systems[currentKey];
+    }
+    this.data.systems=pruned;
+  }
   capture(scene,galaxyIndex=this.data.galaxyIndex){
     const key=this.key(scene.g,scene.star);
     this.data.galaxyIndex=galaxyIndex;this.data.player={fuel:player.fuel,credits:player.credits,lastGal:player.lastGal,lastPos:player.lastPos};this.data.location={key,star:{x:scene.star.x,y:scene.star.y,kind:scene.star.kind,ci:scene.star.ci,name:scene.star.name}};
-    this.data.systems[key]={orbit:snapshotOrbit(scene.S),player:snapshotShip(scene.playerShip),cargo:snapshotFloatingItems(scene.cargoField),probes:(scene.probes||[]).map(probe=>({...probe,target:{...probe.target}})),npcs:scene.npcs.map(npc=>({name:npc.name,ship:snapshotShip(npc.ship),economy:npc.economy?JSON.parse(JSON.stringify(npc.economy)):null,agent:{goal:npc.agent.state.goal,credits:npc.agent.state.credits,blackboard:{...(npc.agent.state.blackboard||{})}}})),selected:scene.sel?{...scene.sel}:null,orbitAlt:scene.orbitAlt};
-    return this.data.systems[key];
+    const entry={_ts:Date.now(),orbit:snapshotOrbit(scene.S),player:snapshotShip(scene.playerShip),cargo:snapshotFloatingItems(scene.cargoField),probes:(scene.probes||[]).map(probe=>({...probe,target:{...probe.target}})),npcs:scene.npcs.map(npc=>({name:npc.name,ship:snapshotShip(npc.ship),economy:npc.economy?JSON.parse(JSON.stringify(npc.economy)):null,agent:{goal:npc.agent.state.goal,credits:npc.agent.state.credits,blackboard:{...(npc.agent.state.blackboard||{})}}})),selected:scene.sel?{...scene.sel}:null,orbitAlt:scene.orbitAlt};
+    this.data.systems[key]=entry;
+    this._pruneSystems(key);
+    return entry;
   }
   restore(scene){
     const key=this.key(scene.g,scene.star);const state=this.data.systems[key]??this.data.systems[this.legacyKey(scene.g,scene.star)];if(!state)return false;

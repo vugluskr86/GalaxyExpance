@@ -452,8 +452,15 @@ export class SystemScene {
       this.cam.x += (camTgt[0] - this.cam.x)*k;
       this.cam.y += (camTgt[1] - this.cam.y)*k;
     }
-    this._saveClock=(this._saveClock||0)+dt;
-    if(this.world&&this._saveClock>=8){this.world.capture(this);this.world.persist();this._saveClock=0;}
+    /* Autosave throttled to real wall-clock time, not game time. Under high
+       warp the old "every 8 game seconds" rule fired localStorage.setItem
+       several times per second, freezing the main thread with a growing JSON
+       payload. 3 seconds minimum between saves keeps the same feel at 1× but
+       stays safe at 100×. */
+    const nowReal=performance.now();
+    if(this.world&&(!this._lastSaveReal||nowReal-this._lastSaveReal>=3000)){
+      this.world.capture(this);this.world.persist();this._lastSaveReal=nowReal;
+    }
   }
   drawWorldCircleAt(cx, cy, r, col, skip){
     const { sctx, SCR } = this.ctx;
