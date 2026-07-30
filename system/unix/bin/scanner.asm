@@ -169,6 +169,7 @@ main:
 
 main_loop:
   CALL draw_screen
+  YIELD                     ; cooperatively yield to scheduler — redraws once per tick
   SYSCALL 0x70              ; INPUT_KEY
   MOV_A_D
   LOAD_D 0

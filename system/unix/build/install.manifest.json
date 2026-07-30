@@ -260,8 +260,8 @@
     },
     {
       "path": "/usr/bin/scanner.bin",
-      "size": 10337,
-      "checksum": 3389350009,
+      "size": 10339,
+      "checksum": 132547458,
       "uid": 0,
       "gid": 0,
       "mode": 493
@@ -436,8 +436,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/bin/scanner.asm",
-      "size": 17664,
-      "checksum": 1672424244,
+      "size": 17753,
+      "checksum": 3558970396,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -668,8 +668,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/build/scanner.bin",
-      "size": 10337,
-      "checksum": 3389350009,
+      "size": 10339,
+      "checksum": 132547458,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -1035,6 +1035,6 @@
       "mode": 420
     }
   ],
-  "requiredBytes": 879640,
+  "requiredBytes": 879733,
   "bootFile": "kernel.bin"
 }
