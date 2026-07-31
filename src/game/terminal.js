@@ -31,11 +31,24 @@ export class ComputerTerminal {
   bind(){
     const c=this.canvas;
     c.addEventListener("keydown",e=>{
-      const key={key:e.key,code:e.code,keyCode:e.keyCode || e.key.charCodeAt(0) || 0};
+      const special={
+        Escape:27, Tab:9, Enter:13, Backspace:8,
+        ArrowLeft:37, ArrowUp:38, ArrowRight:39, ArrowDown:40,
+        Home:36, End:35, PageUp:33, PageDown:34, Delete:46, Insert:45
+      };
+      const printable=(typeof e.key==="string" && e.key.length===1) ? e.key.charCodeAt(0) : 0;
+      const keyCode=special[e.key] || printable || Number(e.keyCode) || Number(e.which) || 0;
+      const key={key:e.key,code:e.code,keyCode};
       if([...this.keyListeners].some(listener=>listener(key))){
         e.preventDefault();e.stopPropagation();return;
       }
       this.keys.push(key);
+      // Graphics applications own raw keyboard input.  Do not pass the same
+      // event to the shell line editor: doing so briefly repaints the PCOS
+      // prompt over the framebuffer before the application draws its next frame.
+      if(this.mode==="graphics"){
+        e.preventDefault();e.stopPropagation();return;
+      }
       if(e.ctrlKey&&e.code==="KeyC"){
         this.inputLine="";this.lines.push("");this.lineQueue.push("\x03");
         for(const fn of this.lineListeners)fn("\x03");
@@ -59,7 +72,7 @@ export class ComputerTerminal {
     // The framed display is also a terminal control.  A click on its title or
     // bezel must restore keyboard focus just like a click on the phosphor.
     c.closest?.(".terminal-frame")?.addEventListener("pointerdown",()=>this.focus());
-    c.addEventListener("focus",()=>this.renderText());
+    c.addEventListener("focus",()=>{ if(this.mode==="text") this.renderText(); });
     c.addEventListener("pointerup",mouse);
     c.addEventListener("wheel",e=>{ this.mouse.wheel+=Math.sign(e.deltaY); e.preventDefault(); },{passive:false});
     c.addEventListener("contextmenu",e=>e.preventDefault());
@@ -67,6 +80,10 @@ export class ComputerTerminal {
   setMode(mode){
     if (mode !== "text" && mode !== "graphics") throw new Error("режим терминала: text или graphics");
     this.mode=mode; this.clear();
+    // A PCOS graphical application owns the keyboard. The shell command is
+    // often submitted from another focused control, so explicitly move focus
+    // to the terminal canvas when graphics mode starts.
+    if(mode==="graphics") this.focus();
   }
   color(value){
     if (typeof value === "string" && value.startsWith("#")) return value;
@@ -119,6 +136,14 @@ export class ComputerTerminal {
     if(this.mode!=="graphics" || !this.ctx)return;
     this.ctx[fill?"fillStyle":"strokeStyle"]=this.color(color);
     this.ctx.beginPath(); this.ctx.arc(x,y,r,0,Math.PI*2); this.ctx[fill?"fill":"stroke"]();
+  }
+  text(x,y,value,color=this.fg){
+    if(this.recording){ this.frameCommands.push(["text",x,y,String(value),color]); return; }
+    if(this.mode!=="graphics" || !this.ctx)return;
+    this.ctx.fillStyle=this.color(color);
+    this.ctx.font=`${this.fontSize}px monospace`;
+    this.ctx.textBaseline="top";
+    this.ctx.fillText(String(value),Math.trunc(x),Math.trunc(y));
   }
   readKey(){ return this.keys.shift() || null; }
   focus(){this.canvas?.focus?.({preventScroll:true});}

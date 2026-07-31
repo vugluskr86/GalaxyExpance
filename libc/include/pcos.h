@@ -13,7 +13,10 @@ void _sys_gfx_begin(void);
 void _sys_gfx_frame(int delay_ms);
 void _sys_gfx_end(void);
 void _sys_gfx_rect(int x, int y, int w, int h);
+void _sys_gfx_line(int x1, int y1, int x2, int y2);
+void _sys_gfx_circle(int x, int y, int radius, int fill);
 void _sys_gfx_pixel(int x, int y, int color);
+void _sys_gfx_text(int x, int y, int text, int len);
 
 /* Input */
 int _sys_input_key(void);

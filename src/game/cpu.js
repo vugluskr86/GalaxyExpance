@@ -463,7 +463,12 @@ export class CPU {
     try{
       switch(number){
         case SYSCALLS.EXIT:
-          this.system?.procExit?.(this.r.A);return ok(this.r.A);
+          // EXIT never returns to user code. Mark the current quantum finished
+          // after notifying the process manager, otherwise the wrapper RET can
+          // continue into a dead process (or fault with RET without CALL).
+          this.system?.procExit?.(this.r.A);
+          this.requestYield=true;
+          return ok(this.r.A);
         case SYSCALLS.YIELD:
           this.system?.yield?.();this.requestYield=true;return ok(0);
         case SYSCALLS.SPAWN: {
@@ -827,6 +832,11 @@ export class CPU {
           this.terminal?.animationFrame(this.r.A);return ok(0);
         case SYSCALLS.GFX_END:
           this.terminal?.endAnimation();return ok(0);
+        case SYSCALLS.GFX_TEXT: {
+          const text=this.userText(this.r.C,this.r.D);
+          this.terminal?.text(this.r.A,this.r.B,text,this.terminal?.fg);
+          return ok(this.r.D);
+        }
         case SYSCALLS.INPUT_KEY: {
           const key=this.terminal?.readKey();
           return ok(key?.keyCode||0);

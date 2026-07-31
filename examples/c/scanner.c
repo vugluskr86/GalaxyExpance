@@ -1,274 +1,148 @@
-/* scanner.c — Self-hosted scanner v4.0 (C + libc)
- * ============================================================================
- * Режим 0: System Scanner — спектр, список целей, настройки
- * Режим 1: Planetary Survey — орбитальный вид, зонд, данные планеты
- * Переключение режимов: Tab (9)
- *
- * Target list queried from fitted scanner hardware via _sys_scan_list().
- * ============================================================================
- */
+/* scanner.c — PCOS graphical scanner. All UI and interaction execute inside PCVM. */
 #include <pcos.h>
-#include <stdio.h>
 
-/* ─── Константы клавиш ────────────────────────────────────────────────── */
-#define KEY_ESC     27
-#define KEY_TAB     9
-#define KEY_ENTER   13
-#define KEY_LEFT    37
-#define KEY_RIGHT   39
-#define KEY_UP      38
-#define KEY_DOWN    40
-#define KEY_R       82
-#define KEY_r       114
-#define KEY_S       83
-#define KEY_s       115
-#define KEY_D       68
-#define KEY_d       100
-#define KEY_B       66
-#define KEY_b       98
-#define KEY_P       80
-#define KEY_p       112
-#define KEY_W       87
-#define KEY_w       119
+#define ESC 27
+#define TAB 9
+#define ENTER 13
+#define LEFT 37
+#define UP 38
+#define RIGHT 39
+#define DOWN 40
+#define MODE_SYSTEM 0
+#define MODE_PLANET 1
 
-/* ─── Режимы ───────────────────────────────────────────────────────────── */
-#define MODE_SCANNER  0
-#define MODE_PLANET   1
+static int mode;
+static int selected;
+static int lock_quality;
+static int frequency;
+static int bandwidth;
+static int bearing;
+static int probe_deployed;
+static int probe_battery;
+static int surface_progress;
+static int last_key;
+static int running;
+static int highlight_y;
+static int marker_x;
+static int scan_width;
 
-/* ─── Глобальные переменные ──────────────────────────────────────────── */
-static int var_mode;
-static int var_sel;
-static int var_freq;
-static int var_bw;
-static int var_beam;
-static int var_pol;
-static int var_bearing;
-static int var_rx;
-static int var_tx;
-static int var_prog;
-static int var_scan;
-static int var_probe;
-static int var_surf;
 
-/* ─── Текстовые константы ─────────────────────────────────────────────── */
-static const char* s_title_sys = "SCANOS v4.0 :: SYSTEM SCANNER (C)";
-static const char* s_title_pln = "SCANOS v4.0 :: PLANETARY SURVEY";
-static const char* s_targets   = "TARGETS:";
-static const char* s_help0     = "[Tab]planet [Enter]scan [S]save [Esc]exit";
-static const char* s_help_p    = "[Tab]scanner [D]eploy [S]can [B]ack";
-static const char* s_freq_lbl  = "Freq: ";
-static const char* s_bw_lbl    = "  BW: ";
-static const char* s_beam_lbl  = "Beam: ";
-static const char* s_pol_lbl   = "  Pol: ";
-static const char* s_signal    = "SIGNAL: ";
-static const char* s_mhz       = " MHz ";
-static const char* s_deg       = " deg ";
-static const char* s_nl        = "\n";
-static const char* s_bar_full  = "########";
-static const char* s_bar_half  = "####----";
-static const char* s_bar_low   = "#-------";
 
-/* Buffer pointer for scanner target list (filled by _sys_scan_list) */
-static int scan_target_buf;
-static int scan_target_count;
-
-/* ─── Helpers ──────────────────────────────────────────────────────────── */
-int min(int a, int b) { return a < b ? a : b; }
-
-void draw_bar(const char* label, int value) {
-    _sys_tty_write(label, 9);
-    if (value > 50)         _sys_tty_write(s_bar_full, 8);
-    else if (value > 10)    _sys_tty_write(s_bar_half, 8);
-    else                    _sys_tty_write(s_bar_low, 8);
-    _sys_tty_write(s_nl, 1);
-}
-
-/* ─── draw_waterfall ───────────────────────────────────────────────────── */
-void draw_waterfall(void) {
-    _sys_gfx_pixel(340, 30,  0x7ee08a);
-    _sys_gfx_pixel(345, 35,  0x7ee08a);
-    _sys_gfx_pixel(350, 45,  0x7ee08a);
-    _sys_gfx_pixel(355, 40,  0x7ee08a);
-    _sys_gfx_pixel(340, 60,  0x5ba85c);
-    _sys_gfx_pixel(345, 65,  0x5ba85c);
-    _sys_gfx_pixel(350, 75,  0x5ba85c);
-    _sys_gfx_pixel(355, 70,  0x5ba85c);
-    _sys_gfx_pixel(340, 90,  0x3a6e3a);
-    _sys_gfx_pixel(345, 95,  0x3a6e3a);
-    _sys_gfx_pixel(350, 105, 0x3a6e3a);
-    _sys_gfx_pixel(355, 100, 0x3a6e3a);
-    _sys_gfx_pixel(340, 120, 0x294e29);
-    _sys_gfx_pixel(345, 125, 0x294e29);
-    _sys_gfx_pixel(350, 135, 0x294e29);
-    _sys_gfx_pixel(355, 130, 0x294e29);
-    _sys_gfx_pixel(340, 150, 0x182e18);
-    _sys_gfx_pixel(350, 165, 0x182e18);
-}
-
-/* ─── draw_scanner ─────────────────────────────────────────────────────── */
-void draw_scanner(void) {
-    int i;
-
-    _sys_tty_mode(1);
-    _sys_gfx_begin();
-
-    /* Spectrum frame */
-    _sys_gfx_rect(10, 14, 400, 260);
-
-    /* 18 spectrum bars */
-    _sys_gfx_rect(20,  40,  14, 220);
-    _sys_gfx_rect(38,  80,  14, 180);
-    _sys_gfx_rect(56,  60,  14, 200);
-    _sys_gfx_rect(74,  30,  14, 230);
-    _sys_gfx_rect(92,  20,  14, 240);
-    _sys_gfx_rect(110, 10,  14, 250);
-    _sys_gfx_rect(128, 45,  14, 215);
-    _sys_gfx_rect(146, 90,  14, 170);
-    _sys_gfx_rect(164, 55,  14, 205);
-    _sys_gfx_rect(182, 25,  14, 235);
-    _sys_gfx_rect(200, 70,  14, 190);
-    _sys_gfx_rect(218, 35,  14, 225);
-    _sys_gfx_rect(236, 15,  14, 245);
-    _sys_gfx_rect(254, 50,  14, 210);
-    _sys_gfx_rect(272, 85,  14, 175);
-    _sys_gfx_rect(290, 65,  14, 195);
-    _sys_gfx_rect(308, 5,   14, 255);
-    _sys_gfx_rect(326, 95,  14, 165);
-
-    draw_waterfall();
-    _sys_gfx_end();
-
-    /* Text mode — info panel */
-    _sys_tty_mode(0);
-    _sys_tty_color(0xd7e8ff, 0x000000);
-
-    _sys_tty_write(s_title_sys, 38);
-    _sys_tty_write(s_nl, 1);
-
-    /* Dynamic target list from scanner equipment */
-    _sys_tty_write(s_targets, 8);
-    _sys_tty_write(s_nl, 1);
-
-    /* Query fitted scanner for available targets — raw syscall */
-    scan_target_count = _sys_scan_list(scan_target_buf, 255);
-    if (scan_target_count > 0) {
-        _sys_tty_write(scan_target_buf, scan_target_count);
-    }
-
-    /* Settings */
-    _sys_tty_write(s_freq_lbl, 6); _sys_print_int(var_freq); _sys_tty_write(s_mhz, 5);
-    _sys_tty_write(s_bw_lbl, 6);   _sys_print_int(var_bw);   _sys_tty_write(s_mhz, 5);
-    _sys_tty_write(s_beam_lbl, 6); _sys_print_int(var_beam); _sys_tty_write(s_deg, 5);
-
-    draw_bar(s_signal, var_prog);
-
-    _sys_tty_write(s_help0, 42);
-    _sys_tty_write(s_nl, 1);
-}
-
-/* ─── draw_planet ──────────────────────────────────────────────────────── */
-void draw_planet(void) {
-    _sys_tty_mode(0);
-    _sys_tty_color(0xd7e8ff, 0x000000);
-
-    _sys_tty_write(s_title_pln, 31); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("PLANETARY DATA:", 15); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("Planet III / Rocky-Temperate", 28); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("Survey: 42%  Atmosphere: N2+O2", 31); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("Temp: -12..+18C  Press: 0.8atm", 30); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("Minerals: Fe/Ni/Quartz  Life: ?", 31); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("PROBE: Survey Mk1  Int:100% Bat:87%", 36); _sys_tty_write(s_nl, 1);
-    _sys_tty_write("Link: Stable  Cache: 18/64 GB", 29); _sys_tty_write(s_nl, 1);
-
-    draw_bar("SURFACE: ", var_surf);
-
-    _sys_tty_write("MAP: . . * * . A . . * . . B .", 30); _sys_tty_write(s_nl, 1);
-    _sys_tty_write(s_help_p, 36); _sys_tty_write(s_nl, 1);
-}
-
-/* ─── draw_screen ──────────────────────────────────────────────────────── */
-void draw_screen(void) {
-    _sys_tty_clear();
-    if (var_mode == MODE_PLANET) draw_planet();
-    else                         draw_scanner();
-}
-
-/* ─── Scanner key handlers ─────────────────────────────────────────────── */
-void hks_freq_dn(void)  { var_freq = var_freq - 10; }
-void hks_freq_up(void)  { var_freq = var_freq + 10; }
-void hks_sel_up(void)   { if (var_sel > 0) var_sel = var_sel - 1; }
-void hks_sel_dn(void)   { if (var_sel < 7) var_sel = var_sel + 1; }
-void hks_save(void)     { var_scan = 2; }
-void hks_bw_up(void)    { var_bw = var_bw + 20; }
-void hks_beam_up(void)  { var_beam = var_beam + 5; }
-void hks_pol(void)      { var_pol = var_pol + 1; if (var_pol >= 3) var_pol = 0; }
-
-void hk_scanner(int key) {
-    if (key == KEY_LEFT)              hks_freq_dn();
-    else if (key == KEY_RIGHT)        hks_freq_up();
-    else if (key == KEY_UP)           hks_sel_up();
-    else if (key == KEY_DOWN)         hks_sel_dn();
-    else if (key == KEY_S || key == KEY_s)  hks_save();
-    else if (key == KEY_W || key == KEY_w)  hks_bw_up();
-    else if (key == KEY_B || key == KEY_b)  hks_beam_up();
-    else if (key == KEY_P || key == KEY_p)  hks_pol();
-}
-
-/* ─── Planet key handlers ──────────────────────────────────────────────── */
-void hkp_deploy(void)    { var_probe = 1; }
-void hkp_recall(void)    { var_probe = 0; }
-void hkp_surf_scan(void) { var_surf = min(1000, var_surf + 30); }
-
-void hk_planet(int key) {
-    if (key == KEY_D || key == KEY_d)       hkp_deploy();
-    else if (key == KEY_R || key == KEY_r)  hkp_recall();
-    else if (key == KEY_S || key == KEY_s)  hkp_surf_scan();
-}
-
-/* ─── handle_key ───────────────────────────────────────────────────────── */
-void handle_key(int key) {
-    if (key == KEY_TAB) {
-        var_mode = var_mode == MODE_PLANET ? MODE_SCANNER : MODE_PLANET;
-        return;
-    }
-    if (key == KEY_ESC) {
-        _sys_exit(0);
-        return;
-    }
-    if (key == KEY_ENTER) {
-        var_prog = min(1000, var_prog + 20);
-        var_scan = 1;
-        return;
-    }
-    if (var_mode == MODE_PLANET) hk_planet(key);
-    else                          hk_scanner(key);
-}
-
-/* ─── main ─────────────────────────────────────────────────────────────── */
 int main(void) {
-    var_mode    = MODE_SCANNER;
-    var_sel     = 0;
-    var_scan    = 0;
-    var_probe   = 0;
-    var_freq    = 350;
-    var_bw      = 120;
-    var_bearing = 0;
-    var_beam    = 42;
-    var_pol     = 0;
-    var_rx      = 85;
-    var_tx      = 60;
-    var_prog    = 0;
-    var_surf    = 0;
+  mode=MODE_SYSTEM; selected=5; lock_quality=63; frequency=350; bandwidth=120; bearing=71;
+  probe_deployed=1; probe_battery=87; surface_progress=42; running=1;
+  _sys_tty_mode(1);
+  while(running) {
+    draw();
+    last_key=_sys_input_key();
+    if(last_key!=0) handle_key();
+    _sys_yield();
+  }
+  _sys_tty_mode(0); _sys_tty_clear();
+  return 0;
+}
 
+
+void system_screen(void) {
+  _sys_tty_mode(1); _sys_tty_clear(); _sys_gfx_begin();
+  _sys_tty_color(0x8bdcff,0x02070b); _sys_gfx_rect(2,2,416,416); _sys_gfx_rect(5,5,410,24); _sys_gfx_text(10,11,"SCANOS v2.4 :: SYSTEM SCANNER",29);
+  _sys_tty_color(0x3b7c93, 0x02070b); _sys_gfx_rect(6,34,145,174); _sys_gfx_rect(156,34,258,174); _sys_gfx_rect(6,213,408,140); _sys_gfx_rect(6,358,408,55);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(11,40,"TARGETS / CONTACTS",18); _sys_gfx_text(161,40,"DIRECTIONAL SCAN / ANTENNA VIEW",31);
+  highlight_y=selected*14; highlight_y=highlight_y+55;
+  _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(8,highlight_y,138,13);
+  _sys_tty_color(0x76c98d, 0x02070b);
+  _sys_gfx_text(12,58,"[ ] Star KX-19",14); _sys_gfx_text(12,72,"[ ] Planet I",12); _sys_gfx_text(12,86,"[ ] Planet II",13);
+  _sys_gfx_text(12,100,"[ ] Planet III",14); _sys_gfx_text(12,114,"[ ] Moon III-a",14); _sys_gfx_text(12,128,"[ ] Unknown Signal A",20);
+  _sys_gfx_text(12,142,"[ ] Weak Contact B",18); _sys_gfx_text(12,156,"[ ] Debris Field",16); _sys_gfx_text(12,170,"[ ] Quasar Echo",15);
+  _sys_tty_color(0x8bdcff, 0x02070b); _sys_gfx_text(277,52,"N",1); _sys_gfx_text(277,186,"S",1); _sys_gfx_text(171,119,"W",1); _sys_gfx_text(396,119,"E",1);
+  _sys_gfx_line(285,68,285,190); _sys_gfx_line(172,125,399,125); _sys_gfx_line(285,125,244,84); _sys_gfx_line(285,125,326,84); _sys_gfx_line(285,125,244,166); _sys_gfx_line(285,125,326,166);
+  _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(279,119,12,12);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(11,218,"ACTIVE TARGET: Unknown Signal A",31); _sys_gfx_text(215,218,"SIGNAL LOCK:",12);
+  _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(298,219,96,7); _sys_tty_color(0x76c98d, 0x02070b); _sys_gfx_rect(299,220,lock_quality,5);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(11,232,"CLASS: unresolved",17); _sys_gfx_text(215,232,"RANGE: 2.14 AU  BEARING:",24);
+  _sys_tty_color(0x8bdcff, 0x02070b); _sys_gfx_text(11,249,"SPECTRUM ANALYZER",17);
+  _sys_tty_color(0x3b7c93, 0x02070b); _sys_gfx_line(12,330,402,330); _sys_gfx_line(12,274,402,274);
+  _sys_tty_color(0x76c98d, 0x02070b);
+  _sys_gfx_line(12,326,28,321); _sys_gfx_line(28,321,44,307); _sys_gfx_line(44,307,60,316); _sys_gfx_line(60,316,76,287); _sys_gfx_line(76,287,92,321);
+  _sys_gfx_line(92,321,108,325); _sys_gfx_line(108,325,124,303); _sys_gfx_line(124,303,140,284); _sys_gfx_line(140,284,156,312); _sys_gfx_line(156,312,172,326);
+  _sys_gfx_line(172,326,188,320); _sys_gfx_line(188,320,204,298); _sys_gfx_line(204,298,220,310); _sys_gfx_line(220,310,236,322); _sys_gfx_line(236,322,252,326);
+  _sys_gfx_line(252,326,268,314); _sys_gfx_line(268,314,284,290); _sys_gfx_line(284,290,300,304); _sys_gfx_line(300,304,316,324); _sys_gfx_line(316,324,402,326);
+  marker_x=frequency-250; marker_x=marker_x/2; marker_x=marker_x+12;
+  _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(marker_x,268,4,62);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(12,337,"FREQ",4); _sys_gfx_text(55,337,"350 MHz",7); _sys_gfx_text(130,337,"BW 120 MHz",10); _sys_gfx_text(230,337,"BEAM 42 deg",11); _sys_gfx_text(330,337,"POL AUTO",8);
+  _sys_gfx_text(12,364,"[Arrows] target/frequency  [Enter] scan/lock",43); _sys_gfx_text(12,379,"[W] bandwidth  [B] beam  [P] polarization",42);
+  _sys_gfx_text(12,394,"[Tab] planetary survey                 [Esc] exit",47);
+  _sys_gfx_frame(0); _sys_gfx_end();
+}
+
+void planet_screen(void) {
+  _sys_tty_mode(1); _sys_tty_clear(); _sys_gfx_begin();
+  _sys_tty_color(0x8bdcff,0x02070b); _sys_gfx_rect(2,2,416,416); _sys_gfx_rect(5,5,410,24); _sys_gfx_text(10,11,"SCANOS v2.4 :: PLANETARY SURVEY / PROBE CONTROL",47);
+  _sys_tty_color(0x3b7c93, 0x02070b); _sys_gfx_rect(6,34,205,214); _sys_gfx_rect(216,34,198,214); _sys_gfx_rect(6,253,408,105); _sys_gfx_rect(6,363,408,50);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(11,40,"ORBITAL VIEW",12); _sys_gfx_text(221,40,"PLANETARY DATA",14);
+  _sys_tty_color(0x8bdcff, 0x02070b); _sys_gfx_circle(108,139,62,0); _sys_gfx_circle(108,139,42,0); _sys_gfx_line(28,139,188,139); _sys_gfx_line(108,59,108,219);
+  _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(151,92,5,5); _sys_gfx_text(160,89,"PROBE",5); _sys_tty_color(0xff6b6b, 0x02070b); _sys_gfx_rect(78,164,6,6); _sys_gfx_text(88,161,"A",1);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(221,58,"Planet III / Rocky-Temperate",28); _sys_gfx_text(221,75,"Atmosphere: N2 + O2",19);
+  _sys_gfx_text(221,92,"Temperature: -12..+18 C",24); _sys_gfx_text(221,109,"Pressure: 0.8 atm",17); _sys_gfx_text(221,126,"Radiation: LOW",14);
+  _sys_gfx_text(221,143,"Minerals: Fe / Ni / Quartz",25); _sys_gfx_text(221,160,"Lifeforms: possible microbial",27);
+  _sys_gfx_text(221,184,"PROBE Survey Mk1",16); _sys_gfx_text(221,201,"Link: STABLE  Battery:",21);
+  _sys_tty_color(0x76c98d, 0x02070b); _sys_gfx_rect(354,202,45,6); _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(355,203,probe_battery/3,4);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(11,259,"SURFACE SCAN / SIGNAL MAP",25);
+  _sys_tty_color(0x3b7c93, 0x02070b); _sys_gfx_rect(15,278,390,61); _sys_gfx_line(54,278,54,339); _sys_gfx_line(93,278,93,339); _sys_gfx_line(132,278,132,339); _sys_gfx_line(171,278,171,339);
+  _sys_gfx_line(210,278,210,339); _sys_gfx_line(249,278,249,339); _sys_gfx_line(288,278,288,339); _sys_gfx_line(327,278,327,339); _sys_gfx_line(366,278,366,339);
+  scan_width=surface_progress*3;
+  _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(15,342,scan_width,3);
+  _sys_tty_color(0x76c98d, 0x02070b); _sys_gfx_rect(96,290,28,18); _sys_gfx_rect(139,306,24,20); _sys_gfx_rect(272,285,31,21); _sys_tty_color(0xff6b6b, 0x02070b); _sys_gfx_rect(179,294,8,8); _sys_tty_color(0xffd166, 0x02070b); _sys_gfx_rect(337,314,8,8);
+  _sys_tty_color(0xb7e9f7, 0x02070b); _sys_gfx_text(11,345,"Findings: A metallic echo   B organic cluster   X safe zone",57);
+  if(probe_deployed==1) _sys_gfx_text(221,218,"PROBE STATUS: DEPLOYED",22);
+  else _sys_gfx_text(221,218,"PROBE STATUS: RECALLED",22);
+  _sys_gfx_text(12,369,"[D] deploy probe  [R] recall  [S] surface scan",45); _sys_gfx_text(12,394,"[Tab] system scanner                    [Esc] exit",48);
+  _sys_gfx_frame(0); _sys_gfx_end();
+}
+
+void draw(void) { if(mode==MODE_PLANET) planet_screen(); else system_screen(); }
+void handle_key(void) {
+  /* Keep every test deliberately simple. The current C backend does not yet
+     preserve both operands reliably across compound && / || expressions. */
+  if(last_key==ESC) {
+    running=0;
     _sys_tty_mode(0);
-    _sys_tty_color(0xd7e8ff, 0x000000);
-
-    while (1) {
-        int key;
-        draw_screen();
-        key = _sys_input_key();
-        if (key != 0) handle_key(key);
-        _sys_yield();
+    _sys_tty_clear();
+    _sys_exit(0);
+    return;
+  }
+  if(last_key==TAB) {
+    if(mode==MODE_SYSTEM) mode=MODE_PLANET;
+    else mode=MODE_SYSTEM;
+    return;
+  }
+  if(mode==MODE_SYSTEM) {
+    if(last_key==ENTER) {
+      if(lock_quality<95) lock_quality=lock_quality+8;
+      return;
     }
-    return 0;
+    if(last_key==LEFT) { frequency=frequency-10; return; }
+    if(last_key==RIGHT) { frequency=frequency+10; return; }
+    if(last_key==UP) {
+      if(selected>0) selected=selected-1;
+      return;
+    }
+    if(last_key==DOWN) {
+      if(selected<8) selected=selected+1;
+      return;
+    }
+    return;
+  }
+  if(last_key==68) { probe_deployed=1; return; }
+  if(last_key==100) { probe_deployed=1; return; }
+  if(last_key==82) { probe_deployed=0; return; }
+  if(last_key==114) { probe_deployed=0; return; }
+  if(last_key==83) {
+    if(surface_progress<100) { surface_progress=surface_progress+5; probe_battery=probe_battery-1; }
+    return;
+  }
+  if(last_key==115) {
+    if(surface_progress<100) { surface_progress=surface_progress+5; probe_battery=probe_battery-1; }
+    return;
+  }
 }

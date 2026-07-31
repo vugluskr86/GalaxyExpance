@@ -189,7 +189,9 @@ export const SYSCALLS=Object.freeze({
   GFX_BEGIN:0x64,
   GFX_FRAME:0x65,
   GFX_END:0x66,
-  /* 0x67–0x6F reserved */
+  /** Draw UTF-8 text in graphics mode. A=x, B=y, C=ptr, D=len. */
+  GFX_TEXT:0x67,
+  /* 0x68–0x6F reserved */
 
   /* --- ввод (0x70–0x7F) --- */
   INPUT_KEY:0x70,
@@ -504,6 +506,7 @@ export const SYSCALL_ARG_SPECS=Object.freeze({
   [SYSCALLS.GFX_RECT]:   {B:"x", C:"y", D:"spec"},
   [SYSCALLS.GFX_CIRCLE]: {B:"x", C:"y", D:"spec"},
   [SYSCALLS.GFX_BEGIN]:  {},
+  [SYSCALLS.GFX_TEXT]:   {A:"x", B:"y", C:"text_ptr", D:"text_len"},
   [SYSCALLS.GFX_FRAME]:  {B:"delay_ms"},
   [SYSCALLS.GFX_END]:    {},
   // input

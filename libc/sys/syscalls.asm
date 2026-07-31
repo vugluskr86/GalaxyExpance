@@ -68,7 +68,6 @@ _sys_gfx_end:
 _sys_gfx_rect:
   ; void _sys_gfx_rect(int x, int y, int w, int h)
   ; A=x, B=y, C=w, D=h
-  MOV_A_D               ; need: A=x, B=y, C=w, D=h but params come in that order
   SYSCALL 0x62
   RET
 
@@ -77,6 +76,19 @@ _sys_gfx_pixel:
   ; void _sys_gfx_pixel(int x, int y, int color)
   ; A=x, B=y, C=color
   SYSCALL 0x60
+  RET
+
+.export _sys_gfx_circle
+_sys_gfx_circle:
+  ; A=x, B=y, C=radius, D=fill
+  SYSCALL 0x63
+  RET
+
+.export _sys_gfx_text
+_sys_gfx_text:
+  ; void _sys_gfx_text(int x, int y, const char* text, int len)
+  ; A=x, B=y, C=text, D=len
+  SYSCALL 0x67          ; GFX_TEXT
   RET
 
 .export _sys_gfx_line
@@ -152,14 +164,4 @@ _sys_mem_load8:
 _sys_mem_store8:
   ; Store byte from B into address A
   STORE8_A_B            ; placeholder
-  RET
-
-; ─── Scanner ─────────────────────────────────────────────────────────────────
-
-.export _sys_scan_list
-_sys_scan_list:
-  ; Compatibility entry point for the C scanner utility.  The protected PCVM
-  ; scanner API currently exposes the integrated scanner UI as syscall 0x55.
-  ; Return value is propagated in A (0 on success, negative errno on failure).
-  SYSCALL 0x55          ; SCANNER_OPEN
   RET

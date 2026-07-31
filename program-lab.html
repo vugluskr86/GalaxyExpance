@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Cosmos — лаборатория программ</title>
+  <link rel="stylesheet" href="/src/program-lab.css">
+</head>
+<body>
+<header class="topbar">
+  <a href="./index.html">← игра</a>
+  <div><h1>Лаборатория бортовых программ</h1><p>Изолированный корабль, свободная комплектация, PCOS и терминал</p></div>
+  <a href="./PROGRAMS_MANUAL.md">мануал</a>
+</header>
+<main>
+  <aside class="panel equipment-panel">
+    <div class="panel-head"><h2>Оборудование</h2><button id="maxPreset">Максимальный комплект</button></div>
+    <p class="hint">Цена, масса, доступность и ограничения корпуса здесь не проверяются.</p>
+    <div id="equipment"></div>
+    <h3>Компьютер</h3>
+    <div id="computerParts"></div>
+    <div class="button-row">
+      <button id="applyEquipment">Применить</button>
+      <button id="installPcos">Переустановить PCOS</button>
+      <button id="boot">Загрузить</button>
+      <button id="reset">Сброс</button>
+    </div>
+    <pre id="status"></pre>
+  </aside>
+
+  <section class="terminal-column">
+    <div class="terminal-frame">
+      <div class="terminal-title">БОРОТОВОЙ ТЕРМИНАЛ · кликните для ввода</div>
+      <canvas id="terminal" tabindex="0" width="840" height="840"></canvas>
+    </div>
+    <div class="quickbar">
+      <button data-command="help">help</button>
+      <button data-command="ls /usr/bin">ls /usr/bin</button>
+      <button data-command="scanner">scanner</button>
+      <button data-command="ps">ps</button>
+      <input id="command" placeholder="команда PCOS"><button id="sendCommand">Ввести</button>
+    </div>
+  </section>
+
+  <aside class="panel source-panel">
+    <div class="panel-head"><h2>Программа</h2><select id="example"></select></div>
+    <div class="file-row"><input id="filename" value="program.asm"><input id="fileInput" type="file" accept=".asm,.bin,.c"></div>
+    <textarea id="source" spellcheck="false"></textarea>
+    <div class="button-row">
+      <button id="loadExample">Загрузить пример</button>
+      <button id="assemble">Собрать ASM</button>
+      <button id="runSource">Запустить</button>
+      <button id="saveDrive">На DRIVE</button>
+      <button id="download">Скачать</button>
+    </div>
+    <pre id="buildLog"></pre>
+    <p class="hint">C-программы пересобираются host-скриптами из мануала. В браузере можно собирать Assembly и запускать готовые .bin.</p>
+  </aside>
+</main>
+
+<dialog id="scannerDialog">
+  <div class="dialog-head"><strong>Эмулятор системного сканера</strong><button id="closeScanner">×</button></div>
+  <canvas id="scannerCanvas" width="700" height="300"></canvas>
+  <label>Частота <input id="scanFreq" type="range" min="100" max="1000" value="500"><output id="scanFreqOut">500 MHz</output></label>
+  <label>Направление <input id="scanBearing" type="range" min="0" max="359" value="0"><output id="scanBearingOut">0°</output></label>
+  <label>Ширина луча <input id="scanBeam" type="range" min="5" max="180" value="70"><output id="scanBeamOut">70°</output></label>
+</dialog>
+<script type="module" src="/src/program-lab.js"></script>
+</body>
+</html>

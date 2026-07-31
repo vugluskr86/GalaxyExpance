@@ -75,12 +75,7 @@ class CodeGen {
 
   /** Free a previously-allocated register. */
   freeReg(r) {
-    if (r === "A" && this.regs.A) {
-      // Check if we spilled
-      this.emit("POP_A");
-    }
-    this.regs.A = this.regs.B = this.regs.C = this.regs.D = false;
-    this.fregs.FA = this.fregs.FB = this.fregs.FC = this.fregs.FD = false;
+    if (r && Object.prototype.hasOwnProperty.call(this.regs, r)) this.regs[r] = false;
   }
 
   /** Load an immediate int value into a register. */
@@ -287,8 +282,8 @@ class CodeGen {
         const elseLabel = this.newLabel("else");
         const endLabel = this.newLabel("endif");
         this.generateExpr(node.condition, "A");
-        this.emit("CMP_A_B");
         this.emit("LOAD_B 0");
+        this.emit("CMP_A_B");
         this.emit(`JZ ${node.elseStmt ? elseLabel : endLabel}`);
         this.generateStatement(node.thenStmt);
         if (node.elseStmt) {
@@ -309,8 +304,8 @@ class CodeGen {
 
         this.emit(`${loopLabel}:`);
         this.generateExpr(node.condition, "A");
-        this.emit("CMP_A_B");
         this.emit("LOAD_B 0");
+        this.emit("CMP_A_B");
         this.emit(`JZ ${endLabel}`);
         this.generateStatement(node.body);
         this.emit(`JMP ${loopLabel}`);
@@ -331,8 +326,8 @@ class CodeGen {
         this.generateStatement(node.body);
         this.emit(`${this.continueLabel}:`);
         this.generateExpr(node.condition, "A");
-        this.emit("CMP_A_B");
         this.emit("LOAD_B 0");
+        this.emit("CMP_A_B");
         this.emit(`JNZ ${loopLabel}`);
         this.emit(`${this.breakLabel}:`);
 
@@ -360,8 +355,8 @@ class CodeGen {
         this.emit(`${startLabel}:`);
         if (node.condition) {
           this.generateExpr(node.condition, "A");
-          this.emit("CMP_A_B");
           this.emit("LOAD_B 0");
+          this.emit("CMP_A_B");
           this.emit(`JZ ${endLabel}`);
         }
 
@@ -479,26 +474,16 @@ class CodeGen {
   // ─── Function calls ─────────────────────────────────────────────────────
 
   generateCall(node, destReg) {
-    // Push args in reverse order. PCVM only has PUSH_A/POP_A — move to A first.
-    for (let i = node.args.length - 1; i >= 0; i--) {
-      const argReg = this.allocReg();
-      this.generateExpr(node.args[i], argReg);
-      if (argReg !== "A") this.emit(`MOV_A_${argReg}`);
-      this.emit("PUSH_A");
-      this.freeReg(argReg);
+    const abiRegs = ["A", "B", "C", "D"];
+    if (node.args.length > abiRegs.length) {
+      throw new Error(`C ABI supports at most ${abiRegs.length} register arguments`);
     }
-
-    this.emit(`CALL ${node.callee}`);
-
-    // Pop args (discard)
     for (let i = 0; i < node.args.length; i++) {
-      this.emit("POP_A");
+      this.generateExpr(node.args[i], abiRegs[i]);
     }
-
-    // Result is in A
-    if (destReg && destReg !== "A") {
-      this.emit(`MOV_${destReg}_A`);
-    }
+    this.emit(`CALL ${node.callee}`);
+    if (destReg && destReg !== "A") this.emit(`MOV_${destReg}_A`);
+    this.regs.A = this.regs.B = this.regs.C = this.regs.D = false;
   }
 
   // ─── Expressions ───────────────────────────────────────────────────────
@@ -567,20 +552,30 @@ class CodeGen {
             this.emit(`SUB_A_C`);
             if (destReg !== "A") this.emit(`MOV_${destReg}_A`);
             break;
-          case "==":
+          case "==": {
+            const trueLabel = this.newLabel("eq_true");
+            const endLabel = this.newLabel("eq_end");
             this.emitCompare(leftReg, rightReg);
-            this.emit(`LOAD_${destReg} 1`);
-            this.emit(`JZ __c_eq${this.labelCounter}`);
+            this.emit(`JZ ${trueLabel}`);
             this.emit(`LOAD_${destReg} 0`);
-            this.emit(`__c_eq${this.labelCounter++}:`);
+            this.emit(`JMP ${endLabel}`);
+            this.emit(`${trueLabel}:`);
+            this.emit(`LOAD_${destReg} 1`);
+            this.emit(`${endLabel}:`);
             break;
-          case "!=":
+          }
+          case "!=": {
+            const trueLabel = this.newLabel("ne_true");
+            const endLabel = this.newLabel("ne_end");
             this.emitCompare(leftReg, rightReg);
-            this.emit(`LOAD_${destReg} 1`);
-            this.emit(`JNZ __c_ne${this.labelCounter}`);
+            this.emit(`JNZ ${trueLabel}`);
             this.emit(`LOAD_${destReg} 0`);
-            this.emit(`__c_ne${this.labelCounter++}:`);
+            this.emit(`JMP ${endLabel}`);
+            this.emit(`${trueLabel}:`);
+            this.emit(`LOAD_${destReg} 1`);
+            this.emit(`${endLabel}:`);
             break;
+          }
           case "<": {
             // left < right  ⇔  (left - right) has sign bit set
             this.emitBinOp("SUB", leftReg, rightReg, "A");  // A = left - right
@@ -657,6 +652,7 @@ class CodeGen {
 
       case AST.TERNARY:
         this.generateExpr(node.condition, "A");
+        this.emit("LOAD_B 0");
         this.emit("CMP_A_B");
         const elseLabel = this.newLabel("tern_else");
         const endLabel = this.newLabel("tern_end");
