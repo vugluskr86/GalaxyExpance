@@ -260,8 +260,8 @@
     },
     {
       "path": "/usr/bin/scanner.bin",
-      "size": 10339,
-      "checksum": 3949678626,
+      "size": 9574,
+      "checksum": 1960973028,
       "uid": 0,
       "gid": 0,
       "mode": 493
@@ -430,14 +430,6 @@
       "path": "/usr/src/pcos/system/unix/bin/rm.asm",
       "size": 63,
       "checksum": 3904455521,
-      "uid": 0,
-      "gid": 0,
-      "mode": 420
-    },
-    {
-      "path": "/usr/src/pcos/system/unix/bin/scanner.asm",
-      "size": 17882,
-      "checksum": 3334964134,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -668,8 +660,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/build/scanner.bin",
-      "size": 10339,
-      "checksum": 3949678626,
+      "size": 9574,
+      "checksum": 1960973028,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -1020,8 +1012,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/Makefile",
-      "size": 9681,
-      "checksum": 3134893153,
+      "size": 9550,
+      "checksum": 688038538,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -1035,6 +1027,6 @@
       "mode": 420
     }
   ],
-  "requiredBytes": 879862,
+  "requiredBytes": 860319,
   "bootFile": "kernel.bin"
 }

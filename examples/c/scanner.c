@@ -266,7 +266,7 @@ int main(void) {
     while (1) {
         int key;
         draw_screen();
-        key = input_key();
+        key = _sys_input_key();
         if (key != 0) handle_key(key);
         _sys_yield();
     }

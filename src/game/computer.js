@@ -1,6 +1,7 @@
 import { BIOS_ASM, DEFAULT_OS_ASM } from "./bios.js";
 import { Assembler } from "./cpu.js";
 import { DEMOSCENE_ASM } from "./demoscene.js";
+import { SCANNER_ASM, SCANNER_BIN } from "./scanner-generated.js";
 
 /** Бортовой компьютер корабля: хранилище программ с ограничением по RAM (КБ).
  *  Размер программы считается как длина кода в байтах (UTF-8). */
@@ -28,6 +29,7 @@ HALT`));
     this.programs.push(this._binary("os.bin",new Assembler().assembleBinary(DEFAULT_OS_ASM)));
     this.programs.push(this._encode("demoscene.asm", DEMOSCENE_ASM));
     this.programs.push(this._binary("demoscene.bin",new Assembler().assembleBinary(DEMOSCENE_ASM)));
+    this.programs.push(this._binary("scanner.bin", SCANNER_BIN));
   }
   _encode(name, code){
     const size = enc.encode(code).length;

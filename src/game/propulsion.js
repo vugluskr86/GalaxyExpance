@@ -31,7 +31,7 @@ export class Propulsion {
       computer1: makeItem("comp_expand"), computer2:null, computer3:null, computer4:null, computer5:null,
       terminal1: makeItem("term_basic"), terminal2:null, terminal3:null, terminal4:null, terminal5:null,
       antenna: makeItem("antenna_mid"), scanner: makeItem("scanner_tactical"),
-      hyperdrive:null, capacitor:null, mining:null, gyro:null,
+      hyperdrive: makeItem("hyper_s"), capacitor: makeItem("cap_s"), mining:null, gyro:null,
     };
     this.slots.terminal1.connectedComputerId=this.slots.computer1.instanceId;
     this.slots.hull.shipyard=makeBuiltinShipyardHull(this.slots.hull.id,this.slots.hull.stats);

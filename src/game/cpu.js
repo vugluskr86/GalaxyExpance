@@ -128,6 +128,7 @@ export class Assembler {
         labels.set(name,value(tokens[0]));continue;
       }
       if(op===".PROTECTED"){featureFlags|=PROTECTED_FEATURE;continue;}
+      if(op===".TEXT"||op===".DATA"||op===".RODATA"||op===".BSS")continue;
       if(op===".IMPORT"||op===".EXPORT"||op===".INCLUDE")continue;
       if(op===".ORG"){dataAddress=value(tokens[0]);if(pendingLabel)labels.set(pendingLabel,dataAddress);continue;}
       if(op===".BYTE"){

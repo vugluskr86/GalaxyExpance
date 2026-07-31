@@ -111,6 +111,37 @@ class CodeGen {
     }
   }
 
+  /** Load a named memory cell through the ISA-supported A/B loads. */
+  emitLoadMemory(name, destReg) {
+    if (destReg === "A" || destReg === "B") {
+      this.emit(`LOAD_M_${destReg} ${name}`);
+      return;
+    }
+    this.emit(`LOAD_M_A ${name}`);
+    this.emit(`MOV_${destReg}_A`);
+  }
+
+  /** Store a register into a named memory cell through A/B. */
+  emitStoreMemory(name, sourceReg) {
+    if (sourceReg === "A" || sourceReg === "B") {
+      this.emit(`STORE_${sourceReg} ${name}`);
+      return;
+    }
+    this.emit(`MOV_A_${sourceReg}`);
+    this.emit(`STORE_A ${name}`);
+  }
+
+  /** Compare arbitrary integer registers without extending the fixed ISA. */
+  emitCompare(leftReg, rightReg) {
+    if (leftReg !== "A") this.emit(`MOV_A_${leftReg}`);
+    if (rightReg !== "B") {
+      if (rightReg === "A") this.emit("MOV_B_A");
+      else if (rightReg === "C") this.emit("MOV_B_C");
+      else if (rightReg === "D") this.emit("MOV_B_D");
+    }
+    this.emit("CMP_A_B");
+  }
+
   // ─── String literals ──────────────────────────────────────────────────
 
   /** Emit all string literals into the .DATA section. */
@@ -120,8 +151,7 @@ class CodeGen {
     this.emit("");
     this.emit(".DATA");
     for (let i = 0; i < strings.length; i++) {
-      const label = this.newStringLabel();
-      this.emit(`${label}: .string "${escapeAsm(strings[i])}"`);
+      this.emit(`__c_str${i}: .string "${escapeAsm(strings[i])}"`);
     }
   }
 
@@ -432,16 +462,16 @@ class CodeGen {
 
     if (node.op === "=") {
       // Simple assignment
-      this.emit(`STORE_${valueReg} ${target.name}`);
+      this.emitStoreMemory(target.name, valueReg);
     } else {
       // Compound assignment (+=, -=, etc.)
-      this.emit(`LOAD_M_${valueReg} ${target.name}`);
+      this.emitLoadMemory(target.name, valueReg);
       switch (node.op) {
         case "+=": this.emit(`ADD_${valueReg}_${valueReg}`); break;
         case "-=": this.emit(`SUB_${valueReg}_${valueReg}`); break;
         // Simplified — full implementation would handle all ops
       }
-      this.emit(`STORE_${valueReg} ${target.name}`);
+      this.emitStoreMemory(target.name, valueReg);
     }
     this.freeReg(valueReg);
   }
@@ -512,7 +542,7 @@ class CodeGen {
 
       case AST.IDENTIFIER:
         // Load variable
-        this.emit(`LOAD_M_${destReg} ${node.name}`);
+        this.emitLoadMemory(node.name, destReg);
         break;
 
       case AST.BINARY_EXPR: {
@@ -538,14 +568,14 @@ class CodeGen {
             if (destReg !== "A") this.emit(`MOV_${destReg}_A`);
             break;
           case "==":
-            this.emit(`CMP_${leftReg}_${rightReg}`);
+            this.emitCompare(leftReg, rightReg);
             this.emit(`LOAD_${destReg} 1`);
             this.emit(`JZ __c_eq${this.labelCounter}`);
             this.emit(`LOAD_${destReg} 0`);
             this.emit(`__c_eq${this.labelCounter++}:`);
             break;
           case "!=":
-            this.emit(`CMP_${leftReg}_${rightReg}`);
+            this.emitCompare(leftReg, rightReg);
             this.emit(`LOAD_${destReg} 1`);
             this.emit(`JNZ __c_ne${this.labelCounter}`);
             this.emit(`LOAD_${destReg} 0`);

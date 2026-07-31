@@ -1306,9 +1306,12 @@ hk_scanner:
   CALL hks_sel_dn
   JMP __c_endif29
   __c_else28:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 83
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq33
   LOAD_A 0
@@ -1328,9 +1331,12 @@ hk_scanner:
   CALL hks_save
   JMP __c_endif32
   __c_else31:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 87
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq37
   LOAD_A 0
@@ -1350,9 +1356,12 @@ hk_scanner:
   CALL hks_bw_up
   JMP __c_endif36
   __c_else35:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 66
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq41
   LOAD_A 0
@@ -1372,9 +1381,12 @@ hk_scanner:
   CALL hks_beam_up
   JMP __c_endif40
   __c_else39:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 80
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq45
   LOAD_A 0
@@ -1418,7 +1430,8 @@ hkp_recall:
   RET
 
 hkp_surf_scan:
-  LOAD_M_C var_surf
+  LOAD_M_A var_surf
+  MOV_C_A
   LOAD_D 30
   MOV_A_C
   MOV_B_D
@@ -1437,9 +1450,12 @@ hkp_surf_scan:
   RET
 
 hk_planet:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 68
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq49
   LOAD_A 0
@@ -1459,9 +1475,12 @@ hk_planet:
   CALL hkp_deploy
   JMP __c_endif48
   __c_else47:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 82
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq53
   LOAD_A 0
@@ -1481,9 +1500,12 @@ hk_planet:
   CALL hkp_recall
   JMP __c_endif52
   __c_else51:
-  LOAD_M_C key
+  LOAD_M_A key
+  MOV_C_A
   LOAD_D 83
-  CMP_C_D
+  MOV_A_C
+  MOV_B_D
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq57
   LOAD_A 0
@@ -1521,7 +1543,9 @@ handle_key:
   JZ __c_endif60
   LOAD_M_B var_mode
   LOAD_C 1
-  CMP_B_C
+  MOV_A_B
+  MOV_B_C
+  CMP_A_B
   LOAD_A 1
   JZ __c_eq62
   LOAD_A 0
@@ -1565,7 +1589,8 @@ handle_key:
   CMP_A_B
   LOAD_B 0
   JZ __c_endif69
-  LOAD_M_C var_prog
+  LOAD_M_A var_prog
+  MOV_C_A
   LOAD_D 20
   MOV_A_C
   MOV_B_D
@@ -1676,7 +1701,7 @@ main:
   LOAD_A 0
   PUSH_A
   CALL draw_screen
-  CALL input_key
+  CALL _sys_input_key
   STORE_A key
   POP_A
   LOAD_M_A key

@@ -153,3 +153,13 @@ _sys_mem_store8:
   ; Store byte from B into address A
   STORE8_A_B            ; placeholder
   RET
+
+; ─── Scanner ─────────────────────────────────────────────────────────────────
+
+.export _sys_scan_list
+_sys_scan_list:
+  ; Compatibility entry point for the C scanner utility.  The protected PCVM
+  ; scanner API currently exposes the integrated scanner UI as syscall 0x55.
+  ; Return value is propagated in A (0 on success, negative errno on failure).
+  SYSCALL 0x55          ; SCANNER_OPEN
+  RET
