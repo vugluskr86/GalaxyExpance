@@ -7,6 +7,7 @@
 - [FEATUES.md](FEATUES.md) — карта функций.
 - [TESTS.md](TESTS.md) — тесты и критерии релиза.
 - [BUILD_AND_PROGRAMS.md](BUILD_AND_PROGRAMS.md) — сборка и хранение программ.
+- [UI_PANEL.md](UI_PANEL.md) — состав боковой панели, сквозная навигация и обратная связь действий.
 
 ## Архитектура
 
@@ -26,6 +27,7 @@
 ## Игровые системы
 
 - [gameplay/GAME_MECHANICS.md](gameplay/GAME_MECHANICS.md)
+- [gameplay/SCANNER_AND_ECONOMY.md](gameplay/SCANNER_AND_ECONOMY.md) — implemented scanner loop, production, markets and seed determinism.
 - [gameplay/NPC_AGENTS.md](gameplay/NPC_AGENTS.md)
 
 ## Дизайн и планы
@@ -41,4 +43,4 @@
 
 ## Архив
 
-`archive/` содержит журналы исправлений старых итераций. Их утверждения не заменяют текущий статус из корневых файлов `docs/`.
+`archive/` содержит журналы исправлений старых итераций. Их утверждения не заменяют текущий статус из корневых файлов `documentation/`.

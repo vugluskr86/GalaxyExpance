@@ -190,6 +190,8 @@ export class PixelOS {
       try{this.fs=InodeFS.deserialize(runtime.storage.pcfsImage);this.vfs=new VFSKernel(this.fs,{uid:0,gid:0});}
       catch(error){terminal?.print(`PCFS: ${error.message}`);}
     }
+    this.mounts=new Map();
+    if(this.fs)this.mounts.set("/",{device:"/dev/drive0",path:"/",fs:this.fs,storage:runtime.storage,root:true});
     this.cwd=this.fs?.readInode(this.fs.rootId)||null;
     this.processes=new ProcessManager(this);
     this.compiler=new AssemblyCompiler();
@@ -205,7 +207,45 @@ export class PixelOS {
   persistFs(){if(this.fs&&this.storage)this.storage.pcfsImage=this.fs.serialize();}
   cwdPath(){return this.fs&&this.cwd?this.vfs._inodePath(this.cwd.id):"/";}
   updatePrompt(){this.terminal?.setPrompt?.(this.fs?`pcos:${this.cwdPath()}# `:"pcos$ ");}
+  storageDevices(){return this.runtime.storageDevices?.()||[];}
+  mountedPath(path){
+    const absolute=String(path||"").startsWith("/")?String(path):null;
+    if(!absolute)return null;
+    const match=[...this.mounts.values()].filter(m=>m.path!=="/"&&(absolute===m.path||absolute.startsWith(m.path+"/")))
+      .sort((a,b)=>b.path.length-a.path.length)[0];
+    return match?{mount:match,path:absolute.slice(match.path.length)||"/"}:null;
+  }
+  mount(deviceName,target){
+    if(!this.fs)throw new Error("mount доступна после загрузки PCFS");
+    const device=this.storageDevices().find(item=>item.device===deviceName);
+    if(!device)throw new Error(`${deviceName}: устройство не подключено или носитель не вставлен`);
+    if(!device.storage?.pcfsImage)throw new Error(`${deviceName}: носитель не отформатирован в PCFS`);
+    const path=String(target||"").replace(/\/+$/,"")||"/";
+    if(!path.startsWith("/"))throw new Error("mount: точка монтирования должна быть абсолютной");
+    if(path==="/")throw new Error("mount: корневой носитель уже подключён");
+    if(this.mounts.has(path))throw new Error(`mount: ${path} уже подключён`);
+    let fs;try{fs=InodeFS.deserialize(device.storage.pcfsImage);}catch(error){throw new Error(`mount: ${error.message}`);}
+    const mount={device:device.device,path,fs,storage:device.storage,reader:device.reader,media:device.media};
+    this.mounts.set(path,mount);return mount;
+  }
+  unmount(target){
+    const mount=[...this.mounts.values()].find(item=>item.path===target||item.device===target);
+    if(!mount||mount.root)throw new Error(`umount: ${target}: нет съёмной точки монтирования`);
+    mount.storage.pcfsImage=mount.fs.serialize();this.mounts.delete(mount.path);return mount;
+  }
+  mountLines(){return [...this.mounts.values()].map(m=>`${m.device} on ${m.path} type pcfs (rw)`);}
+  deviceLines(){
+    const mounted=new Set([...this.mounts.values()].map(m=>m.device));
+    return this.storageDevices().map(device=>`${device.device}\t${device.removable?"removable":"fixed"}\t${Math.max(0,device.storage?.ramKb||0)}K\t${mounted.has(device.device)?"mounted":device.storage?"ready":"empty"}\t${device.label}`);
+  }
+  mountedFile(name){
+    const resolved=this.mountedPath(name);if(!resolved)return null;
+    const inode=resolved.mount.fs.resolvePath(resolved.mount.fs.readInode(resolved.mount.fs.rootId),resolved.path,0,0).inode;
+    if(!inode)throw new Error(`файл ${name} не найден`);
+    return {name,data:resolved.mount.fs.readData(inode),size:inode.size,mount:resolved.mount};
+  }
   file(name){
+    const mounted=this.mountedFile(name);if(mounted)return mounted;
     if(this.fs){
       const path=String(name||"");
       const inode=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
@@ -225,6 +265,12 @@ export class PixelOS {
       try{return this.file(`${directory}/${command}.bin`);}
       catch(error){lastError=error;}
     }
+    for(const mount of [...this.mounts.values()].filter(item=>!item.root)){
+      try{return this.file(`${mount.path}/usr/bin/${command}.bin`);}
+      catch(error){lastError=error;}
+      try{return this.file(`${mount.path}/bin/${command}.bin`);}
+      catch(error){lastError=error;}
+    }
     throw lastError||new Error(`команда не найдена: ${command}`);
   }
   execute(line){
@@ -234,11 +280,38 @@ export class PixelOS {
       if(["ip","ping","netstat","dhcp","nslookup","curl"].includes(cmd)){
         for(const value of networkCommand(this.runtime.networkProp,line))this.print(value);
       }
-      if(cmd==="help")this.print("help ls cd ps mem run kill send recv asm link time clear ip ping netstat dhcp nslookup curl");
+      if(cmd==="help")this.print("help ls cd ps mem run kill send recv asm link mount umount lsblk time clear ip ping netstat dhcp nslookup curl");
       else if(["ip","ping","netstat","dhcp","nslookup","curl"].includes(cmd)){}
+      else if(cmd==="mount"){
+        if(!args.length){for(const value of this.mountLines())this.print(value);}
+        else if(args[0]==="-a"){
+          const fstab=this.file("/etc/fstab");const text=new TextDecoder().decode(fstab.data);
+          for(const row of text.split(/\r?\n/)){
+            const [device,path,,options=""]=row.trim().split(/\s+/);if(!device||device.startsWith("#")||options.includes("noauto")||path==="/")continue;
+            try{this.mount(device,path);this.print(`${device} mounted on ${path}`);}catch(error){this.print(`mount: ${error.message}`);}
+          }
+        }else{
+          if(args.length!==2)throw new Error("usage: mount <device> <mountpoint>");
+          const mounted=this.mount(args[0],args[1]);this.print(`${mounted.device} mounted on ${mounted.path}`);
+        }
+      }
+      else if(cmd==="umount"){
+        if(args.length!==1)throw new Error("usage: umount <mountpoint|device>");
+        const mounted=this.unmount(args[0]);this.print(`${mounted.device} unmounted from ${mounted.path}`);
+      }
+      else if(cmd==="lsblk")for(const value of this.deviceLines())this.print(value);
       else if(cmd==="ls"){
         if(this.fs){
-          const path=args[0]||".",directory=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
+          const path=args[0]||".",mounted=this.mountedPath(path);
+          if(mounted){
+            const directory=mounted.mount.fs.resolvePath(mounted.mount.fs.readInode(mounted.mount.fs.rootId),mounted.path,0,0).inode;
+            if(!directory)throw new Error(`каталог ${path} не найден`);
+            for(const entry of mounted.mount.fs.readDirEntries(directory)){
+              const inode=mounted.mount.fs.readInode(entry.inode);this.print(`${entry.name}${inode?.type===1?"/":""}  ${inode?.size||0} Б`);
+            }
+            return this.terminal?.renderText?.();
+          }
+          const directory=this.fs.resolvePath(this.cwd||this.fs.readInode(this.fs.rootId),path,0,0).inode;
           if(!directory)throw new Error(`каталог ${path} не найден`);
           for(const entry of this.fs.readDirEntries(directory)){
             const inode=this.fs.readInode(entry.inode);this.print(`${entry.name}${inode?.type===1?"/":""}  ${inode?.size||0} Б`);

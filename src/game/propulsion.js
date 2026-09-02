@@ -39,7 +39,9 @@ export class Propulsion {
     this.throttle = 0;
     this.activeWeaponSlot = "weapon1";
     this.inventory = starterInventory();
-    this.cargo = new Inventory([]);       // то, что лежит в трюме корабля
+    /* Scanner distribution medium is cargo, not an already installed program:
+       the player must insert it and mount it through PCOS. */
+    this.cargo = new Inventory([makeItem("magnetic_disk_scanner")]);
     this.scooping = false;
     this.energy = 0;
     /* Кабели и DHCP-аренды привязаны к instanceId узлов, а не к позиции в инвентаре. */

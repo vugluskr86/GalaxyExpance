@@ -1,2 +1,4 @@
 /dev/drive0 / pcfs rw 0 1
 /dev/tty0 /dev/console devfs rw 0 0
+/dev/fd0 /mnt/floppy pcfs noauto,rw 0 0
+/dev/tape0 /mnt/tape pcfs noauto,rw 0 0

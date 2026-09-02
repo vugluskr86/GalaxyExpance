@@ -89,7 +89,7 @@ export class StationScene {
   }
   panelSpec(){
     if(!this.settlement||!this.selected)return [];
-    const modules=stationCatalog(this.selected.kind).map(item=>({
+    const modules=stationCatalog(this.selected.kind,{station:this.selected}).map(item=>({
       // stationCatalog returns immutable CATALOG definitions, not Item objects;
       // Item.tag is a getter, so build the same class/rating badge explicitly.
       tag:`${item.cls??"?"}${item.rating??"?"}`,label:item.name,note:t("ui.stationModulePrice",{price:Math.round(item.price)}),

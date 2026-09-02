@@ -14,6 +14,12 @@ const CONFIG_SCHEMA = [
   { path: "economy.repairCostPerHp", domain: "economy", label: "Стоимость ремонта за HP", min: 1, max: 500, step: 1 },
   { path: "economy.stationRestockInterval", domain: "economy", label: "Интервал пополнения станций (дни)", min: 1, max: 30, step: 1 },
   { path: "economy.dailyInterestRate", domain: "economy", label: "Дневная процентная ставка", min: 0, max: 0.05, step: 0.001 },
+  { path: "economy.marketTargetBase", domain: "economy", label: "Базовый резерв рынка", min: 1, max: 500, step: 1 },
+  { path: "economy.marketTargetRandom", domain: "economy", label: "Разброс резерва рынка", min: 0, max: 200, step: 1 },
+  { path: "economy.producerSurplus", domain: "economy", label: "Избыток производителя", min: 0, max: 300, step: 1 },
+  { path: "economy.consumerReserve", domain: "economy", label: "Резерв потребителя", min: 0, max: 300, step: 1 },
+  { path: "economy.startCredits", domain: "economy", label: "Стартовые кредиты", min: 0, max: 1000000, step: 100 },
+  { path: "economy.transactionHistory", domain: "economy", label: "Размер журнала транзакций", min: 10, max: 1000, step: 10 },
   /* ─── эффекты/частицы ──────────────────────────────────────────────────── */
   { path: "effects.maxParticlesLod0", domain: "effects", label: "Макс. частиц (LOD 0)", min: 10, max: 2000, step: 10 },
   { path: "effects.maxParticlesLod1", domain: "effects", label: "Макс. частиц (LOD 1)", min: 5, max: 500, step: 5 },
@@ -59,6 +65,12 @@ for (const entry of CONFIG_SCHEMA) {
   else if (entry.path === "economy.repairCostPerHp") target[parts[parts.length - 1]] = 10;
   else if (entry.path === "economy.stationRestockInterval") target[parts[parts.length - 1]] = 3;
   else if (entry.path === "economy.dailyInterestRate") target[parts[parts.length - 1]] = 0;
+  else if (entry.path === "economy.marketTargetBase") target[parts[parts.length - 1]] = 42;
+  else if (entry.path === "economy.marketTargetRandom") target[parts[parts.length - 1]] = 26;
+  else if (entry.path === "economy.producerSurplus") target[parts[parts.length - 1]] = 28;
+  else if (entry.path === "economy.consumerReserve") target[parts[parts.length - 1]] = 18;
+  else if (entry.path === "economy.startCredits") target[parts[parts.length - 1]] = 2500;
+  else if (entry.path === "economy.transactionHistory") target[parts[parts.length - 1]] = 160;
   else if (entry.path === "effects.maxParticlesLod0") target[parts[parts.length - 1]] = 200;
   else if (entry.path === "effects.maxParticlesLod1") target[parts[parts.length - 1]] = 80;
   else if (entry.path === "effects.maxParticlesLod2") target[parts[parts.length - 1]] = 20;
@@ -153,8 +165,8 @@ function valid(path, value) {
 export const configSnapshot = () => merge(defaults, session);
 export const configValue = path => at(configSnapshot(), path);
 export function configEntries(domain) {
-  return CONFIG_SCHEMA.filter(([, definition]) => definition.domain === domain)
-    .map(([path, definition]) => ({ path, ...definition, value: configValue(path) }));
+  return CONFIG_SCHEMA.filter(definition => definition.domain === domain)
+    .map(definition => ({ ...definition, value: configValue(definition.path) }));
 }
 export function setConfig(path, value) {
   if (!valid(path, value)) throw new RangeError(`Invalid config ${path}`);
@@ -206,10 +218,10 @@ export function importConfig(source) {
   const parsed = typeof source === "string" ? JSON.parse(source) : source;
   if (!parsed || parsed.version !== 1 || typeof parsed.overrides !== "object")
     throw new TypeError("Invalid balance config");
-  for (const [path] of CONFIG_SCHEMA) {
-    const value = at(parsed.overrides, path);
-    if (value !== undefined && !valid(path, value))
-      throw new RangeError(`Invalid config ${path}`);
+  for (const entry of CONFIG_SCHEMA) {
+    const value = at(parsed.overrides, entry.path);
+    if (value !== undefined && !valid(entry.path, value))
+      throw new RangeError(`Invalid config ${entry.path}`);
   }
   pushUndo();
   session = clone(parsed.overrides);

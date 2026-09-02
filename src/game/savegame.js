@@ -1,5 +1,5 @@
 import { makeItem, ensureItemInstanceId } from "./items.js";
-import { makeBuiltinShipyardHull } from "./shipyard.js";
+import { makeBuiltinShipyardHull, makeShipyardHull } from "./shipyard.js";
 import { Inventory, FloatingItem } from "./inventory.js";
 import { stepSystem } from "../gen/system.js";
 import { player } from "./player.js";
@@ -18,6 +18,7 @@ export function snapshotItem(item){
   if(!item)return null;
   const out={id:item.id,qty:item.qty,instanceId:ensureItemInstanceId(item),slots:{}};
   for(const [slot,child] of Object.entries(item.slots||{}))out.slots[slot]=snapshotItem(child);
+  if(item.insertedMedia)out.insertedMedia=snapshotItem(item.insertedMedia);
   for(const key of ["ammoLeft","cooldownLeft","heat","charge","connectedComputerId","unique","uniqueNote"])if(item[key]!==undefined)out[key]=item[key];
   // Imported hulls carry their JSON geometry and optional PNG data URL.
   if(item.shipyard)out.shipyard=JSON.parse(JSON.stringify(item.shipyard));
@@ -32,8 +33,12 @@ export function restoreItem(data){
   const item=makeItem(data.id,data.qty||1);
   if(data.instanceId)item.instanceId=data.instanceId;
   for(const [slot,child] of Object.entries(data.slots||{}))item.slots[slot]=restoreItem(child);
+  if(data.insertedMedia)item.insertedMedia=restoreItem(data.insertedMedia);
   for(const key of ["ammoLeft","cooldownLeft","heat","charge","connectedComputerId","unique","uniqueNote"])if(data[key]!==undefined)item[key]=data[key];
-  if(data.shipyard)item.shipyard=JSON.parse(JSON.stringify(data.shipyard));
+  if(data.shipyard){
+    const {pngDataUrl,...shipyardData}=data.shipyard;
+    item.shipyard=makeShipyardHull(shipyardData,typeof pngDataUrl==="string"?pngDataUrl:null);
+  }
   else if(item.slot==="hull")item.shipyard=makeBuiltinShipyardHull(item.id,item.stats);
   if(data.firmware&&item.firmware){item.firmware.biosSource=data.firmware.biosSource;item.firmware.saveSettings(data.firmware.settings);}
   if(data.storage&&item.storage){
@@ -55,7 +60,10 @@ export function snapshotShip(ship){
     altitude:ship.altitude,cruiseV:ship.cruiseV,landedOn:ship.landedOn,sas:ship.sas,integrity:ship.integrity,empTimer:ship.empTimer,
     prop:{fuel:p.fuel,energy:p.energy,throttle:p.throttle,activeWeaponSlot:p.activeWeaponSlot,network:JSON.parse(JSON.stringify(p.network||{links:[],addresses:{},macTables:{},tcp:[],frames:[]})),slots:Object.fromEntries(Object.entries(p.slots).map(([key,item])=>[key,snapshotItem(item)])),inventory:snapInventory(p.inventory),cargo:snapInventory(p.cargo)}};
 }
-export function restoreShip(ship,data){
+const hasItemId=(item,id)=>!!item&&(item.id===id||hasItemId(item.insertedMedia,id)||Object.values(item.slots||{}).some(child=>hasItemId(child,id)));
+const inventoryHasItemId=(inventory,id)=>(inventory?.items||[]).some(item=>hasItemId(item,id));
+
+export function restoreShip(ship,data,{ensureScannerMedia=false}={}){
   if(!data)return ship;
   for(const key of ["col","mode","rx","ry","rvx","rvy","nose","altitude","cruiseV","sas","integrity","empTimer"])if(data[key]!==undefined)ship[key]=data[key];
   ship.primary=data.primary?{...data.primary}:ship.primary;ship.target=data.target?{...data.target}:null;ship.landedOn=data.landedOn?{...data.landedOn}:null;
@@ -68,6 +76,10 @@ export function restoreShip(ship,data){
   ship.prop.fuel=p.fuel;ship.prop.energy=Math.max(0,p.energy||0);ship.prop.throttle=p.throttle||0;ship.prop.activeWeaponSlot=p.activeWeaponSlot||"weapon1";
   ship.prop.network=JSON.parse(JSON.stringify(p.network||{links:[],addresses:{},macTables:{},tcp:[],frames:[]}));
   ship.prop.inventory=restoreInventory(p.inventory);ship.prop.cargo=restoreInventory(p.cargo);
+  /* Existing player saves predate the scanner disk. Add exactly one unless it
+     already exists in cargo, inventory, or an inserted reader. */
+  if(ensureScannerMedia&&!inventoryHasItemId(ship.prop.cargo,"magnetic_disk_scanner")&&!inventoryHasItemId(ship.prop.inventory,"magnetic_disk_scanner")&&!Object.values(ship.prop.slots).some(item=>hasItemId(item,"magnetic_disk_scanner")))
+    ship.prop.cargo.add(makeItem("magnetic_disk_scanner"));
   ship.prop._bindNetworkComputers?.();
   /* Older saves had no terminal cable.  Preserve the player's existing
      terminal as a sensible default when its old computer instance was
@@ -138,7 +150,7 @@ export class WorldSave {
   restore(scene){
     const key=this.key(scene.g,scene.star);const state=this.data.systems[key]??this.data.systems[this.legacyKey(scene.g,scene.star)];if(!state)return false;
     this.data.systems[key]=state;
-    restoreOrbit(scene.S,state.orbit);restoreShip(scene.playerShip,state.player);scene.cargoField=restoreFloatingItems(state.cargo);scene.probes=(state.probes||[]).map(probe=>({...probe,target:{...probe.target}}));
+    restoreOrbit(scene.S,state.orbit);restoreShip(scene.playerShip,state.player,{ensureScannerMedia:true});scene.cargoField=restoreFloatingItems(state.cargo);scene.probes=(state.probes||[]).map(probe=>({...probe,target:{...probe.target}}));
     /* A selected body from an earlier visit must not override the body the
        player is physically standing on. It caused the restored system screen
        to offer a new landing approach instead of the take-off action. */

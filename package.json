@@ -6,8 +6,10 @@
   "description": "Процедурный пиксельный космос: кластер галактик → галактика → система → тело. Каркас для игры.",
   "scripts": {
     "pretest": "node scripts/extract-landing-view-renderer.mjs && node scripts/check-scene-i18n.mjs",
-    "prebuild": "node scripts/extract-landing-view-renderer.mjs && node scripts/build-unix-stage7-8.mjs && node scripts/build-unix-installer.mjs",
+    "prebuild": "node scripts/extract-landing-view-renderer.mjs && node scripts/build-unix-stage7-8.mjs && node scripts/build-scanner-media.mjs && node scripts/build-unix-installer.mjs",
     "build:installer": "node scripts/build-unix-installer.mjs",
+    "build:scanner-media": "node scripts/build-unix-stage7-8.mjs && node scripts/build-scanner-media.mjs",
+    "check:scanner": "node scripts/build-unix-stage7-8.mjs --check && node scripts/build-scanner-media.mjs --check && node --test test/unix-scanner.test.js test/net-switch-scanner.test.js",
     "config:audit": "node scripts/audit-game-constants.mjs",
     "i18n:check": "node scripts/check-scene-i18n.mjs",
     "dev": "vite",

@@ -1,0 +1,62 @@
+{
+  "format": "PCFD",
+  "version": 1,
+  "label": "PCOS Scanner Native Source Disk",
+  "compiler": "PCVM native C compiler",
+  "entry": "/usr/bin/scanner.bin",
+  "directories": [
+    "/usr",
+    "/usr/bin",
+    "/usr/include",
+    "/usr/src",
+    "/usr/src/pcos-scanner",
+    "/usr/src/pcos-scanner/build",
+    "/usr/share",
+    "/usr/share/doc",
+    "/usr/share/doc/pcos-scanner"
+  ],
+  "entries": [
+    {
+      "path": "/usr/bin/scanner.bin",
+      "source": "system/unix/build/scanner.bin",
+      "size": 12678,
+      "checksum": 3179198732,
+      "mode": 493
+    },
+    {
+      "path": "/usr/include/pcos.h",
+      "source": "libc/include/pcos.h",
+      "size": 1266,
+      "checksum": 259861542,
+      "mode": 420
+    },
+    {
+      "path": "/usr/share/doc/pcos-scanner/BUILD.md",
+      "source": "documentation/toolchain/SCANNER_C_IMPLEMENTATION.md",
+      "size": 5061,
+      "checksum": 4164012925,
+      "mode": 420
+    },
+    {
+      "path": "/usr/share/doc/pcos-scanner/INTEGRATION.md",
+      "source": "documentation/gameplay/SCANNER_AND_ECONOMY.md",
+      "size": 4582,
+      "checksum": 1840255859,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos-scanner/build/scanner.asm",
+      "source": "system/unix/build/scanner.asm",
+      "size": 20132,
+      "checksum": 3838698352,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos-scanner/scanner.c",
+      "source": "examples/c/scanner.c",
+      "size": 8566,
+      "checksum": 1234969337,
+      "mode": 420
+    }
+  ]
+}

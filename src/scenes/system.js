@@ -9,11 +9,11 @@ import { lblText, toLbl } from "../ui/panel.js";
 import { bakeSystemNebula, NEB_SPAN } from "../gen/nebula.js";
 import { LandingScene } from "./landing.js";
 import { Ship, makeNpcs } from "../game/ship.js";
-import { primaryState, elements, conicPath, surfaceG, muOf, soiOf, MU_SUN } from "../game/physics.js";
 import { ENGINES, TANKS } from "../game/propulsion.js";
+import { primaryState, elements, conicPath, surfaceG, muOf, soiOf, MU_SUN } from "../game/physics.js";
 import { planCircularize, planHohmann, hohmannBudget, orbitAfterNode,
          stateAtNode, ManeuverNode } from "../game/maneuver.js";
-import { fmtSpeed, fmtDist, fmtDv, fmtTime, fmtMass, fmtAcc, DU_M } from "../game/units.js";
+import { fmtSpeed, fmtDist, fmtDv, fmtTime, fmtMass, fmtAcc, fmtNumber, DU_M } from "../game/units.js";
 import { OutfitScene } from "./outfit.js";
 import { ContactScene } from "./contact.js";
 import { FloatingItem } from "../game/inventory.js";
@@ -35,7 +35,8 @@ import { mineRock, scanRock } from "../game/mining.js";
 import { deliverProbeReports, launchProbe, updateProbes } from "../game/probes.js";
 import { EffectPool } from "../game/effects.js";
 import { ensureSystemMap, knownRecord, knownTier } from "../game/intel.js";
-import { IntelDirectoryScene, ScannerScene } from "./scanner.js";
+import { scannerNetworkReadiness } from "../game/network.js";
+import { IntelDirectoryScene } from "./scanner.js";
 import { BalanceLabScene } from "./balance-lab.js";
 import { configValue } from "../config/balance.js";
 
@@ -55,6 +56,8 @@ export class SystemScene {
     this.star = star;
     this.crumb = "Система";
     this.S = buildSystem(galaxy, star);
+    /* Fitting is performed on the dedicated ship screen, never in flight. */
+    this.hideDirectShipFit = true;
     this.sel = this.S.planets.length ? { kind:"planet", i:0, j:0 } : null;
     this.hover = null;
     this.cam = { x:0, y:0 };
@@ -80,14 +83,8 @@ export class SystemScene {
     this.world = options.world || null;
     this.world?.restore(this);
     if(this.playerShip){player.shipProp=this.playerShip.prop;player.ship=this.playerShip;this.playerShip.prop.networkShip=this.playerShip;}
-    /* The scanner must be started by its installed PCOS binary.  The runtime
-       callback is deliberately scoped to this scene and never serialised. */
-    for(const computer of this.playerShip?.prop?.computers||[]){
-      computer.runtime.openSystemScanner=()=>{
-        if(!this.world||!this.mgr)return false;
-        this.mgr.push(new ScannerScene(this,this.sel,computer.instanceId));return true;
-      };
-    }
+    /* Scanner gameplay is a native PCOS process at /usr/bin/scanner.bin.
+       This scene deliberately does not register a JS scanner callback. */
     if(this.world){ensureEconomy(this.world);registerSystemMarkets(this.world,this.S);ensureSystemMap(this.world,this);}
     /* Expose the adapter to configurable AgentController hooks without making
        agents import a scene or market implementation directly. */
@@ -108,14 +105,14 @@ export class SystemScene {
   }
   ssx(w){ return (w - this.cam.x)*this.zoom + this.ctx.SCR/2; }
   ssy(w){ return (w - this.cam.y)*this.zoom + this.ctx.SCR/2; }
+  worldAt(mx,my){return {x:(mx-this.ctx.SCR/2)/this.zoom+this.cam.x,y:(my-this.ctx.SCR/2)/this.zoom+this.cam.y};}
   zoomBy(f){ this.zoom = Math.min(configValue("render.systemZoomMax")??5, Math.max(configValue("render.systemZoomMin")??0.1, this.zoom*f)); }
   execConsoleCommand(input, print){ execCommand(this, input, print); }
   onWheel(mx, my, deltaY){
-    const wx = (mx - this.ctx.SCR/2)/this.zoom + this.cam.x;
-    const wy = (my - this.ctx.SCR/2)/this.zoom + this.cam.y;
+    const anchor=this.worldAt(mx,my);
     const wheel=configValue("render.systemZoomWheel")??1.5;this.zoom = Math.min(configValue("render.systemZoomMax")??5, Math.max(configValue("render.systemZoomMin")??0.1, this.zoom * (deltaY < 0 ? wheel : 1/wheel)));
-    this.cam.x = wx - (mx - this.ctx.SCR/2)/this.zoom;
-    this.cam.y = wy - (my - this.ctx.SCR/2)/this.zoom;
+    this.cam.x = anchor.x - (mx - this.ctx.SCR/2)/this.zoom;
+    this.cam.y = anchor.y - (my - this.ctx.SCR/2)/this.zoom;
   }
   /** Управление с клавиатуры (e.code): газ/тормоз/поворот, манёвры. */
   onKey(code, down){
@@ -277,7 +274,7 @@ export class SystemScene {
         sh.prop.scooping = got > 0;
         this.scoopMsg = got > 0
           ? "СБОР ТОПЛИВА " + Math.round(eff*100) + "% · " +
-            sh.prop.fuel.toFixed(1) + "/" + sh.prop.fuelCap + " т"
+            fmtNumber(sh.prop.fuel,1) + "/" + sh.prop.fuelCap + " т"
           : "бак полон";
         if (h < ps.bodyR*0.12) this.scoopMsg = "ОПАСНО: слишком близко к фотосфере";
       }
@@ -531,12 +528,17 @@ export class SystemScene {
     const { sctx, SCR } = this.ctx;
     const S = this.S;
     if (this.nebCvs){
-      const x0 = this.ssx(-NEB_SPAN/2), y0 = this.ssy(-NEB_SPAN/2);
-      sctx.drawImage(this.nebCvs, Math.round(x0), Math.round(y0), NEB_SPAN, NEB_SPAN);
+      /* The nebula is a world-space layer. Its origin and extent must use
+       * the same camera transform as planets, otherwise it appears to drift
+       * between the centre and a corner while zooming. */
+      const span=Math.round(NEB_SPAN*this.zoom);
+      const x0=this.ssx(-NEB_SPAN/2),y0=this.ssy(-NEB_SPAN/2);
+      sctx.drawImage(this.nebCvs,Math.round(x0),Math.round(y0),span,span);
     }
     if (S.bhOnly){
       renderBH(S.bh, t);
-      sctx.drawImage(S.bh.cvs, Math.round(SCR/2 - S.bh.C/2), Math.round(SCR/2 - S.bh.C/2));
+      const bhW=Math.max(1,Math.round(S.bh.C*this.zoom)),bhX=Math.round(this.ssx(0)),bhY=Math.round(this.ssy(0));
+      sctx.drawImage(S.bh.cvs,bhX-Math.round(bhW/2),bhY-Math.round(bhW/2),bhW,bhW);
       if (S.jets){
         const ja = S.jetAng + Math.sin(t*0.7)*0.06;
         for(const dir of [0, Math.PI]){
@@ -545,7 +547,7 @@ export class SystemScene {
             if ((Math.floor(q) + Math.floor(t*10)) % 2) continue;
             sctx.globalAlpha = Math.max(0.1, 1 - q/210);
             sctx.fillStyle = q < 90 ? "#eaf6ff" : "#8fd0ff";
-            sctx.fillRect(Math.round(SCR/2 + c*q), Math.round(SCR/2 + s*q), 1, 1);
+            sctx.fillRect(Math.round(bhX+c*q*this.zoom),Math.round(bhY+s*q*this.zoom),1,1);
           }
         }
         sctx.globalAlpha = 1;
@@ -760,7 +762,7 @@ export class SystemScene {
           const ap = isFinite(el.ra) ? fmtDist(el.ra - el.ps.bodyR) : "выход";
           lblText(this.ctx,
             "Ап " + ap + " · Пе " + fmtDist(el.rp - el.ps.bodyR) +
-            " · e " + el.e.toFixed(3) +
+            " · e " + fmtNumber(el.e,3) +
             (isFinite(el.period) ? " · T " + fmtTime(el.period) : " · гипербола"),
             12, L - 32, "#ffd166", 11);
         }
@@ -830,7 +832,7 @@ export class SystemScene {
       const status=this.npcContactStatus(npc);
       const faction=npc.agent?.config?.faction||npc.agent?.profileId||"неизвестна";
       const relation=npc.agent?.state?.goal==="attack"?"враждебен":faction==="pirate"?"опасен":"нейтрален";
-      return `<b>${npc.name}</b><br>${npc.role||"корабль"} · ${faction} · ${relation}<br>дистанция ${status.distance.toFixed(1)} DU`+
+      return `<b>${npc.name}</b><br>${npc.role||"корабль"} · ${faction} · ${relation}<br>дистанция ${fmtNumber(status.distance,1)} DU`+
         `<br>связь: ${status.comm.ok?Math.round(status.comm.signal*100)+"%":equipmentReason(status.comm.reason)}`+
         `<br>сканер: ${status.scan.ok?"уровень "+status.scan.resolution:equipmentReason(status.scan.reason)}`;
     }
@@ -843,7 +845,7 @@ export class SystemScene {
         "<br>μ = " + MU_SUN.toLocaleString("ru-RU");
     if(hit.kind==="cargo"){
       const floating=this.cargoField[hit.i];
-      return floating?t("ui.cargoTooltip",{name:floating.item.name,mass:floating.item.mass.toFixed(1),state:t(floating.landed?"ui.cargoOnSurface":"ui.cargoDrifting")}):null;
+      return floating?t("ui.cargoTooltip",{name:floating.item.name,mass:fmtNumber(floating.item.mass,1),state:t(floating.landed?"ui.cargoOnSurface":"ui.cargoDrifting")}):null;
     }
     if((hit.kind==="planet"||hit.kind==="moon")&&this.world&&!knownTier(this.world,this,hit))
       return `<b>${this.label(hit)}</b><br>${t("scan.unknownBody")}`;
@@ -984,14 +986,14 @@ export class SystemScene {
       const f = this.cargoField[this.sel.i];
       if (!f) return { name:"—", detail:"контейнер подобран" };
       return { name:"Контейнер · " + f.item.name,
-        detail: "масса " + f.item.mass.toFixed(1) + " т · " +
+        detail: "масса " + fmtNumber(f.item.mass,1) + " т · " +
           (f.landed ? "лежит на поверхности" : "дрейфует по орбите") +
           "<br>подойдите с захватом — груз возьмётся сам" };
     }
     const st = this.statsOf(this.sel);
     if (this.sel.kind === "comet")
       return { name: this.label(this.sel),
-        detail: "комета · a=" + Math.round(o.a) + " · e=" + o.e.toFixed(2) +
+        detail: "комета · a=" + Math.round(o.a) + " · e=" + fmtNumber(o.e,2) +
           " · сейчас r=" + Math.round(o.r) +
           (st ? "<br>T ядра: " + (st.tempC > 0 ? "+" : "") + st.tempC + " °C · " + st.liquid : "") };
     if (this.sel.kind === "rock")
@@ -1002,8 +1004,12 @@ export class SystemScene {
     const base = this.sel.kind === "planet"
       ? PT_RU[o.type] + " · орбита " + o.dist + " · спутников: " + o.moonList.length
       : "спутник · " + PT_RU[o.type] + " · Ø " + o.size + " px";
-    if((this.sel.kind==="planet"||this.sel.kind==="moon")&&this.world&&!this.researchRecord(this.sel))
+    const research=(this.sel.kind==="planet"||this.sel.kind==="moon")&&this.world?this.researchRecord(this.sel):null;
+    if((this.sel.kind==="planet"||this.sel.kind==="moon")&&this.world&&!research)
       return {name:this.label(this.sel),detail:base+"<br>"+t("scan.unknownBody")};
+    const survey=research?"<br>"+t("scan.bodyTier",{tier:research.tier})+
+      (research.tier>=2&&o.surface?t("scan.bodyMinerals",{minerals:Math.round(o.surface.minerals*100)}):"")+
+      (research.tier>=3&&o.surface?t("scan.bodyLife",{life:Math.round(o.surface.vegetation*100)}):""):"";
     return {
       name: this.label(this.sel),
       detail: base + (st ? "<br>T ср: " + (st.tempC > 0 ? "+" : "") + st.tempC +
@@ -1042,6 +1048,13 @@ export class SystemScene {
       if (this.sel) this.mgr.push(new BodyScene(this, this.sel));
     } };
   }
+  settingsSpec(){
+    if(!this.world)return [];
+    return [
+      {kind:"action",label:t("ui.saveWorld"),run:()=>{this.world.capture(this);this.world.persist();this.combatMsg=t("ui.worldSaved");return true;}},
+      {kind:"action",label:t("ui.balanceLab"),run:()=>this.mgr.push(new BalanceLabScene(this))}
+    ];
+  }
   panelSpec(){
     if (this.S.bhOnly) return [];
     const sh = this.playerShip;
@@ -1056,17 +1069,17 @@ export class SystemScene {
       spec.push({ kind:"readout", label:"Двигательная установка",
         value: "масса " + fmtMass(p.mass) + " (сухая " + fmtMass(p.dryMass) + ")" +
           "<br>тяга " + p.engine.thrust + " кН · Iₛₚ " + p.engine.isp + " с" +
-          "<br>ускорение " + p.accelFullMs.toFixed(2) + " м/с² · TWR " +
-          (g > 0 ? p.twr(g).toFixed(2) : "—") +
+          "<br>ускорение " + fmtNumber(p.accelFullMs,2) + " м/с² · TWR " +
+          (g > 0 ? fmtNumber(p.twr(g),2) : "—") +
           "<br>запас ΔV " + fmtDv(p.deltaV) + " · топливо " +
-          p.fuel.toFixed(1) + " / " + p.tank.fuel + " т" });
+          fmtNumber(p.fuel,1) + " / " + p.tank.fuel + " т" });
       if(p.overloadStatus){
         const load=p.overloadStatus();
         spec.push({kind:"readout",label:"Взлётная масса",value:
           `${fmtMass(load.mass)} / ${fmtMass(load.limit)}${load.overloaded?`<br><span style='color:#ff7569'>перегрузка +${fmtMass(load.excess)}: взлёт и тяга заблокированы</span>`:"<br>допустимо"}`});
       }
       spec.push({kind:"readout",label:"Энергия",value:p.capacitor
-        ? `${p.energy.toFixed(1)} / ${p.energyCap} Э · ${p.hyperdrive?p.hyperdrive.name:"гипердвигатель не установлен"}`
+        ? `${fmtNumber(p.energy,1)} / ${p.energyCap} Э · ${p.hyperdrive?p.hyperdrive.name:"гипердвигатель не установлен"}`
         : "нужен конденсатор для гиперпрыжка"});
       spec.push({ kind:"range", label:"РУД (Shift/Ctrl, Z, X)", min:0, max:100, step:5,
         get:() => Math.round(p.throttle*100), set:v => { p.throttle = v/100; },
@@ -1084,21 +1097,6 @@ export class SystemScene {
         get:() => p.tank.id, set:v => p.setTank(v) });
       if (sh.mode === "landed")
         spec.push({ kind:"action", label:"Заправить бак", run: () => p.refuel() });
-    }
-
-    if(this.world){
-      spec.push({kind:"sect",label:"Мир"});
-      spec.push({kind:"action",label:"Сохранить мир",run:()=>{this.world.capture(this);this.world.persist();this.combatMsg="мир сохранён";}});
-      const economy=ensureEconomy(this.world);
-      const marketBody=this.S.planets.find(planet=>planet.settlement);
-      const marketId=marketBody?.settlement?.id||stableSystemId(this.g,this.star);
-      const quote=marketQuote(this.world,marketId,"food",{settlement:marketBody?.settlement,body:marketBody});
-      spec.push({kind:"sect",label:t("ui.economyDebug")});
-      spec.push({kind:"readout",label:t("ui.credits"),value:t("ui.creditsValue",{credits:economy.credits,day:economy.day})});
-      spec.push({kind:"readout",label:t("ui.market"),value:t("ui.marketDebug",{good:t(`ui.goods.${quote.good.id}`),base:quote.basePrice,stock:quote.stock,demand:quote.demand,price:quote.finalPrice,modifiers:quote.modifiers.map(modifier=>`${modifier.id} ×${modifier.factor}`).join(", ")})});
-      spec.push({kind:"readout",label:t("ui.marketLocation"),value:quote.locationId});
-      const control=systemControl(this.world,this.S.id),danger=systemDanger(this.world,this.S.id);
-      spec.push({kind:"readout",label:t("events.systemControl"),value:t("events.systemControlValue",{faction:t(`ui.factions.${control.factionId}`),defense:control.defense,supply:control.supply,danger:Math.round(danger*100)})});
     }
 
     if(sh && this.lockedNpc){
@@ -1130,11 +1128,11 @@ export class SystemScene {
         spec.push({ kind:"readout", label:"Элементы",
           value: "апоцентр " + ap + " · до Ап " + fmtTime(timeToApo(el)) +
             "<br>перицентр " + fmtDist(el.rp - el.ps.bodyR) + " · до Пе " + fmtTime(timeToPeri(el)) +
-            "<br>e " + el.e.toFixed(4) + " · a " + fmtDist(el.a) +
+            "<br>e " + fmtNumber(el.e,4) + " · a " + fmtDist(el.a) +
             (isFinite(el.period) ? " · период " + fmtTime(el.period) : " · незамкнутая") +
             "<br>скорость " + fmtSpeed(el.v) + " · вертикальная " + fmtSpeed(el.vr) +
             "<br>радиус SOI " + fmtDist(el.ps.soi) + " · g₀ " +
-            (el.ps.mu/(el.ps.bodyR*el.ps.bodyR)*DU_M).toFixed(2) + " м/с²" });
+            fmtNumber(el.ps.mu/(el.ps.bodyR*el.ps.bodyR)*DU_M,2) + " м/с²" });
       }
     }
 
@@ -1199,16 +1197,21 @@ export class SystemScene {
 
     /* ---------- груз и снаряжение ---------- */
     spec.push({ kind:"sect", label:"Снаряжение" });
-    if(this.world)spec.push({kind:"action",label:t("ui.balanceLab"),run:()=>this.mgr.push(new BalanceLabScene(this))});
     spec.push({ kind:"action", label:"Экран корабля · экипировка (B)",
       run: () => this.mgr.push(new OutfitScene(this)) });
     if(this.world){
       /* This convenience control follows the exact terminal path: it asks a
          booted PCOS instance to execute scanner.bin instead of bypassing the
          executable and pushing ScannerScene directly. */
-      spec.push({kind:"action",label:t("scan.open"),run:()=>{
+      const scannerComputer=sh?.prop?.computers?.find(computer=>computer.runtime?.os)||null;
+      const scannerRuntime=scannerComputer?.runtime;
+      const scannerNetwork=scannerComputer?scannerNetworkReadiness(sh.prop,scannerComputer.instanceId,{scene:this,ship:sh}):{ok:false,reason:"no-computer"};
+      spec.push({kind:"action",label:t("scan.open"),disabled:!scannerRuntime?.os||!scannerNetwork.ok,reason:!scannerRuntime?.os?"no-computer":scannerNetwork.reason,run:()=>{
         const runtime=sh?.prop?.computers?.find(computer=>computer.runtime?.os)?.runtime;
         if(!runtime?.os)throw new Error(t("scan.error.no-computer"));
+        const computer=sh?.prop?.computers?.find(item=>item.runtime===runtime);
+        const readiness=scannerNetworkReadiness(sh.prop,computer?.instanceId,{scene:this,ship:sh});
+        if(!readiness.ok)throw new Error(t(`scan.error.${readiness.reason}`));
         runtime.os.execute("scanner");
       }});
       spec.push({kind:"action",label:t("scan.directory"),run:()=>this.mgr.push(new IntelDirectoryScene(this))});
@@ -1218,10 +1221,10 @@ export class SystemScene {
       spec.push({ kind:"readout", label:"Захват",
         value: sc ? sc.name + " · подбор " + fmtDist(sc.grabRange) +
               (sc.scoopRate > 0
-                ? "<br>сбор топлива " + (sc.scoopRate*60).toFixed(1) +
+                ? "<br>сбор топлива " + fmtNumber(sc.scoopRate*60,1) +
                   " т/мин на высоте до " + sc.scoopAlt + " радиуса звезды"
                 : "<br>сбор топлива недоступен") +
-              "<br>трюм " + sh.prop.cargoMass.toFixed(1) + " / " + sh.prop.cargoCap + " т"
+              "<br>трюм " + fmtNumber(sh.prop.cargoMass,1) + " / " + sh.prop.cargoCap + " т"
             : "не установлен" });
       if (this.sel && this.sel.kind === "cargo"){
         spec.push({ kind:"action", label:"FSD к контейнеру",

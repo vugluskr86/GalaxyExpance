@@ -25,6 +25,14 @@
     "parameters": {
       "type": "object",
       "additionalProperties": true
+    },
+    "raster": {
+      "type": "array",
+      "description": "Optional for legacy v1 files; required by current exporters for canonical hull rendering.",
+      "items": {
+        "type": "string",
+        "pattern": "^[.hagelm]*$"
+      }
     }
   },
   "$defs": {

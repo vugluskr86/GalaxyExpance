@@ -78,9 +78,23 @@ credential transitions are implemented completely.
 
 ## Installed scanner
 
-The manifest installs `build/scanner.bin` as `/usr/bin/scanner.bin` and its
-Assembly source under `/usr/src/pcos/system/unix/bin/scanner.asm`. It is a
-standalone PCVM program: it enters terminal graphics mode, renders a spectrum
-and uses the bounded `SCANNER_OPEN` syscall (`0x55`) to request the interactive
-system-scanning driver. The call is unavailable outside an active system, so a
-saved drive cannot contain fabricated scan results.
+The manifest installs `build/scanner.bin` as `/usr/bin/scanner.bin`. It is a
+standalone native PCVM C program: it enters terminal graphics mode and renders
+the scanner itself; it does not open a JavaScript scanner scene through
+`SCANNER_OPEN`. Game launch validates the fitted computer/scanner/antenna IP
+route before executing the binary. The separately built `scanner.pcfd` source
+disk contains the C source, generated Assembly, ABI header and documentation.
+
+## Removable PCFS volumes
+
+The root volume is `/dev/drive0`. A tape inserted into `drive_magnetic`
+appears as `/dev/tape0`; a disk inserted into `drive_floppy` appears as
+`/dev/fd0`. `/etc/fstab` reserves `/mnt/tape` and `/mnt/floppy` as `noauto`
+mount points. `mount`, `umount` and `lsblk` are included in `/bin` and their
+mount service validates PCFS before it changes the active OS mount table.
+
+`magnetic_disk_scanner` is a separate removable PCFS volume carrying
+`/usr/bin/scanner.bin`. Select it in the computer editor, insert it into
+`drive_floppy`, then run `mount /dev/fd0 /mnt/scanner` before the ordinary
+`scanner` command resolves the native program. New games carry one disk in
+cargo; restoring an older player save adds it once only when absent.

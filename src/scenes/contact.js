@@ -1,4 +1,5 @@
 import { communicationStatus, equipmentReason, scannerStatus } from "../game/equipment.js";
+import { fmtNumber } from "../game/units.js";
 
 /** Detailed contact card.  The scan tier is evaluated every frame: removing a
  * scanner/antenna immediately hides data and actions instead of leaking it. */
@@ -18,7 +19,7 @@ export class ContactScene {
     const ship=this.npc?.ship,integrity=Math.max(0,Math.round(ship?.integrity??100));
     sctx.fillStyle=ship?.col||"#d3a74a";sctx.fillRect(166,148,88,118);sctx.fillStyle="#0b1327";sctx.fillRect(190,126,40,26);
     sctx.fillStyle="#dbe7ff";sctx.font="14px 'Courier New',monospace";
-    sctx.fillText(this.npc?.name||"Неизвестный корабль",52,76);sctx.fillText("ДИСТ " + this.distance.toFixed(1)+" DU",52,102);
+    sctx.fillText(this.npc?.name||"Неизвестный корабль",52,76);sctx.fillText("ДИСТ " + fmtNumber(this.distance,1)+" DU",52,102);
     sctx.fillStyle=integrity>35?"#81d59b":"#ff8a78";sctx.fillText("КОРПУС "+integrity+"%",52,328);
   }
   panelSpec(){
@@ -34,7 +35,7 @@ export class ContactScene {
       const modules=(ship?.prop?.slotDefs||[]).map(slot=>ship.prop.slots[slot.id]).filter(Boolean).map(item=>item.name).join(" · ")||"нет данных";
       spec.push({kind:"readout",label:"Оборудование",value:modules});
     }
-    if(scan.resolution>=3)spec.push({kind:"readout",label:"Груз и боезапас",value:`трюм ${ship?.prop?.cargoMass?.toFixed(1)??0} т · оружие ${ship?.prop?.weapons?.length??0}`});
+    if(scan.resolution>=3)spec.push({kind:"readout",label:"Груз и боезапас",value:`трюм ${fmtNumber(ship?.prop?.cargoMass,1,"0")} т · оружие ${ship?.prop?.weapons?.length??0}`});
     const actions=[];
     if(comm.ok){
       actions.push({label:"Связаться",run:()=>{this.sys.combatMsg="канал связи с "+this.npc.name+" открыт";this.mgr.pop();}});

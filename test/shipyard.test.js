@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeItem } from "../src/game/items.js";
 import { restoreItem, snapshotItem } from "../src/game/savegame.js";
-import { makeBuiltinShipyardHull, shipyardBindings, shipyardPngSize, shipyardSlotToPng, validateShipyardData } from "../src/game/shipyard.js";
+import { makeBuiltinShipyardHull, makeShipyardHull, shipyardBindings, shipyardPngSize, shipyardRasterOffset, shipyardSlotToPng, validateShipyardData } from "../src/game/shipyard.js";
+import { shipyardMaterialColor, shipyardRasterGeometry } from "../src/game/ship-render.js";
 
 const ship=()=>({format:"pixel-shipyard/v1",seed:1337,algorithm:"ca",palette:"steel",
   image:{gridWidth:34,gridHeight:46,scale:8,crop:true,bounds:{x0:3,y0:1,x1:30,y1:44}},stats:{hull:412},parameters:{},slots:[
@@ -47,4 +48,31 @@ test("custom hull payload persists with an item",()=>{
   const restored=restoreItem(snapshotItem(hull));
   assert.equal(restored.shipyard.seed,1337);
   assert.equal(restored.shipyard.pngDataUrl,"data:image/png;base64,AA==");
+});
+
+test("shipyard import preserves a valid hull raster for JSON-only rendering",()=>{
+  const withRaster={...ship(),raster:Array.from({length:46},()=>"h".repeat(34))};
+  const data=validateShipyardData(withRaster);
+  assert.equal(data.raster.length,46);
+  assert.equal(data.raster[0].length,34);
+});
+
+test("shipyard raster origin honours crop bounds",()=>{
+  assert.deepEqual(shipyardRasterOffset(validateShipyardData(ship()).image),{x:3,y:1});
+  const uncropped=ship();uncropped.image.crop=false;
+  assert.deepEqual(shipyardRasterOffset(validateShipyardData(uncropped).image),{x:0,y:0});
+});
+
+test("legacy JSON gets an instance-owned fallback raster without losing visual settings",()=>{
+  const source=ship();source.parameters={light:"br",contrast:.75,hueShift:18};
+  const hull=makeShipyardHull(source);
+  assert.equal(hull.raster.length,46);
+  assert.equal(hull.raster[0].length,34);
+  assert.deepEqual(hull.parameters,source.parameters);
+  assert.match(shipyardMaterialColor(hull,"h",17,23),/^hsl\(/);
+});
+
+test("shared renderer geometry uses image scale and crop consistently",()=>{
+  const data=validateShipyardData(ship());
+  assert.deepEqual(shipyardRasterGeometry(data,4),{offsetX:3,offsetY:1,columns:28,rows:44,width:120,height:184,cell:4});
 });

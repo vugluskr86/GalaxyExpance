@@ -20,11 +20,38 @@ export class Panel {
   constructor(root, mgr){
     this.root = root;
     this.mgr = mgr;
+    this.settingsOpen = false;
     mgr.onChange = () => this.refresh();
     window.addEventListener("pixel-cosmos:locale", () => this.refresh());
     this.refresh();
   }
   h(html){ const d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild; }
+  display(value){
+    if(value===null||value===undefined)return "—";
+    return String(value).replace(/\b(?:NaN|undefined|null)\b/g,"—").replace(/\bInfinity\b/g,"∞");
+  }
+  availability(control){
+    const disabled=typeof control.disabled==="function"?control.disabled():!!control.disabled;
+    const reason=typeof control.reason==="function"?control.reason():control.reason;
+    return {disabled,reason:reason?(this.mgr.reasonText?.(reason)||this.display(reason)):""};
+  }
+  explain(root,reason){if(reason)root.appendChild(this.h(`<small class="action-reason">${this.display(tr(reason))}</small>`));}
+  renderSettings(root,scene){
+    if(!this.settingsOpen)return;
+    root.appendChild(this.h(`<div class="sect mt">${t("ui.settings")}</div>`));
+    this.buildControl(root,{kind:"range",label:t("ui.dustGas"),min:0,max:1,step:0.05,get:()=>settings.dust,set:v=>{settings.dust=v;},commit:()=>scene.onViewChange?.(),fmt:v=>v.toFixed(2)},scene);
+    this.buildControl(root,{kind:"select",label:t("ui.lod"),options:[["0",t("ui.low")],["1",t("ui.medium")],["2",t("ui.high")]],get:()=>String(settings.lod),set:v=>{settings.lod=parseInt(v);scene.onViewChange?.();}},scene);
+    this.buildControl(root,{kind:"range",label:t("ui.rotation"),min:0,max:0.06,step:0.005,get:()=>settings.rot,set:v=>{settings.rot=v;},commit:()=>scene.onViewChange?.(),fmt:v=>v.toFixed(3)},scene);
+    const checks=this.h(`<div class="row checks"></div>`);
+    for(const [key,label] of [["twinkle",t("ui.twinkle")],["labels",t("ui.labels")]]){
+      const l=this.h(`<label><input type="checkbox"> ${label}</label>`),inp=l.querySelector("input");
+      inp.checked=!!settings[key];inp.addEventListener("change",()=>settings[key]=inp.checked);checks.appendChild(l);
+    }
+    root.appendChild(checks);
+    this.buildControl(root,{kind:"select",label:t("ui.language"),options:[["ru",t("ui.russian")],["en",t("ui.english")]],get:getLocale,set:setLocale},scene);
+    const gameSettings=scene.settingsSpec?.()||scene.sys?.settingsSpec?.()||[];
+    for(const control of gameSettings)this.buildControl(root,control,scene);
+  }
   /** Run every panel action through the same error path.  Many gameplay APIs
    * intentionally return false or {ok:false}; exposing that result here keeps
    * a missing part/resource from looking like an unresponsive button. */
@@ -60,43 +87,26 @@ export class Panel {
 
     /* крошки */
     const crumbs = mgr.crumbs();
-    root.appendChild(this.h(
-      `<div class="crumbs">${crumbs.map((c,i) =>
-        i === crumbs.length-1 ? `<b>${tr(c)}</b>` : tr(c)).join(" → ")}</div>`
-    ));
-
+    const nav=this.h(`<div class="panelnav"><div class="crumbs"></div><div class="panelnav-actions"></div></div>`);
+    const crumbBox=nav.querySelector(".crumbs"),navActions=nav.querySelector(".panelnav-actions");
+    crumbs.forEach((crumb,index)=>{
+      if(index)crumbBox.append(" → ");
+      if(index===crumbs.length-1){const active=document.createElement("b");active.textContent=tr(crumb);crumbBox.appendChild(active);return;}
+      const button=document.createElement("button");button.className="crumbbtn";button.textContent=tr(crumb);
+      button.addEventListener("click",()=>mgr.navigateTo(index));crumbBox.appendChild(button);
+    });
+    if(mgr.returnToShip){const ship=document.createElement("button");ship.className="crumbbtn";ship.textContent=t("ui.toShip");ship.addEventListener("click",()=>mgr.returnToShip());navActions.appendChild(ship);}
+    const preferences=document.createElement("button");preferences.className=`crumbbtn${this.settingsOpen?" sel":""}`;preferences.textContent=t("ui.settings");preferences.addEventListener("click",()=>{this.settingsOpen=!this.settingsOpen;this.refresh();});navActions.appendChild(preferences);
+    root.appendChild(nav);
+    this.renderSettings(root,scene);
     /* параметры сцены */
-    const spec = scene.panelSpec?.() || [];
+    const spec = (scene.panelSpec?.() || []).filter(control=>
+      !(mgr.returnToShip&&control.kind==="action"&&control.label===t("ui.goToShip")));
     if (spec.length){
-      root.appendChild(this.h(`<div class="sect">${t("ui.parameters")}</div>`));
       for(const s of spec) this.buildControl(root, s, scene);
     }
 
     /* вид (глобальные настройки) */
-    root.appendChild(this.h(`<div class="sect mt">${t("ui.view")}</div>`));
-    this.buildControl(root, { kind:"range", label:t("ui.dustGas"), min:0, max:1, step:0.05,
-      get:()=>settings.dust, set:v=>{settings.dust=v;},
-      commit:()=>{ scene.onViewChange?.(); }, fmt:v=>v.toFixed(2) }, scene);
-    this.buildControl(root, { kind:"select", label:t("ui.lod"),
-      options:[["0",t("ui.low")],["1",t("ui.medium")],["2",t("ui.high")]],
-      get:()=>String(settings.lod), set:v=>{ settings.lod=parseInt(v); scene.onViewChange?.(); } }, scene);
-    this.buildControl(root, { kind:"range", label:t("ui.rotation"), min:0, max:0.06, step:0.005,
-      get:()=>settings.rot, set:v=>{settings.rot=v;}, fmt:v=>v.toFixed(3) }, scene);
-    const checks = this.h(`<div class="row checks"></div>`);
-    for(const [key, label] of [["twinkle",t("ui.twinkle")],["labels",t("ui.labels")]]){
-      const l = this.h(`<label><input type="checkbox"> ${label}</label>`);
-      const inp = l.querySelector("input");
-      inp.checked = settings[key];
-      inp.addEventListener("change", () => settings[key] = inp.checked);
-      checks.appendChild(l);
-    }
-    root.appendChild(checks);
-    this.buildControl(root, {
-      kind:"select", label:t("ui.language"),
-      options:[["ru",t("ui.russian")],["en",t("ui.english")]],
-      get:getLocale, set:setLocale
-    }, scene);
-
     /* легенда классов (если сцена её даёт) */
     if (spec.some(s => s.kind === "legend") && scene.legendData){
       root.appendChild(this.h(`<div class="sect mt">${t("ui.starClassification")}</div>`));
@@ -149,14 +159,17 @@ export class Panel {
     const prim = scene.primary?.();
     if (prim){
       const b = this.h(`<button class="big">${tr(prim.label)}</button>`);
+      const state=this.availability(prim);b.disabled=state.disabled;b.title=state.reason;
       b.addEventListener("click", () => this.invoke(prim.run,scene));
       root.appendChild(b);
+      this.explain(root,state.reason);
     }
 
     root.appendChild(this.h(
       `<div class="hint">${t("ui.navigationHint")}</div>`));
   }
   buildControl(root, s, scene){
+    if(s.hidden||(s.kind==="select"&&scene.hideDirectShipFit))return;
     if (s.kind === "seed"){
       const row = this.h(`<div class="row"><label>${tr(s.label)}</label>
         <div class="seedrow"><input type="number"><button title="${t("ui.randomSeed")}">⚄</button></div></div>`);
@@ -169,8 +182,9 @@ export class Panel {
       const row = this.h(`<div class="row"><label>${tr(s.label)} <span class="out"></span></label>
         <input type="range" min="${s.min}" max="${s.max}" step="${s.step}"></div>`);
       const inp = row.querySelector("input"), out = row.querySelector(".out");
-      const show = v => out.textContent = s.fmt ? s.fmt(v) : v;
-      inp.value = s.get(); show(s.get());
+      const show = v => out.textContent = this.display(s.fmt ? s.fmt(v) : v);
+      const raw=Number(s.get()),value=Number.isFinite(raw)?raw:Number(s.min);
+      inp.value = value; show(value);
       inp.addEventListener("input", () => { const v = parseFloat(inp.value); s.set(v); show(v); });
       if (s.commit) inp.addEventListener("change", () => { s.commit(); this.refresh(); });
       root.appendChild(row);
@@ -178,7 +192,8 @@ export class Panel {
       const row = this.h(`<div class="row"><label>${tr(s.label)}</label><select>
         ${s.options.map(([v, label]) => `<option value="${v}">${tr(label)}</option>`).join("")}</select></div>`);
       const sel = row.querySelector("select");
-      sel.value = s.get();
+      const selected=String(s.get());
+      sel.value = s.options.some(([value])=>String(value)===selected)?selected:String(s.options[0]?.[0]??"");
       sel.addEventListener("change", () => { s.set(sel.value); this.refresh(); });
       root.appendChild(row);
     } else if (s.kind === "text"){
@@ -189,8 +204,10 @@ export class Panel {
       root.appendChild(row);
     } else if (s.kind === "action"){
       const b = this.h(`<button class="big" style="margin-bottom:10px">${tr(s.label)}</button>`);
+      const state=this.availability(s);b.disabled=state.disabled;b.title=state.reason;
       b.addEventListener("click", () => this.invoke(s.run,scene));
       root.appendChild(b);
+      this.explain(root,state.reason);
     } else if (s.kind === "rows"){
       const box = this.h(`<div class="list" style="max-height:none"></div>`);
       if (!s.items.length) box.innerHTML =
@@ -199,6 +216,7 @@ export class Panel {
         const row = this.h(`<div class="itemrow${r.sel ? " sel" : ""}"></div>`);
         const head = this.h(`<button class="itemhead"><span class="itag">${r.tag || ""}</span>` +
           `${tr(r.label)}<small>${tr(r.note || "")}</small></button>`);
+        const rowState=this.availability(r);head.disabled=rowState.disabled;head.title=rowState.reason;
         head.addEventListener("click", () => this.invoke(r.run,scene));
         row.appendChild(head);
         if (r.sub) row.appendChild(this.h(`<div class="itemsub">${tr(r.sub)}</div>`));
@@ -206,23 +224,26 @@ export class Panel {
           const acts = this.h(`<div class="itemacts"></div>`);
           for(const a of r.actions){
             const b = this.h(`<button${a.warn ? ' class="warn"' : ""}>${tr(a.label)}</button>`);
+            const actionState=this.availability(a);b.disabled=actionState.disabled;b.title=actionState.reason;
             b.addEventListener("click", e => { e.stopPropagation(); this.invoke(a.run,scene); });
             acts.appendChild(b);
           }
           row.appendChild(acts);
         }
+        this.explain(row,rowState.reason);
         box.appendChild(row);
       }
       root.appendChild(box);
     } else if (s.kind === "readout"){
       root.appendChild(this.h(
-        `<div class="selbox"><b>${tr(s.label)}</b><small>${tr(s.value)}</small></div>`));
+        `<div class="selbox"><b>${tr(s.label)}</b><small>${this.display(tr(s.value))}</small></div>`));
     } else if (s.kind === "sect"){
       root.appendChild(this.h(`<div class="sect mt">${tr(s.label)}</div>`));
     } else if (s.kind === "buttons"){
       const row = this.h(`<div class="btns" style="margin-bottom:8px"></div>`);
       for(const b of s.items){
         const el = this.h(`<button${b.sel ? ' class="clsbtn sel"' : ""}>${tr(b.label)}</button>`);
+        const state=this.availability(b);el.disabled=state.disabled;el.title=state.reason;
         el.addEventListener("click", () => this.invoke(b.run,scene));
         row.appendChild(el);
       }

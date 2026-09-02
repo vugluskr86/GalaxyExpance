@@ -1,68 +1,26 @@
-# Cline Rules for Pixel Cosmos
+# Pixel Cosmos rules for Cline
 
-## Project overview
-- Procedural pixel-art cosmos: cluster → galaxy → star system → body (planet/moon)
-- Pure Canvas 2D rendering, no WebGL
-- 420×420 px canvas, pixelated image-rendering
-- Deterministic universe — everything from a single seed via mulberry32 RNG
-- Vite 8 build system, output to docs/
+Follow [AGENTS.md](AGENTS.md) and start with
+[documentation/README.md](documentation/README.md).
 
-## Rendering
-- Planets: bakePlanet() creates offscreen canvas, renderPlanetBody() fills ImageData per frame (lighting, rings, clouds, craters)
-- Stars: bakeStar() + renderStar() — granulation, limb darkening, corona rays
-- Nebulae: baked once into offscreen canvas
-- Orbits, comets, asteroids, ships, selection highlights: pixel fillRect() on main canvas
-- Labels: separate #labels canvas overlay with devicePixelRatio scaling
-- Overlay canvas (#scene): pointer events for tap/drag/wheel, labels canvas: pointer-events: none
+- Treat `documentation/` as source documentation and `docs/` as generated
+  output.
+- Preserve seed determinism. Use the project RNG/hash helpers and stable IDs;
+  never use `Math.random()` for generated gameplay or economic results.
+- Store only mutable save deltas. Rebuild baseline systems, markets and
+  catalogues from seed.
+- Create a new item instance with `makeItem()` whenever an item is purchased,
+  installed, looted or moved into cargo.
+- Use the shared ship renderer. Hull render configuration belongs to the hull
+  instance.
+- Put visible text in Russian and English locale files, and make unavailable
+  actions explain why.
+- Keep game rules in `src/game/`, keep scenes thin, and test deterministic
+  behaviour with same-seed tests.
+- Verify with focused `npm.cmd test -- ...` and `npx.cmd vite build`.
 
-## Scene contract
-Each scene must implement a subset of:
-- update(dt, t) — physics step
-- draw(t) — render to sctx
-- drawLabels(t) — render to lctx
-- onTap(mx, my), onHover(mx, my), onWheel(mx, my, deltaY)
-- onDragStart(), onDragMove(dx, dy, state)
-- fit(), zoomBy(f)
-- status() → { title, info }
-- selectedInfo() → { name, detail }
-- primary() → { label, run }
-- panelSpec() → array of control descriptors
-- search(q) → array of { label, tag, run }
-
-## Ship physics
-- Modes: "newton" (patch-conics, manual thrust), "cruise" (FSD superluminal), "landed"
-- patched-conics: findPrimary() determines dominant body; state converted at SOI boundary
-- fsdTo(target, altitude) — cruise with auto-braking, exits to newton preserving velocity vector
-- hohmannTo(sys, targetAlt) — two-impulse transfer between circular orbits
-- setManeuverNode(dvProg, dvRad, eta) — timed delta-v node
-- circularize(sys) — circularize at current position
-- setCircular(sys, selRef, h) — instant circular orbit (used by FSD exit button)
-
-## Key keyboard shortcuts
-- 1/2/3/4 — simulation speed presets
-- [/] — speed step down/up
-- WASD — ship thrust/rotation
-- X — kill thrust
-- C — circularize orbit
-- F — FSD to selected target
-- H — Hohmann transfer to selected target
-- M — set maneuver node
-
-## File conventions
-- No default exports — use named exports only
-- JSDoc comments for public functions
-- Russian comments/labels for UI text
-- Constants extracted at top of files
-- RNG order is part of the contract — never reorder rng calls in generators
-
-## Build
-- npm run dev — Vite dev server
-- npm run build — production build to docs/
-- npm run deploy — build + manual git commit (gh-pages)
-- .gitignore ignores node_modules, .vite, .env, logs, cache
-
-## Do NOT
-- Do NOT introduce WebGL — it was attempted and rolled back due to canvas sync issues
-- Do NOT change RNG call order in gen/ files
-- Do NOT use default exports
-- Do NOT touch docs/ directory manually — it's build output
+Detailed references: [scanner/economy](documentation/gameplay/SCANNER_AND_ECONOMY.md),
+[mechanics](documentation/gameplay/GAME_MECHANICS.md),
+[scanner design](documentation/design/SCAN_DESIGN.md),
+[economy plan](documentation/plans/ECONOMY_ROADMAP.md), and
+[shipyard render contract](documentation/design/PIXEL_SHIPYARD_JSON_SPEC.md).

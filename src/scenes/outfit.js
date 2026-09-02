@@ -1,13 +1,12 @@
 import { SLOTS, SLOT_RU, itemStatLines } from "../game/items.js";
 import { FloatingItem } from "../game/inventory.js";
 import { primaryState } from "../game/physics.js";
-import { fmtDv, fmtMass, fmtSpeed, fmtTime, fmtDist, DU_M } from "../game/units.js";
+import { fmtDv, fmtMass, fmtSpeed, fmtTime, fmtDist, fmtNumber, DU_M } from "../game/units.js";
 import { openComputerEditor } from "./computer.js";
 import { NetworkScene } from "./network.js";
 import { drawOutfitSilhouette, selectOutfitSlot, stepOutfitParticles } from "./outfit-render.js";
 import { makeShipyardHull, validateShipyardData } from "../game/shipyard.js";
 import { t } from "../i18n/index.js";
-import { BalanceLabScene } from "./balance-lab.js";
 
 /** Экран корабля: слоты, инвентарь, характеристики.
  *  Компоновка как в оснастке Elite: слева схема с точками подвески,
@@ -20,6 +19,7 @@ export class OutfitScene {
     this.sel = null;             // выбранный предмет инвентаря
     this.editingItem = null;     // предмет, чьи внутренние слоты сейчас открыты
     this.msg = "";
+    this.mediaSelections = {};
     /* UI-only state: filters and pages never enter a world save. */
     this.inventoryFilter="all";this.inventoryQuery="";this.pages={inventory:0,cargo:0,compatible:0,components:0,internal:0};
   }
@@ -48,7 +48,9 @@ export class OutfitScene {
       try{
         const imported=validateShipyardData(JSON.parse(String(reader.result))),hull=this.prop?.slots.hull;
         if(!hull)return;
-        hull.shipyard=makeShipyardHull(imported,hull.shipyard?.pngDataUrl||null);
+        // JSON replaces the complete visual model.  Retaining a PNG from an
+        // earlier hull made the newly imported mounts and old image disagree.
+        hull.shipyard=makeShipyardHull(imported);
         this.msg=t("shipyard.jsonImported",{slots:imported.slots.length});this.persistShipyard();this.mgr?.onChange?.();
       }catch(error){this.msg=t("shipyard.importFailed",{reason:error.message});this.mgr?.onChange?.();}
     };
@@ -203,6 +205,22 @@ export class OutfitScene {
     p.cargo.remove(item);
     p.inventory.add(item);
   }
+  insertMedia(reader,media){
+    const p=this.prop;if(!p?.cargo.items.includes(media)&&!p?.inventory.items.includes(media))return;
+    const source=p.cargo.items.includes(media)?p.cargo:p.inventory;
+    source.remove(media);
+    try{
+      const old=reader.insertMedia(media);
+      if(old)p.cargo.add(old);
+      this.msg=t("ui.mediaInserted",{reader:reader.name,media:media.name});
+    }catch(error){source.add(media);this.msg=error.message;}
+  }
+  ejectMedia(reader){
+    const media=reader?.ejectMedia?.();if(!media)return;
+    const p=this.prop;
+    if(p.cargoMass+media.mass<=p.cargoCap)p.cargo.add(media);else p.inventory.add(media);
+    this.msg=t("ui.mediaEjected",{reader:reader.name,target:t(p.cargo.items.includes(media)?"ui.cargoHold":"ui.handInventory")});
+  }
 
   /* ---------- панель ---------- */
   status(){
@@ -211,8 +229,8 @@ export class OutfitScene {
     return {
       title: "Экипировка · " + p.hull.name,
       info: "масса " + fmtMass(p.mass) + " · ΔV " + fmtDv(p.deltaV) +
-        " · трюм " + p.cargoMass.toFixed(1) + "/" + p.cargoCap + " т" +
-        " · топливо " + p.fuel.toFixed(1) + "/" + p.fuelCap + " т"
+        " · трюм " + fmtNumber(p.cargoMass,1) + "/" + p.cargoCap + " т" +
+        " · топливо " + fmtNumber(p.fuel,1) + "/" + p.fuelCap + " т"
     };
   }
   selectedInfo(){
@@ -225,8 +243,8 @@ export class OutfitScene {
       name: p.hull.name + " · " + p.hull.tag,
       detail: "масса " + fmtMass(p.mass) + " (сухая " + fmtMass(p.dryMass) + ")" +
         "<br>тяга " + p.engine.thrust + " кН · Iₛₚ " + p.engine.isp + " с · TWR " +
-        (g > 0 ? p.twr(g).toFixed(2) : "—") +
-        "<br>ускорение " + p.accelFullMs.toFixed(2) + " м/с² · ΔV " + fmtDv(p.deltaV) +
+        (g > 0 ? fmtNumber(p.twr(g),2) : "—") +
+        "<br>ускорение " + fmtNumber(p.accelFullMs,2) + " м/с² · ΔV " + fmtDv(p.deltaV) +
         "<br>захват: " + (p.scoop ? p.scoop.name : "не установлен")
     };
   }
@@ -261,6 +279,33 @@ export class OutfitScene {
     ];
     spec.push(...this.pageControls("internal",internal));
 
+    /* A reader may be beyond the currently paged internal-slot list.  Media
+       controls must remain visible so a disk can be inserted to make that
+       drive usable in the first place. */
+    const readers=host.slotDefs.map(slot=>host.slots[slot.id]).filter(item=>item?.stats.removableMedia);
+    if(readers.length){
+      spec.push({kind:"sect",label:t("ui.removableMedia")});
+      spec.push({kind:"rows",items:readers.map(reader=>{
+        const available=[...p.cargo.items,...p.inventory.items].filter(media=>reader.canInsertMedia(media));
+        return {tag:reader.tag,label:reader.name,note:reader.insertedMedia?t("ui.mediaInsertedNote",{media:reader.insertedMedia.name}):t("ui.noMediaInserted"),
+          sub:reader.insertedMedia?`${reader.insertedMedia.stats.capacityKb} КБ · /dev/${reader.stats.deviceName}`:t("ui.mediaExpected",{type:reader.stats.removableMedia}),
+          actions:[
+            ...(reader.insertedMedia?[{label:t("ui.ejectMedia"),run:()=>this.ejectMedia(reader)}]:[])
+          ]};
+      })});
+      for(const reader of readers){
+        const available=[...p.cargo.items,...p.inventory.items].filter(media=>reader.canInsertMedia(media));
+        const selected=()=>this.mediaSelections[reader.instanceId]||"";
+        spec.push({kind:"select",label:t("ui.mediaForReader",{reader:reader.name}),
+          options:[["",t("ui.selectMedia")],...available.map(media=>[media.instanceId,media.name])],
+          get:selected,set:value=>{this.mediaSelections[reader.instanceId]=value;}});
+        spec.push({kind:"action",label:t("ui.insertSelectedMedia"),
+          disabled:()=>!selected()||!available.some(media=>media.instanceId===selected()),
+          reason:()=>available.length?t("ui.selectMediaToInsert"):t("ui.noCompatibleMedia"),
+          run:()=>{const media=available.find(item=>item.instanceId===selected());if(media)this.insertMedia(reader,media);}});
+      }
+    }
+
     if (host.slot === "computer" && host.memory){
       spec.push({ kind:"action", label:"Включить компьютер", run:() => {
         try {
@@ -278,7 +323,7 @@ export class OutfitScene {
         terminal?.canvas?.focus();
         this.msg = "BIOS Setup: выберите загрузочный носитель";
       } });
-      const installer=host.runtime.bootDevices().find(device=>device.storage.installationMedia);
+      const installer=host.runtime.bootDevices().find(device=>device.storage?.installationMedia);
       if(installer)spec.push({ kind:"action", label:"Запустить установщик PCFD", run:() => {
         try {
           host.firmware.saveSettings({bootDevice:installer.id,bootFile:"os.bin"});
@@ -316,7 +361,7 @@ export class OutfitScene {
   }
 
   panelSpec(){
-    if(!this.editingItem&&this.sys.world)return [{kind:"action",label:t("ui.balanceLab"),run:()=>this.mgr.push(new BalanceLabScene(this.sys))},...this.shipSpec()];
+    if(!this.editingItem&&this.sys.world)return this.shipSpec();
     return this.editingItem ? this.itemEditorSpec(this.editingItem) : this.shipSpec();
   }
   shipSpec(){
@@ -394,12 +439,12 @@ export class OutfitScene {
 
     /* --- инвентарь --- */
     const inventory=this.pageOf(this.filtered(p.inventory.items),"inventory");
-    spec.push({ kind:"sect", label:"Инвентарь · " + p.inventory.massTotal.toFixed(1) + " т" });
+    spec.push({ kind:"sect", label:"Инвентарь · " + fmtNumber(p.inventory.massTotal,1) + " т" });
     spec.push({ kind:"rows", empty:"инвентарь пуст",
       items: inventory.items.map(it => ({
         tag: it.tag,
         label: it.name + (it.qty > 1 ? " ×" + it.qty : ""),
-        note: it.mass.toFixed(1) + " т",
+        note: fmtNumber(it.mass,1) + " т",
         actions: [
           ...(it.slot !== "cargo" && p.accepts(it)
               ? [{ label:"Установить", run:() => this.installFromInv(it) }]
@@ -416,12 +461,12 @@ export class OutfitScene {
 
     /* --- трюм --- */
     const cargo=this.pageOf(p.cargo.items.filter(item=>this.matchesQuery(item)),"cargo");
-    spec.push({ kind:"sect", label:"Трюм · " + p.cargoMass.toFixed(1) + " / " + p.cargoCap + " т" });
+    spec.push({ kind:"sect", label:"Трюм · " + fmtNumber(p.cargoMass,1) + " / " + p.cargoCap + " т" });
     spec.push({ kind:"rows", empty:"трюм пуст",
       items: cargo.items.map(it => ({
         tag: it.tag,
         label: it.name + (it.qty > 1 ? " ×" + it.qty : ""),
-        note: it.mass.toFixed(1) + " т",
+        note: fmtNumber(it.mass,1) + " т",
         actions:[
           { label:"В инвентарь", run:() => this.unstow(it) },
           { label:"Выбросить", warn:true, run:() => {

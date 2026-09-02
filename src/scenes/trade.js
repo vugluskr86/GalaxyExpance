@@ -1,6 +1,7 @@
 import { GOODS, buyGoods, marketQuote, reputationFor, resolveBlackMarketRisk, sellGoods } from "../game/economy.js";
 import { acceptContract, completeContract, contractsAt, generateContracts } from "../game/contracts.js";
 import { t } from "../i18n/index.js";
+import { fmtNumber } from "../game/units.js";
 
 /**
  * Landing-only market screen.
@@ -64,12 +65,12 @@ export class TradeScene {
     sctx.fillText(`${this.settlement?.specialization||t("ui.noMarket")} · ${this.marketKind}`,32,128);
     const prop=this.propulsion;
     sctx.fillStyle="#c3cbee";
-    sctx.fillText(t("ui.cargoMass",{mass:prop?.cargoMass.toFixed(1)||0,capacity:prop?.cargoCap||0}),32,320);
+    sctx.fillText(t("ui.cargoMass",{mass:fmtNumber(prop?.cargoMass,1,"0"),capacity:prop?.cargoCap||0}),32,320);
   }
   drawLabels(){}
   status(){
     const prop=this.propulsion;
-    return {title:t("ui.tradeCenter"),info:t("ui.tradeStatus",{specialization:this.settlement?.specialization||"—",mass:prop?.cargoMass.toFixed(1)||0,capacity:prop?.cargoCap||0})};
+    return {title:t("ui.tradeCenter"),info:t("ui.tradeStatus",{specialization:this.settlement?.specialization||"—",mass:fmtNumber(prop?.cargoMass,1,"0"),capacity:prop?.cargoCap||0})};
   }
   selectedInfo(){return {name:this.body?.id||"—",detail:this.message||t("ui.tradeHint")};}
   primary(){return {label:t("ui.backToSurface"),run:()=>this.mgr.pop()};}
@@ -101,7 +102,7 @@ export class TradeScene {
       {kind:"readout",label:t("ui.authority"),value:t("ui.authorityValue",{faction:t(`ui.factions.${this.settlement.factionId}`),government:t(`ui.governments.${this.settlement.government}`),security:Math.round(this.settlement.security*100)})},
       {kind:"readout",label:t("ui.credits"),value:t("ui.creditsValue",{credits:this.sys.world.data.economy?.credits||0,day:this.sys.world.data.economy?.day||0})},
       {kind:"readout",label:t("ui.reputation"),value:t("ui.reputationValue",{planet:rep.settlement,faction:rep.faction,merchant:rep.careers.merchant,protector:rep.careers.protector,pirate:rep.careers.pirate,researcher:rep.careers.researcher})},
-      {kind:"readout",label:t("ui.cargo"),value:t("ui.cargoMass",{mass:prop.cargoMass.toFixed(1),capacity:prop.cargoCap})},
+      {kind:"readout",label:t("ui.cargo"),value:t("ui.cargoMass",{mass:fmtNumber(prop.cargoMass,1),capacity:prop.cargoCap})},
       {kind:"sect",label:t("ui.contracts")},
       {kind:"rows",items:contractRows,empty:t("ui.noContracts")},
       {kind:"sect",label:t("ui.market")},

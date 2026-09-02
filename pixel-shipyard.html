@@ -236,8 +236,8 @@ header .meta{color:var(--muted);letter-spacing:.08em;text-transform:uppercase;fo
 
 <div class="toast" id="toast"></div>
 
-<script>
-"use strict";
+<script type="module">
+import { drawShipyardRaster } from "./src/game/ship-render.js";
 
 /* ============================================================
    0. УТИЛИТЫ
@@ -893,43 +893,7 @@ function measure(g,engines,guns){
 /* ============================================================
    6. ПАЛИТРА И РЕНДЕР
    ============================================================ */
-const PALETTES={
-  steel:   {hull:[212,.10,.56],accent:[212,.14,.38],glass:[192,.62,.56],engine:[218,.08,.30],glow:[28,1,.62],metal:[210,.05,.72]},
-  rust:    {hull:[24,.32,.50],accent:[16,.42,.32],glass:[186,.55,.55],engine:[20,.20,.26],glow:[42,1,.60],metal:[30,.14,.66]},
-  alien:   {hull:[142,.26,.44],accent:[152,.38,.28],glass:[86,.70,.58],engine:[160,.30,.24],glow:[96,1,.60],metal:[130,.12,.62]},
-  imperial:{hull:[210,.05,.80],accent:[214,.10,.58],glass:[204,.60,.48],engine:[210,.04,.40],glow:[8,.95,.60],metal:[40,.30,.66]},
-  neon:    {hull:[262,.22,.44],accent:[286,.44,.34],glass:[318,.80,.62],engine:[258,.28,.26],glow:[176,1,.60],metal:[230,.20,.68]},
-  void:    {hull:[220,.14,.30],accent:[228,.20,.20],glass:[268,.60,.58],engine:[222,.12,.16],glow:[276,.95,.66],metal:[224,.06,.52]},
-  sand:    {hull:[44,.24,.62],accent:[36,.30,.44],glass:[196,.50,.52],engine:[40,.14,.34],glow:[18,.95,.58],metal:[46,.12,.76]}
-};
 const LIGHT={tl:[-1,-1],t:[0,-1],tr:[1,-1],l:[-1,0],r:[1,0],bl:[-1,1],b:[0,1],br:[1,1]};
-
-function palColor(mat,shade){
-  const base=PALETTES[P.palette]||PALETTES.steel;
-  const key=mat===M.ACCENT?'accent':mat===M.GLASS?'glass':mat===M.ENGINE?'engine':
-            mat===M.GLOW?'glow':mat===M.METAL?'metal':'hull';
-  let[h,s,l]=base[key];
-  if(key==='accent'||key==='metal') h=lerp(h,P.accentHue,0.5);
-  h+=P.hueShift; s*=P.satMul; l*=P.lightMul;
-  const off=[-0.15,0,0.09,0.19][shade]*P.contrast;
-  return `hsl(${((h%360)+360)%360} ${clamp(s*100,0,100).toFixed(1)}% ${clamp((l+off)*100,3,97).toFixed(1)}%)`;
-}
-function shadeOf(g,x,y){
-  const[lx,ly]=LIGHT[P.light]||LIGHT.tl;
-  const front=isSolid(at(g,x+lx,y+ly)), back=isSolid(at(g,x-lx,y-ly));
-  let s=1;
-  if(!front)s=2;
-  else if(!back&&P.ao)s=0;
-  if(P.edge&&!front&&!isSolid(at(g,x+lx*2,y+ly*2)))s=3;
-  if(P.panels>0){
-    const pid=hash2(Math.floor(x/P.panelW),Math.floor(y/P.panelH),7);
-    if(pid<P.panels*0.5)s=Math.max(0,s-1);
-    else if(pid>1-P.panels*0.28)s=Math.min(3,s+1);
-    if(x%P.panelW===0||y%P.panelH===0){ if(hash2(x,y,13)<P.panels*0.4) s=Math.max(0,s-1); }
-  }
-  if(P.dither>0&&hash2(x*3,y*7,5)<P.dither) s=clamp(s+(hash2(x,y,11)<0.5?-1:1),0,3);
-  return s;
-}
 function bbox(g){
   let x0=1e9,x1=-1,y0=1e9,y1=-1;
   for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++){
@@ -939,46 +903,23 @@ function bbox(g){
   if(x1<0)return{x0:0,y0:0,x1:g.w-1,y1:g.h-1};
   return{x0,y0,x1,y1};
 }
+/* Экспорт пиксельной маски корпуса в формат игры: h/a/g/e/m по материалам,
+   «.» — пустота. Импортёр использует её как запасной рендер, пока не подключён PNG. */
+function gridToRaster(g){
+  const map={[M.HULL]:'h',[M.ACCENT]:'a',[M.GLASS]:'g',[M.ENGINE]:'e',[M.GLOW]:'l',[M.METAL]:'m'};
+  const rows=[];
+  for(let y=0;y<g.h;y++){
+    let row='';
+    for(let x=0;x<g.w;x++)row+=map[g.d[y*g.w+x]]||'.';
+    rows.push(row);
+  }
+  return rows;
+}
 function drawShip(ctx,g,scale,bg){
-  let ox=0,oy=0,gw=g.w,gh=g.h;
-  if(P.crop){const b=bbox(g);ox=b.x0;oy=b.y0;gw=b.x1-b.x0+1;gh=b.y1-b.y0+1;}
-  const W=gw+2,H=gh+2;
-  ctx.canvas.width=W*scale; ctx.canvas.height=H*scale;
-  ctx.imageSmoothingEnabled=false;
-  ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
-  if(bg==='dock'){
-    ctx.fillStyle='#0a0e14';ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
-    ctx.fillStyle='#111926';
-    for(let y=0;y<H;y+=4)for(let x=0;x<W;x+=4) if((x+y)%8===0) ctx.fillRect(x*scale,y*scale,scale*4,scale*4);
-  } else if(bg==='dark'){
-    ctx.fillStyle='#0a0e14';ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
-  }
-  const px=(x,y,c)=>{ctx.fillStyle=c;ctx.fillRect((x-ox+1)*scale,(y-oy+1)*scale,scale,scale);};
-  // контур
-  if(P.outline){
-    const oc=palColor(M.HULL,0);
-    ctx.globalAlpha=1;
-    for(let y=oy-1;y<=oy+gh;y++)for(let x=ox-1;x<=ox+gw;x++){
-      if(isSolid(at(g,x,y)))continue;
-      let near=false;
-      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++) if(isSolid(at(g,x+dx,y+dy))){near=true;break;}
-      if(near) px(x,y,'hsl(220 30% 7%)');
-    }
-    void oc;
-  }
-  // тело
-  for(let y=oy;y<oy+gh;y++)for(let x=ox;x<ox+gw;x++){
-    const m=g.d[y*g.w+x];
-    if(m===M.EMPTY)continue;
-    if(m===M.GLOW){
-      const d=hash2(x,y,3);
-      ctx.globalAlpha=0.55+0.45*d;
-      px(x,y,palColor(M.GLOW,d<0.4?3:2));
-      ctx.globalAlpha=1;
-      continue;
-    }
-    px(x,y,palColor(m,m===M.GLASS?clamp(shadeOf(g,x,y)+1,0,3):shadeOf(g,x,y)));
-  }
+  const b=bbox(g);
+  const data={format:'pixel-shipyard/v1',seed:P.seed,algorithm:P.algo,palette:P.palette,
+    image:{gridWidth:g.w,gridHeight:g.h,scale,crop:P.crop,bounds:b},parameters:JSON.parse(JSON.stringify(P)),raster:gridToRaster(g)};
+  drawShipyardRaster(ctx,data,{cell:scale,background:bg==='none'?null:bg,resize:true});
 }
 function drawSlots(ctx,g,slots,scale){
   if(!P.showSlots||!slots)return;
@@ -1306,7 +1247,7 @@ function download(name,blobOrUrl){
 }
 function buildShipData(){
   const b=bbox(current.grid);
-  return {format:'pixel-shipyard/v1',seed:P.seed,algorithm:P.algo,palette:P.palette,image:{gridWidth:current.grid.w,gridHeight:current.grid.h,scale:P.scale,crop:P.crop,bounds:b,background:P.bg,origin:'top-left',axis:{x:'right',y:'down'},slotCoordinates:'grid-pixels-before-scale'},stats:current.stats,slots:current.slots,parameters:JSON.parse(JSON.stringify(P))};
+  return {format:'pixel-shipyard/v1',seed:P.seed,algorithm:P.algo,palette:P.palette,image:{gridWidth:current.grid.w,gridHeight:current.grid.h,scale:P.scale,crop:P.crop,bounds:b,background:P.bg,origin:'top-left',axis:{x:'right',y:'down'},slotCoordinates:'grid-pixels-before-scale'},stats:current.stats,slots:current.slots,parameters:JSON.parse(JSON.stringify(P)),raster:gridToRaster(current.grid)};
 }
 function exportJSON(){
   const data=JSON.stringify(buildShipData(),null,2);

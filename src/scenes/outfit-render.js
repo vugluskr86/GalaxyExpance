@@ -1,5 +1,6 @@
 /** Canvas renderer for the outfitting hangar. It intentionally contains no text. */
-import { shipyardBindings, shipyardImage, shipyardPngSize } from "../game/shipyard.js";
+import { shipyardBindings, shipyardPngSize } from "../game/shipyard.js";
+import { drawShipyardRaster } from "../game/ship-render.js";
 const PARTICLES=84;
 /* Each hull has its own pixel-art outline; the shared interior is a modular
  * deck plan rather than a texture, so installed equipment remains readable. */
@@ -45,30 +46,11 @@ export function selectOutfitSlot(scene,x,y){
 }
 function drawShipyardHull(scene,t,generated,cx,cy){
   const {sctx}=scene.ctx;
-  // Keep the player's familiar system-map colour as the main hull shade. The
-  // generator palette still changes accents, glass and engine metal per hull.
-  const base=scene.sys.playerShip?.col||null;
-  const layouts={
-    steel:{h:"#6384ad",a:"#9abde5",g:"#b9f2ff",e:"#263957",m:"#d3dfeb"},
-    rust:{h:"#885f46",a:"#c68a5e",g:"#9ee5ed",e:"#38251f",m:"#d5b092"},
-    alien:{h:"#327d69",a:"#59b78a",g:"#d1ff8f",e:"#1c4b42",m:"#9ed6b6"},
-    imperial:{h:"#a6aebc",a:"#edf1f5",g:"#9edfff",e:"#555b68",m:"#f8d786"},
-    neon:{h:"#604d9e",a:"#ad76dc",g:"#ff9ee8",e:"#302450",m:"#8cecff"}
-  };
-  const palette=layouts[generated.palette]||layouts.steel;
-  const colors=base?{h:base,a:"#ffe7a0",g:"#d6f8ff",e:"#6b4c1e",m:"#fff0bd"}:palette;
   const pngSize=shipyardPngSize(generated.image),fit=Math.min(370/pngSize.width,390/pngSize.height);
   const width=pngSize.width*fit,height=pngSize.height*fit,left=cx-width/2,top=cy-height/2;
-  const image=shipyardImage(generated.pngDataUrl);
-  if(image){sctx.save();sctx.imageSmoothingEnabled=false;sctx.drawImage(image,Math.round(left),Math.round(top),Math.round(width),Math.round(height));sctx.restore();}
-  else if(generated.raster){
-    // No fillRect behind the raster: the hangar star field deliberately stays
-    // visible through the empty cells, just like a transparent exported PNG.
-    for(let y=0;y<generated.raster.length;y++)for(let x=0;x<generated.raster[y].length;x++){
-      const material=generated.raster[y][x];if(material===".")continue;
-      sctx.fillStyle=colors[material]||colors.h;sctx.fillRect(Math.round(left+(x+1)*fit),Math.round(top+(y+1)*fit),Math.ceil(fit),Math.ceil(fit));
-    }
-  }
+  // The serialised hull, rather than an optional PNG export, is used in every
+  // scene. `fit` is in PNG pixels, so one grid cell is image.scale * fit.
+  drawShipyardRaster(sctx,generated,{x:left,y:top,cell:generated.image.scale*fit,background:null});
   scene._shipHitboxes=[{slot:"hull",x:left,y:top,w:width,h:height}];
   for(const binding of shipyardBindings(generated)){
     const x=left+binding.png.centerX*fit,y=top+binding.png.centerY*fit,size=Math.max(8,generated.image.scale*fit);

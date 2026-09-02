@@ -4,8 +4,8 @@
   "entries": [
     {
       "path": "/.pcfd-directories.json",
-      "size": 695,
-      "checksum": 1643091386,
+      "size": 845,
+      "checksum": 3337054453,
       "uid": 0,
       "gid": 0,
       "mode": 384
@@ -107,6 +107,14 @@
       "mode": 493
     },
     {
+      "path": "/bin/lsblk.bin",
+      "size": 13172,
+      "checksum": 612159644,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
       "path": "/bin/make.bin",
       "size": 10549,
       "checksum": 3735759982,
@@ -118,6 +126,14 @@
       "path": "/bin/mkdir.bin",
       "size": 13082,
       "checksum": 2356486483,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
+      "path": "/bin/mount.bin",
+      "size": 13160,
+      "checksum": 536320081,
       "uid": 0,
       "gid": 0,
       "mode": 493
@@ -171,6 +187,14 @@
       "mode": 493
     },
     {
+      "path": "/bin/umount.bin",
+      "size": 13153,
+      "checksum": 2214772808,
+      "uid": 0,
+      "gid": 0,
+      "mode": 493
+    },
+    {
       "path": "/bin/user.bin",
       "size": 13082,
       "checksum": 95984858,
@@ -180,8 +204,8 @@
     },
     {
       "path": "/etc/fstab",
-      "size": 62,
-      "checksum": 2415913976,
+      "size": 142,
+      "checksum": 715095052,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -387,6 +411,14 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/bin/lsblk.asm",
+      "size": 189,
+      "checksum": 2968923028,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/bin/make.asm",
       "size": 17347,
       "checksum": 1007666780,
@@ -398,6 +430,14 @@
       "path": "/usr/src/pcos/system/unix/bin/mkdir.asm",
       "size": 69,
       "checksum": 1084248547,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/mount.asm",
+      "size": 363,
+      "checksum": 3534938951,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -435,6 +475,14 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/bin/scanner.asm",
+      "size": 149,
+      "checksum": 768248118,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/bin/sh.asm",
       "size": 15926,
       "checksum": 1968587609,
@@ -454,6 +502,14 @@
       "path": "/usr/src/pcos/system/unix/bin/top.asm",
       "size": 4070,
       "checksum": 4030762278,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/bin/umount.asm",
+      "size": 172,
+      "checksum": 3463997565,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -611,6 +667,14 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/build/lsblk.bin",
+      "size": 13172,
+      "checksum": 612159644,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/build/make.bin",
       "size": 10549,
       "checksum": 3735759982,
@@ -622,6 +686,14 @@
       "path": "/usr/src/pcos/system/unix/build/mkdir.bin",
       "size": 13082,
       "checksum": 2356486483,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/build/mount.bin",
+      "size": 13160,
+      "checksum": 536320081,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -683,6 +755,14 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/build/umount.bin",
+      "size": 13153,
+      "checksum": 2214772808,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/build/user.bin",
       "size": 13082,
       "checksum": 95984858,
@@ -692,8 +772,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/etc/fstab",
-      "size": 62,
-      "checksum": 2415913976,
+      "size": 142,
+      "checksum": 715095052,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -734,6 +814,14 @@
       "path": "/usr/src/pcos/system/unix/etc/shadow",
       "size": 123,
       "checksum": 23732359,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
+      "path": "/usr/src/pcos/system/unix/FILESYSTEM.md",
+      "size": 4147,
+      "checksum": 3103998367,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -828,8 +916,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/install-manifest.json",
-      "size": 3854,
-      "checksum": 1700996081,
+      "size": 4333,
+      "checksum": 3077934300,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -947,6 +1035,14 @@
       "mode": 420
     },
     {
+      "path": "/usr/src/pcos/system/unix/lib/README.md",
+      "size": 743,
+      "checksum": 2033516228,
+      "uid": 0,
+      "gid": 0,
+      "mode": 420
+    },
+    {
       "path": "/usr/src/pcos/system/unix/lib/shell-parser.asm",
       "size": 5635,
       "checksum": 748850725,
@@ -1011,6 +1107,6 @@
       "mode": 420
     }
   ],
-  "requiredBytes": 862237,
+  "requiredBytes": 947759,
   "bootFile": "kernel.bin"
 }

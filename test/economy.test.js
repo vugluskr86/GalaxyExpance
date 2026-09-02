@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { WorldSave, loadWorld } from "../src/game/savegame.js";
 import { makeItem } from "../src/game/items.js";
 import { Propulsion } from "../src/game/propulsion.js";
-import { baseMarket, buyGoods, changeCredits, changeReputation, changeStock, economicDay, economicTick, ensureEconomy, landingAccess, marketAccess, marketQuote, reputationFor, resolveBlackMarketRisk, sellGoods } from "../src/game/economy.js";
+import { baseMarket, buyGoods, changeCredits, changeReputation, changeStock, economicDay, economicTick, ensureEconomy, landingAccess, marketAccess, marketProfileFor, marketQuote, productionFor, reputationFor, resolveBlackMarketRisk, sellGoods } from "../src/game/economy.js";
 import { acceptContract, advanceContracts, completeContract, contractsAt, contractsForSystem, generateContracts } from "../src/game/contracts.js";
 
 const location="sys-demo/planet-0";
@@ -51,6 +51,14 @@ test("settlement specialization creates visibly different production markets",()
   const oreAtMine=marketQuote(world,"mine", "ore",mining);
   assert.ok(foodAtFarm.stock>foodAtMine.stock,"farm exports food");
   assert.ok(oreAtMine.stock>oreAtFarm.stock,"mine exports ore");
+});
+
+test("surface resources and technology deterministically affect local production",()=>{
+  const ore={id:"ore",category:"industrial",producedBy:["mining"],consumedBy:[]};
+  const rich=marketProfileFor({specialization:"mining",population:.6,techLevel:4},{surface:{minerals:.9}});
+  const poor=marketProfileFor({specialization:"mining",population:.6,techLevel:1},{surface:{minerals:.1}});
+  assert.ok(productionFor(ore,rich)>productionFor(ore,poor));
+  assert.equal(productionFor(ore,rich),productionFor(ore,marketProfileFor({specialization:"mining",population:.6,techLevel:4},{surface:{minerals:.9}})));
 });
 
 test("buy and sell move real cargo, credits, stock and market price together",()=>{

@@ -26,6 +26,16 @@ export class SceneManager {
     this.current?.resume?.();
     this.onChange?.();
   }
+  /** Return to an already opened point in the path without recreating it. */
+  navigateTo(index){
+    if(!Number.isInteger(index)||index<0||index>=this.stack.length)return false;
+    if(index===this.stack.length-1)return true;
+    this.current?.leave?.();
+    this.stack.splice(index+1);
+    this.current?.resume?.();
+    this.onChange?.();
+    return true;
+  }
   /** Replace the navigation path while keeping scenes attached to shared canvases. */
   setStack(scenes){
     this.current?.leave?.();
@@ -38,6 +48,20 @@ export class SceneManager {
     this.onChange?.();
   }
   crumbs(){ return this.stack.map(s => s.crumb || "?"); }
+  reasonText(reason){
+    const key={
+      "no-hyperdrive":"actionNeedHyperdrive", "no-capacitor":"actionNeedCapacitor",
+      "no-power":"actionNeedPower", "overload":"actionOverloaded",
+      "range":"actionOutOfRange", "energy":"actionNeedEnergy",
+      "antimatter":"actionNeedAntimatter", "credits":"actionNeedCredits",
+      "stock":"actionNoStock", "cargo":"actionNeedCargo", "capacity":"actionNoCapacity",
+      "license":"actionNeedLicense", "illegal":"actionIllegal", "no-data":"actionNoData",
+      "no-computer":"actionNeedComputer", "no-scanner":"actionNeedScanner",
+      "no-miner":"actionNeedMiner", "unscanned":"actionNeedScan",
+      "unavailable":"actionUnavailable"
+    }[reason];
+    return key?t(`ui.${key}`):String(reason||"").replaceAll("-"," ");
+  }
   /** A user action must never fail only in the browser console or through a
    * discarded false return.  Scenes and Panel use this one visible channel
    * for requirements, warnings and unexpected errors. */
@@ -50,7 +74,7 @@ export class SceneManager {
   }
   actionResult(result,{fallback=null}={}){
     if(result?.ok===false){
-      const reason=String(result.message||result.reason||"").replaceAll("-"," ");
+      const reason=this.reasonText(result.message||result.reason);
       this.notify(reason?t("ui.actionFailedReason",{reason}):t("ui.actionUnavailable"),{level:"error"});
       return false;
     }

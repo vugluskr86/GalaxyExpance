@@ -20,19 +20,24 @@ export function bakeSystemNebula(neb){
   const [h1, h2] = NEB_HUES[neb.hue % NEB_HUES.length];
   const c1 = hex2rgb(h1), c2 = hex2rgb(h2);
   const s1 = Math.floor(rng()*99999), s2 = Math.floor(rng()*99999), s3 = Math.floor(rng()*99999);
+  const edgeSeed=Math.floor(rng()*99999),angle=rng()*Math.PI,aspect=0.68+rng()*0.5;
+  const ca=Math.cos(angle),sa=Math.sin(angle);
   const sc = 0.028 / neb.scale;
-  const marg = N*0.16;
   for(let y=0; y<N; y++){
     for(let x=0; x<N; x++){
       const o = (y*N + x)*4;
       const bay = BAYER[(y & 3)*4 + (x & 3)];
-      const ex = smoothf(Math.min(1, Math.min(x, N-1-x)/marg));
-      const ey = smoothf(Math.min(1, Math.min(y, N-1-y)/marg));
-      const fall = ex*ey;
-      if (fall <= 0.02){ d[o+3]=0; continue; }
+      /* A noisy, rotated ellipse gives the cloud a real silhouette instead
+       * of fading a full rectangular sprite at its four edges. */
+      const ux=(x+.5)/N*2-1,uy=(y+.5)/N*2-1;
+      const rx=(ux*ca-uy*sa)/aspect,ry=ux*sa+uy*ca;
+      const radial=Math.hypot(rx,ry);
+      const edge=0.66+fbm((x+37)*0.045,(y+19)*0.045,5.2,edgeSeed,3)*0.54;
+      const fall=smoothf(Math.max(0,Math.min(1,(edge-radial)/0.34)));
+      if(fall<=0.01){d[o+3]=0;continue;}
       const n = fbm(x*sc, y*sc, 3.7, s1, 4);
       const hole = fbm(x*0.05, y*0.05, 8.1, s3, 3);
-      let dens = ((n - 0.46)*2.4*neb.dens - Math.max(0, (hole-0.62))*2.0 + bay*0.12) * fall;
+      let dens=((n-0.46)*2.4*neb.dens-Math.max(0,(hole-0.62))*2.0+bay*0.12)*fall;
       if (dens <= 0){ d[o+3]=0; continue; }
       const mix = fbm(x*0.04, y*0.04, 5.5, s2, 3);
       const col = lerp3(c1, c2, Math.min(1, Math.max(0, (mix-0.3)*2.5)));

@@ -34,24 +34,33 @@ export const msToDu    = ms => ms / DU_M;          // м/с → du/с
 export const duToMs    = du => du * DU_M;          // du/с → м/с
 export const accMsToDu = a  => a / DU_M;           // м/с² → du/с²
 
+/** Formats a raw number for UI readouts without ever showing NaN. */
+export function fmtNumber(value,digits=0,fallback="—"){
+  const number=Number(value);
+  return Number.isFinite(number)?number.toFixed(digits):fallback;
+}
 export function fmtSpeed(duPerS){
   const ms = duPerS * DU_M;
+  if(!Number.isFinite(ms))return "—";
   if (Math.abs(ms) >= 1e7) return (ms/299792458).toFixed(2) + " c";
   if (Math.abs(ms) >= 1000) return (ms/1000).toFixed(2) + " км/с";
   return Math.round(ms) + " м/с";
 }
 export function fmtDist(du){
   const km = du * (DU_M/1000);
+  if(!Number.isFinite(km))return "—";
   if (Math.abs(km) >= 1e6) return (km/1e6).toFixed(2) + " млн км";
   if (Math.abs(km) >= 1e4) return Math.round(km/1000) + " тыс. км";
   return Math.round(km).toLocaleString("ru-RU") + " км";
 }
 export function fmtDv(ms){
+  if (Number.isNaN(Number(ms))) return "—";
   if (!isFinite(ms)) return "∞";
   if (Math.abs(ms) >= 1000) return (ms/1000).toFixed(2) + " км/с";
   return Math.round(ms) + " м/с";
 }
 export function fmtTime(sec){
+  if (Number.isNaN(Number(sec))) return "—";
   if (!isFinite(sec)) return "∞";
   const s = Math.abs(Math.round(sec));
   const sign = sec < 0 ? "−" : "";
@@ -63,9 +72,11 @@ export function fmtTime(sec){
   return `${sign}${ss}с`;
 }
 export function fmtMass(t){
+  if(!Number.isFinite(Number(t)))return "—";
   if (t >= 1000) return (t/1000).toFixed(2) + " кт";
   return t.toFixed(1) + " т";
 }
 export function fmtAcc(duPerS2){
+  if(!Number.isFinite(Number(duPerS2)))return "—";
   return (duPerS2 * DU_M).toFixed(2) + " м/с²";
 }

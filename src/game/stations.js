@@ -1,4 +1,5 @@
 import { stationId } from "../core/ids.js";
+import { hash2i, mulberry32 } from "../core/rng.js";
 import { CATALOG, makeItem } from "./items.js";
 import { changeCredits, ensureEconomy, reputationFor } from "./economy.js";
 import { crewBonus, gainSkill, recordStat, skillLevel } from "./progression.js";
@@ -18,8 +19,10 @@ export function stationsForSettlement(settlement,{systemId:knownSystemId,planetI
   if(!settlement)return [];
   const specialization=settlement.specialization||"general",tech=Number(settlement.techLevel||1);
   const security=Number(settlement.security||0),population=Number(settlement.population||0);
-  const kinds=["trade"];
-  if(["industrial","mining","military"].includes(specialization)||tech>=3)kinds.push("shipyard");
+  /* Every inhabited settlement has at least a basic dockyard. Higher tech
+     changes its deterministic catalogue, so a frontier world can sell a
+     starter hull while an advanced world exposes specialist equipment. */
+  const kinds=["trade","shipyard"];
   if(specialization==="military"||security>=.72)kinds.push("military");
   if(specialization==="science"||tech>=4)kinds.push("science");
   if(["agri","science"].includes(specialization)||population>=.7)kinds.push("medical");
@@ -34,14 +37,23 @@ export function stationsForSettlement(settlement,{systemId:knownSystemId,planetI
 
 export const stationByKind=(settlement,kind,options)=>stationsForSettlement(settlement,options).find(station=>station.kind===kind)||null;
 
-/** Service-only stock. Goods stay in TradeScene so buy/sell always shares one market. */
-export function stationCatalog(kind){
+/** Service inventory is generated from the dock identity and level. A module
+ * bought here is still created through makeItem(), therefore every fitted
+ * part remains a unique instance rather than a shared catalogue object. */
+export function stationCatalog(kind,{station=null}={}){
   const slots={
     shipyard:["hull","engine","tank","scoop","reactor","shield","droid","computer","hyperdrive","capacitor","mining"],
     military:["weapon","shield","reactor"], science:["computer","gpu","cpu","ram","drive","peripheral"],
     medical:["droid"], pirate:["weapon","shield","reactor","scoop"]
   }[kind]||[];
-  return CATALOG.filter(item=>slots.includes(item.slot));
+  const available=CATALOG.filter(item=>slots.includes(item.slot));
+  if(!station)return available;
+  const seed=[...String(station.id||station.kind)].reduce((value,char)=>hash2i(value,char.codePointAt(0),station.level||1),station.level||1);
+  return available.filter((item,index)=>{
+    if((item.cls||1)>Math.max(2,(station.level||1)+1))return false;
+    if(item.slot==="hull")return true;
+    return mulberry32(hash2i(seed,index,item.cls||1))()>.18;
+  });
 }
 
 function licenses(world){
@@ -83,7 +95,7 @@ export function equipmentPrice(world,station,item){
 /** Buy and install a module atomically from a compatible specialist dock. */
 export function installStationModule(world,station,context,ship,itemId){
   const item=CATALOG.find(entry=>entry.id===itemId);
-  if(!item||!stationCatalog(station.kind).includes(item))return {ok:false,reason:"unavailable"};
+  if(!item||!stationCatalog(station.kind,{station}).includes(item))return {ok:false,reason:"unavailable"};
   const access=equipmentAccess(world,station,context,item);if(!access.ok)return access;
   if(!ship?.prop?.accepts(makeItem(itemId)))return {ok:false,reason:"slot"};
   const price=equipmentPrice(world,station,item);

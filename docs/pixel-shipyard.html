@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сухой док — генератор pixelart-кораблей</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#0e131b;
+  --panel:#151c26;
+  --panel-2:#1b2431;
+  --line:#2b3644;
+  --line-soft:#212b37;
+  --ink:#dbe3ec;
+  --muted:#7b8b9d;
+  --amber:#ffb03a;
+  --cyan:#54cfd8;
+  --danger:#e2604a;
+  --radius:3px;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --disp:"Chakra Petch",system-ui,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--mono);font-size:12px;line-height:1.5;
+  background-image:
+    linear-gradient(var(--line-soft) 1px,transparent 1px),
+    linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+  background-size:32px 32px;
+  background-position:-1px -1px;
+}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+
+/* ---------- шапка ---------- */
+header{
+  display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  padding:14px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#141b25,#101720);
+}
+header h1{
+  font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:.14em;
+  text-transform:uppercase;margin:0;
+}
+header h1 b{color:var(--amber);font-weight:700}
+.hazard{
+  flex:1;min-width:60px;height:9px;border:1px solid var(--line);
+  background:repeating-linear-gradient(45deg,#33291a 0 7px,#0f141c 7px 14px);
+}
+header .meta{color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-size:10px}
+
+/* ---------- сетка ---------- */
+.app{display:grid;grid-template-columns:340px minmax(0,1fr) 300px;gap:0;min-height:calc(100vh - 52px)}
+.col{min-width:0}
+.rail{border-right:1px solid var(--line);background:var(--panel);overflow:auto;max-height:calc(100vh - 52px)}
+.rail.right{border-right:0;border-left:1px solid var(--line)}
+.stage{padding:24px;display:flex;flex-direction:column;gap:18px;align-items:center;background:radial-gradient(circle at 50% 18%,#182335 0,#0e131b 46%,#090d13 100%)}
+
+/* ---------- группы настроек ---------- */
+.group{border-bottom:1px solid var(--line-soft)}
+.group>summary{
+  cursor:pointer;list-style:none;padding:10px 14px;
+  font-family:var(--disp);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;background:var(--panel-2);
+}
+.group>summary::-webkit-details-marker{display:none}
+.group>summary::before{content:"";width:6px;height:6px;background:var(--cyan);transform:rotate(45deg);flex:none}
+.group[open]>summary::before{background:var(--amber)}
+.group>summary:hover{color:#fff}
+.body{padding:10px 14px 14px}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;margin:0 0 9px}
+.row label{color:var(--muted);font-size:11px}
+.row .val{color:var(--amber);font-size:11px;font-variant-numeric:tabular-nums}
+.row input[type=range]{grid-column:1/-1;width:100%;margin:0;accent-color:var(--cyan);height:16px}
+.row select,.row input[type=number],.row input[type=text]{
+  grid-column:1/-1;width:100%;background:#0d131b;border:1px solid var(--line);
+  border-radius:var(--radius);padding:5px 7px;
+}
+.row.inline{grid-template-columns:auto 1fr}
+.row.inline input[type=checkbox]{grid-column:auto;width:14px;height:14px;accent-color:var(--amber);margin:0}
+.row.inline label{grid-column:auto;color:var(--ink);font-size:11px}
+.hint{color:var(--muted);font-size:10px;margin:-4px 0 10px;line-height:1.4}
+
+/* ---------- кнопки ---------- */
+.btn{
+  background:#0d131b;border:1px solid var(--line);border-radius:var(--radius);
+  padding:7px 10px;cursor:pointer;letter-spacing:.06em;text-transform:uppercase;font-size:10.5px;
+  font-family:var(--disp);font-weight:600;
+}
+.btn:hover{border-color:var(--cyan);color:#fff}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#1a1206}
+.btn.primary:hover{background:#ffc262;color:#150e04}
+.btn.ghost{border-style:dashed}
+.btn.mini{padding:4px 7px;font-size:10px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.btns.grid2{display:grid;grid-template-columns:1fr 1fr}
+
+/* ---------- док ---------- */
+.dock{position:relative;padding:30px;background:linear-gradient(135deg,#111a27cc,#090e16cc);border:1px solid #263447;box-shadow:inset 0 0 40px #0008}
+.dock::before,.dock::after{
+  content:"";position:absolute;width:22px;height:22px;border:2px solid var(--amber);
+}
+.dock::before{left:0;top:0;border-right:0;border-bottom:0}
+.dock::after{right:0;bottom:0;border-left:0;border-top:0}
+.dock .corner{position:absolute;width:22px;height:22px;border:2px solid var(--amber)}
+.dock .corner.tr{right:0;top:0;border-left:0;border-bottom:0}
+.dock .corner.bl{left:0;bottom:0;border-right:0;border-top:0}
+.ruler{position:absolute;color:var(--muted);font-size:9px;letter-spacing:.1em}
+.ruler.top{top:8px;left:50%;transform:translateX(-50%)}
+.ruler.side{left:6px;top:50%;transform:translateY(-50%) rotate(-90deg);transform-origin:center}
+#main{image-rendering:pixelated;display:block;background:#070b12;border:1px solid #3a485a;box-shadow:0 0 0 1px #080b10,0 18px 50px #0009}
+.stagebar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+
+/* ---------- спецификация ---------- */
+.spec{width:100%;border:1px solid var(--line);background:linear-gradient(180deg,#182231,#111923);max-width:680px;box-shadow:0 12px 32px #0005}
+.spec h3,.rail h3{
+  margin:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel-2);
+  font-family:var(--disp);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+}
+.spec dl{margin:0;padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px 14px}
+.spec div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--line-soft);padding-bottom:3px}
+.spec dt{color:var(--muted);font-size:10.5px}
+.spec dd{margin:0;color:var(--ink);font-variant-numeric:tabular-nums;font-size:11px}
+.spec dd.hi{color:var(--cyan)}
+
+/* ---------- флот / батч ---------- */
+.fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;padding:12px}
+.fleet canvas{
+  image-rendering:pixelated;width:100%;height:auto;background:#0a0e14;
+  border:1px solid var(--line);cursor:pointer;display:block;
+}
+.fleet canvas:hover{border-color:var(--amber)}
+.fleet figure{margin:0;display:flex;flex-direction:column;gap:3px}
+.fleet figcaption{color:var(--muted);font-size:9.5px;text-align:center}
+
+/* ---------- пресеты ---------- */
+.presets{padding:12px;display:flex;flex-direction:column;gap:8px}
+.preset{display:grid;grid-template-columns:1fr auto auto;gap:5px;align-items:center;
+  border:1px solid var(--line);border-radius:var(--radius);padding:5px 6px;background:#0d131b}
+.preset span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.empty{color:var(--muted);font-size:10.5px;border:1px dashed var(--line);padding:12px;text-align:center}
+.note{color:var(--muted);font-size:10px;padding:0 12px 12px}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  background:var(--panel-2);border:1px solid var(--amber);color:var(--ink);
+  padding:8px 14px;font-size:11px;border-radius:var(--radius);opacity:0;pointer-events:none;
+  transition:opacity .2s;z-index:20;
+}
+.toast.on{opacity:1}
+.slot-legend{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;color:var(--muted);font-size:10px}
+.slot-legend span{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);padding:3px 6px;background:#0b1119}
+.slot-legend i{width:7px;height:7px;display:inline-block}
+.data-preview{width:100%;max-width:680px;border:1px solid var(--line);background:#0b1119}
+.data-preview summary{cursor:pointer;padding:8px 12px;font-family:var(--disp);letter-spacing:.1em;text-transform:uppercase;background:var(--panel-2)}
+.data-preview pre{margin:0;padding:12px;max-height:260px;overflow:auto;color:#9fdde2;font-size:10px;white-space:pre-wrap}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:1100px){
+  .app{grid-template-columns:1fr}
+  .rail,.rail.right{border:0;border-top:1px solid var(--line);max-height:none}
+  .stage{order:-1}
+}
+</style>
+  <script type="module" crossorigin src="/GalaxyExpance/assets/pixel-shipyard-Cz5IQVJD.js"></script>
+  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/modulepreload-polyfill-Dezn_h7o.js">
+  <link rel="modulepreload" crossorigin href="/GalaxyExpance/assets/ship-render-CWW2clyP.js">
+</head>
+<body>
+
+<header>
+  <h1>Сухой<b>·</b>Док</h1>
+  <span class="meta">процедурные корпуса · 5 алгоритмов · wfc</span>
+  <div class="hazard" aria-hidden="true"></div>
+  <span class="meta" id="seedTag">seed —</span>
+</header>
+
+<div class="app">
+
+  <!-- ЛЕВЫЙ РЕЛЬС: настройки -->
+  <div class="col rail" id="controls"></div>
+
+  <!-- ЦЕНТР: док -->
+  <div class="col stage">
+    <div class="dock">
+      <i class="corner tr"></i><i class="corner bl"></i>
+      <span class="ruler top" id="rulerTop">— px</span>
+      <span class="ruler side" id="rulerSide">— px</span>
+      <canvas id="main" width="400" height="500"></canvas>
+    </div>
+
+    <div class="stagebar">
+      <button class="btn primary" id="bNew">Новый корабль</button>
+      <button class="btn" id="bRegen">Перегенерировать</button>
+      <button class="btn" id="bRandom">Случайно всё</button>
+      <button class="btn" id="bPng">Скачать PNG</button>
+      <button class="btn primary" id="bPackage">PNG + данные</button>
+      <button class="btn" id="bJson">Скачать JSON</button>
+      <button class="btn" id="bSheet">Скачать флот</button>
+    </div>
+
+    <div class="slot-legend"><span><i style="background:#ffb03a"></i>двигатель</span><span><i style="background:#e2604a"></i>оружие</span><span><i style="background:#54cfd8"></i>кабина</span><span><i style="background:#b78cff"></i>служебный слот</span></div>
+
+    <div class="spec">
+      <h3>Спецификация и слоты</h3>
+      <dl id="spec"></dl>
+    </div>
+    <details class="data-preview">
+      <summary>Предпросмотр данных корабля</summary>
+      <pre id="dataPreview"></pre>
+    </details>
+  </div>
+
+  <!-- ПРАВЫЙ РЕЛЬС: пресеты + флот -->
+  <div class="col rail right">
+    <h3>Пресеты</h3>
+    <div class="presets">
+      <div class="row"><input type="text" id="pName" placeholder="имя пресета"></div>
+      <div class="btns grid2">
+        <button class="btn" id="bSave">Сохранить</button>
+        <button class="btn" id="bCopy">Копировать JSON</button>
+      </div>
+      <div class="btns grid2">
+        <button class="btn ghost" id="bExport">Экспорт файла</button>
+        <button class="btn ghost" id="bImport">Импорт файла</button>
+      </div>
+      <div id="presetList"></div>
+      <input type="file" id="fileIn" accept="application/json" hidden>
+    </div>
+    <h3>Флот</h3>
+    <div class="fleet" id="fleet"></div>
+    <p class="note">Клик по эскизу — загрузить его seed в док. Пробел — новый корабль.</p>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+</body>
+</html>

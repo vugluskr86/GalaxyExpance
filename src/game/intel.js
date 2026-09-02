@@ -41,8 +41,8 @@ function baseMap(scene){
  * at /usr/bin/scanner.bin; it is never faked as an in-memory .app file. */
 export function ensureSystemMap(world,scene){
   const intel=ensureIntel(world),id=systemKey(scene);
-  const entry=intel.systems[id]??(intel.systems[id]={baseMap:baseMap(scene),records:{},scanner:{frequency:500,bearing:0,beam:70,polarization:"linear",rxRate:50,txRate:50,dataVolume:50,mode:"spectrum"}});
-  entry.baseMap??=baseMap(scene);entry.records??={};
+  const entry=intel.systems[id]??(intel.systems[id]={baseMap:baseMap(scene),records:{},scans:{},scanner:{frequency:500,bearing:0,beam:70,polarization:"linear",rxRate:50,txRate:50,dataVolume:50,mode:"spectrum"}});
+  entry.baseMap??=baseMap(scene);entry.records??={};entry.scans??={};
   entry.scanner={frequency:500,bearing:0,beam:70,polarization:"linear",rxRate:50,txRate:50,dataVolume:50,mode:"spectrum",...(entry.scanner||{})};
   const computer=scanComputer(scene?.playerShip?.prop);
   if(computer?.memory){
@@ -90,7 +90,7 @@ export function scanReadiness(scene,ref,{surface=false,requiresProbe=false,compu
 
 /** Resolve a tunable spectrum scan. The actual geometry is deterministic, but
  * the player must match frequency, antenna bearing, beam and polarization. */
-export function executeSpectrumScan(world,scene,ref,settings=scanSettings(world,scene),options={}){
+export function scanEvaluation(scene,ref,settings,options={}){
   const ready=scanReadiness(scene,ref,options);if(!ready.ok)return {ok:false,...ready};
   const signature=signalSignature(scene,ref);
   const freq=1-Math.min(1,Math.abs((settings.frequency||0)-signature.frequency)/Math.max(25,signature.band*3));
@@ -100,16 +100,47 @@ export function executeSpectrumScan(world,scene,ref,settings=scanSettings(world,
   const packet=.7+clamp((settings.dataVolume||0)/100)*.3;
   const quality=clamp((freq*.52+bearing*.32+polar*.16)*ready.scan.signal*ready.comm.signal*signature.strength*throughput*packet);
   if(quality<.28)return {ok:false,reason:"weak-signal",quality,signature,ready};
-  const tier=Math.min(3,quality>.79?3:quality>.55?2:1);
+  return {ok:true,quality,signature,ready};
+}
+
+function saveSpectrumRecord(world,scene,ref,settings,evaluation,tier){
+  const {quality,signature}=evaluation;
+  const packet=.7+clamp((settings.dataVolume||0)/100)*.3;
   const target=ref.kind==="ship"?scene.npcs?.find(npc=>npc.name===(ref.id||ref.name))?.ship:scene.obj?.(ref),record={
     ref:{...ref},kind:ref.kind,tier,quality:Number(quality.toFixed(3)),frequency:signature.frequency,
     discoveredDay:ensureEconomy(world).day,sold:false,value:Math.round((160+tier*220)*quality*packet),source:"spectrum",dataVolume:settings.dataVolume||0,mode:settings.mode||"spectrum",
-    mineralHint:target?.deposit?.resourceId||target?.surface?.minerals>.45?"mineral":null,
+    mineralHint:target?.deposit?.resourceId||(target?.surface?.minerals>.45?"mineral":null),
     lifeHint:target?.surface?.vegetation>.35?"possible":null,
     surfaceHint:target?.surface?"profile":"unknown"
   };
   const entry=ensureSystemMap(world,scene);entry.records[refKey(ref)]={...(entry.records[refKey(ref)]||{}),...record};
-  return {ok:true,record,quality,signature,ready};
+  return entry.records[refKey(ref)];
+}
+
+/** One deliberate capture pass for the interactive scanner.  Each press
+ * stores progress and immediately exposes the corresponding data tier, which
+ * makes returning to the system map visibly reflect the survey. */
+export function advanceSpectrumScan(world,scene,ref,settings=scanSettings(world,scene),options={}){
+  const evaluation=scanEvaluation(scene,ref,settings,options);if(!evaluation.ok)return evaluation;
+  const entry=ensureSystemMap(world,scene),key=refKey(ref),previous=entry.scans[key]||{progress:0,passes:0};
+  const gain=Number((.16+evaluation.quality*.34).toFixed(3));
+  const progress=clamp(Number((previous.progress+gain).toFixed(3)),0,1);
+  const tier=Math.min(3,Math.max(1,Math.ceil(progress*3)));
+  entry.scans[key]={ref:{...ref},progress,passes:previous.passes+1,quality:evaluation.quality,updatedDay:ensureEconomy(world).day,complete:progress>=1};
+  const record=saveSpectrumRecord(world,scene,ref,settings,evaluation,tier);
+  return {ok:true,record,progress,gain,complete:progress>=1,...evaluation};
+}
+
+export function scanProgress(world,scene,ref){return ensureSystemMap(world,scene).scans[refKey(ref)]||{progress:0,passes:0,complete:false};}
+
+/** Compatibility API for scripts and probes: a resolved scan represents a
+ * complete capture instead of bypassing the same deterministic evaluation. */
+export function executeSpectrumScan(world,scene,ref,settings=scanSettings(world,scene),options={}){
+  const evaluation=scanEvaluation(scene,ref,settings,options);if(!evaluation.ok)return evaluation;
+  const tier=Math.min(3,evaluation.quality>.79?3:evaluation.quality>.55?2:1);
+  const entry=ensureSystemMap(world,scene);entry.scans[refKey(ref)]={ref:{...ref},progress:1,passes:1,quality:evaluation.quality,updatedDay:ensureEconomy(world).day,complete:true};
+  const record=saveSpectrumRecord(world,scene,ref,settings,evaluation,tier);
+  return {ok:true,record,...evaluation};
 }
 
 export function recordProbeData(world,scene,mission,report={}){

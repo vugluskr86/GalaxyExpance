@@ -17,7 +17,7 @@ examples/c/scanner.c
   -> /usr/bin/scanner.bin на установочном диске PCOS
 ```
 
-Программа не вызывает `SCANNER_OPEN`, syscall `0x55`, `ScannerScene` или иной специальный JS-интерфейс. Оба окна из `docs/design/SCAN_DESIGN.md` рисует сам бинарник:
+Программа не вызывает `SCANNER_OPEN`, syscall `0x55`, `ScannerScene` или иной специальный JS-интерфейс. Оба окна из `../design/SCAN_DESIGN.md` рисует сам бинарник:
 
 - System Scanner;
 - Planetary Survey / Probe Control.

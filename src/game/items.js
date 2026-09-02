@@ -1,6 +1,9 @@
 import { ComputerFirmware, ComputerMemory } from "./computer.js";
 import { ComputerRuntime } from "./cpu.js";
 import { INSTALLER_BINARY, INSTALL_PCFD_BASE64 } from "./install-media.generated.js";
+import { SCANNER_BIN } from "./scanner-generated.js";
+import { InodeFS } from "./vfs.js";
+import { INODE_TYPES } from "./protected-mode.js";
 
 /** Абстракция предмета.
  *
@@ -261,25 +264,66 @@ export const CATALOG = [
     mass:0.12, price:300000, stats:{ capacityKb:1024 } },
   { id:"ram_4096", slot:"ram", cls:4, rating:"S", name:"RAM ОЗУ-4096",
     mass:0.12, price:300000, stats:{ capacityKb:4096 } },
-  { id:"drive_magnetic", slot:"drive", cls:1, rating:"E", name:"Магнитный диск МД-32",
-    mass:0.30, price:12000, stats:{ driveType:"magnetic", capacityKb:32 } },
+  /* drive_magnetic is a tape recorder, not the tape itself.  The data stays
+     on an individual removable medium instance, including after ejection. */
+  { id:"drive_magnetic", slot:"drive", cls:1, rating:"E", name:"Магнитофон МЛ-64",
+    mass:0.30, price:12000, stats:{ driveType:"tape", removableMedia:"magnetic_tape", deviceName:"tape0" } },
   { id:"drive_chip", slot:"drive", cls:2, rating:"C", name:"Чип памяти ЧП-128",
     mass:0.08, price:74000, stats:{ driveType:"chip", capacityKb:128 } },
   { id:"drive_crystal", slot:"drive", cls:3, rating:"A", name:"Кристалл памяти КР-512",
     mass:0.04, price:360000, stats:{ driveType:"crystal", capacityKb:512 } },
-  /* Носители занимают любой универсальный периферийный разъём. */
+  /* Removable readers occupy a peripheral slot.  Their inserted medium is
+     deliberately not a child slot: a tape/disk remains a normal Item that can
+     live in cargo, be moved, saved and later inserted into another reader. */
   { id:"drive_floppy", slot:"peripheral", cls:1, rating:"E", name:"Дисковод ФД-144",
-    mass:0.24, price:18000, stats:{ driveType:"floppy", capacityKb:144, bootable:true } },
+    mass:0.24, price:18000, stats:{ driveType:"floppy", removableMedia:"magnetic_disk", deviceName:"fd0", bootable:true } },
   { id:"drive_hard", slot:"peripheral", cls:2, rating:"C", name:"Жёсткий диск ЖД-2048",
     mass:0.42, price:95000, stats:{ driveType:"hard", capacityKb:2048, bootable:true } },
   { id:"drive_hard_big", slot:"peripheral", cls:2, rating:"C", name:"Жёсткий диск ЖД-65535",
     mass:0.42, price:195000, stats:{ driveType:"hard", capacityKb:65535, bootable:true } },
   { id:"drive_installer", slot:"peripheral", cls:3, rating:"A", name:"Установочный носитель PCFD-65535",
-    mass:0.46, price:0, stats:{ driveType:"pcfd", capacityKb:65535, bootable:true, installerMedia:true } }
+    mass:0.46, price:0, stats:{ driveType:"pcfd", capacityKb:65535, bootable:true, installerMedia:true } },
+  { id:"magnetic_tape", slot:"media", cls:1, rating:"E", name:"Магнитная лента МЛ-64",
+    mass:0.05, price:4500, stats:{ mediaType:"magnetic_tape", capacityKb:64, filesystem:"pcfs" } },
+  { id:"magnetic_disk", slot:"media", cls:1, rating:"E", name:"Магнитный диск МД-144",
+    mass:0.03, price:7000, stats:{ mediaType:"magnetic_disk", capacityKb:144, filesystem:"pcfs" } },
+  { id:"magnetic_disk_scanner", slot:"media", cls:1, rating:"E", name:"Магнитный диск «PCOS Scanner»",
+    mass:0.03, price:0, stats:{ mediaType:"magnetic_disk", capacityKb:144, filesystem:"pcfs", scannerMedia:true } }
 ];
 
 export const byId = id => CATALOG.find(d => d.id === id) || null;
 export const bySlot = slot => CATALOG.filter(d => d.slot === slot);
+
+function ensureDirectory(fs,path){
+  let current=fs.readInode(fs.rootId);
+  for(const name of String(path).split("/").filter(Boolean)){
+    let id=fs.dirLookup(current,name);
+    if(!id){
+      id=fs.allocateInode(INODE_TYPES.DIRECTORY,0,0,0o755);
+      fs.dirAddEntry(current,name,id);
+    }
+    current=fs.readInode(id);
+  }
+  return current;
+}
+
+/** Creates a tiny PCFS volume for a removable medium.  It is intentionally
+ * local to the Item instance so two visually identical disks never share data. */
+function formatMedia(storage,{scanner=false}={}){
+  const blocks=Math.max(32,Math.floor((storage.ramKb*1024)/512));
+  const fs=new InodeFS(blocks);
+  if(scanner){
+    const bin=ensureDirectory(fs,"/usr/bin"),docs=ensureDirectory(fs,"/usr/share/doc/pcos-scanner");
+    let id=fs.allocateInode(INODE_TYPES.REGULAR,0,0,0o755);
+    fs.dirAddEntry(bin,"scanner.bin",id);fs.writeData(fs.readInode(id),SCANNER_BIN);
+    const readme=new TextEncoder().encode("PCOS Scanner magnetic disk\nMount: mount /dev/fd0 /mnt/scanner\nRun: scanner\n");
+    id=fs.allocateInode(INODE_TYPES.REGULAR,0,0,0o644);
+    fs.dirAddEntry(docs,"README",id);fs.writeData(fs.readInode(id),readme);
+    storage.saveBinary("scanner.bin",SCANNER_BIN);
+  }
+  storage.pcfsImage=fs.serialize();
+  storage.filesystem="pcfs";
+}
 
 /** Экземпляр предмета: определение + количество. */
 export class Item {
@@ -293,8 +337,12 @@ export class Item {
       const defaultId = this.def.defaults?.[slot.id];
       this.slots[slot.id] = defaultId ? new Item(defaultId) : null;
     }
-    if (this.slot === "drive" || this.stats.driveType){
+    if ((this.slot === "drive" || this.stats.driveType || this.stats.mediaType) && !this.stats.removableMedia){
       this.storage = new ComputerMemory(this.stats.capacityKb);
+      if(this.stats.mediaType){
+        this.storage.programs=[];
+        formatMedia(this.storage,{scanner:!!this.stats.scannerMedia});
+      }
       if(this.stats.installerMedia){
         this.storage.programs=[];
         const pcfd=Uint8Array.from(atob(INSTALL_PCFD_BASE64),char=>char.charCodeAt(0));
@@ -306,6 +354,7 @@ export class Item {
         this.storage.installationMedia=true;
       }
     }
+    if(this.stats.removableMedia)this.insertedMedia=null;
     if (this.slot === "computer"){
       this.firmware = new ComputerFirmware();
       this.runtime = new ComputerRuntime(this);
@@ -324,6 +373,14 @@ export class Item {
   get memory(){
     return this.slots.drive?.storage || Object.values(this.slots).find(item=>item?.storage)?.storage || null;
   }
+  canInsertMedia(media){
+    return !!media&&!!this.stats.removableMedia&&media.stats.mediaType===this.stats.removableMedia;
+  }
+  insertMedia(media){
+    if(!this.canInsertMedia(media))throw new Error(`Носитель несовместим с ${this.name}`);
+    const old=this.insertedMedia;this.insertedMedia=media;return old;
+  }
+  ejectMedia(){const media=this.insertedMedia;this.insertedMedia=null;return media;}
   compatibleSlot(item){
     if(!item)return null;
     if(Object.hasOwn(this.slots,item.slot))return item.slot;
@@ -350,6 +407,7 @@ export class Item {
     for (const slot of this.slotDefs){
       copy.slots[slot.id] = this.slots[slot.id]?.clone() || null;
     }
+    copy.insertedMedia=this.insertedMedia?.clone?.()||null;
     return copy;
   }
 }
@@ -371,8 +429,12 @@ export function itemStatLines(def){
   } else if (def.slot === "peripheral" && s.network){
     out.push("сеть " + s.speed + " Мбит/с", "драйвер " + s.driver);
   } else if (def.slot === "drive" || def.slot === "peripheral"){
-    const types = { magnetic:"магнитный диск", chip:"чип", crystal:"кристалл", floppy:"дисковод", hard:"жёсткий диск", pcfd:"дисковод с установочным носителем" };
-    out.push("тип: " + types[s.driveType], "память " + s.capacityKb + " КБ");
+    const types = { tape:"магнитофон", chip:"чип", crystal:"кристалл", floppy:"дисковод", hard:"жёсткий диск", pcfd:"дисковод с установочным носителем" };
+    out.push("тип: " + (types[s.driveType]||s.driveType||"накопитель"));
+    if(s.removableMedia){
+      const media={magnetic_tape:"магнитная лента",magnetic_disk:"магнитный диск"}[s.removableMedia]||s.removableMedia;
+      out.push("съёмный носитель: "+media);
+    }else if(Number.isFinite(s.capacityKb))out.push("память " + s.capacityKb + " КБ");
   } else if (def.slot === "hull"){
     out.push("трюм " + s.cargo + " т", "экипаж " + s.crew, "прочность " + s.hullInt);
   } else if (def.slot === "engine"){

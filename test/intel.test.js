@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { makeItem } from "../src/game/items.js";
 import { Propulsion } from "../src/game/propulsion.js";
 import { WorldSave } from "../src/game/savegame.js";
-import { buyDirectorySubscription, directoryEntries, ensureSystemMap, executeSpectrumScan, hasDirectorySubscription, knownTier, scanReadiness, scanSettings, signalSignature, sellResearchData } from "../src/game/intel.js";
+import { advanceSpectrumScan, buyDirectorySubscription, directoryEntries, ensureSystemMap, executeSpectrumScan, hasDirectorySubscription, knownTier, scanProgress, scanReadiness, scanSettings, signalSignature, sellResearchData } from "../src/game/intel.js";
 import { deliverProbeReports, launchProbe } from "../src/game/probes.js";
 
 function fixture(){
@@ -30,6 +30,17 @@ test("spectrum controls gate survey data and persist a tiered discovery",()=>{
   const result=executeSpectrumScan(world,scene,target,settings);
   assert.equal(result.ok,true);assert.ok(result.record.tier>=1);
   assert.equal(knownTier(world,scene,target),result.record.tier);
+});
+
+test("interactive scan packets are deterministic and reveal data before completion",()=>{
+  const first=fixture(),second=fixture();ensureSystemMap(first.world,first.scene);ensureSystemMap(second.world,second.scene);
+  for(const current of [first,second]){
+    const signature=signalSignature(current.scene,current.target),settings=scanSettings(current.world,current.scene);
+    Object.assign(settings,{frequency:signature.frequency,bearing:signature.bearing,beam:45,polarization:signature.polarization});
+    const result=advanceSpectrumScan(current.world,current.scene,current.target,settings);
+    assert.equal(result.ok,true);assert.ok(result.progress>0);assert.ok(result.record.tier>=1);
+  }
+  assert.deepEqual(scanProgress(first.world,first.scene,first.target),scanProgress(second.world,second.scene,second.target));
 });
 
 test("planetary probes require the complete scanner, antenna, computer and probe chain",()=>{

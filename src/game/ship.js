@@ -8,6 +8,7 @@ import { ManeuverNode, stateAfterNode, nodeDvVector, stateAtNode } from "./maneu
 import { DU_M } from "./units.js";
 import { AgentController, AGENT_PROFILES } from "./agents.js";
 import { makeItem } from "./items.js";
+import { drawShipyardRaster, shipyardRasterGeometry } from "./ship-render.js";
 
 export { bodyROf as bodyRadius } from "./physics.js";
 
@@ -466,20 +467,17 @@ export class Ship {
   /* ---------------- отрисовка ---------------- */
   draw(sctx, X, Y, t, zoom=0){
     const sprite=this.prop.hullStats.hullSprite||"vesta";
-    const size=Math.max(3,Math.min(22,Math.round(3+zoom*10)));
+    /* A logarithmic curve keeps a hull readable at map scale without the
+     * pronounced 1.5× wheel-step jumps produced by a linear zoom formula. */
+    const size=Math.max(4,Math.min(20,Math.round(4+Math.log2(1+Math.max(0,zoom))*7)));
     const shipyard=this.prop.slots.hull?.shipyard;
-    if(size>=6&&shipyard?.raster){
-      // Stock hulls use the same cell materials as the integrated shipyard.
-      // At this LOD each cell remains a pixel, so the generated silhouette is
-      // recognisable without turning the system map into a full-size sprite.
-      const rows=shipyard.raster,cell=Math.max(1,Math.min(3,size*2.35/Math.max(rows.length,rows[0].length)));
-      const layouts={steel:{a:"#b9d4ef",g:"#c7f7ff",e:"#2c4263",m:"#dbe5ef"},rust:{a:"#d79767",g:"#a7edf1",e:"#4a2c22",m:"#e2b58e"},alien:{a:"#67ca9b",g:"#dcff9c",e:"#205347",m:"#b8dfbf"},imperial:{a:"#f2f4f8",g:"#aee8ff",e:"#666c76",m:"#f7d98a"},neon:{a:"#c483ed",g:"#ffaae9",e:"#37265c",m:"#9cf3ff"}};
-      const colors={h:this.col,...(layouts[shipyard.palette]||layouts.steel)};
+    if(size>=5&&shipyard?.raster){
+      // Use the exact same serialised hull renderer as the shipyard and the
+      // outfitting screen; only scale and rotation are scene-specific.
+      const raw=shipyardRasterGeometry(shipyard,1),cell=Math.max(1,Math.min(3,size*2.35/Math.max(raw.columns+2,raw.rows+2)));
+      const geometry=shipyardRasterGeometry(shipyard,cell);
       sctx.save();sctx.translate(Math.round(X),Math.round(Y));sctx.rotate(this.nose+Math.PI/2);sctx.imageSmoothingEnabled=false;
-      for(let y=0;y<rows.length;y++)for(let x=0;x<rows[y].length;x++){
-        const material=rows[y][x];if(material===".")continue;
-        sctx.fillStyle=colors[material]||this.col;sctx.fillRect(Math.round((x-rows[0].length/2)*cell),Math.round((y-rows.length/2)*cell),Math.ceil(cell),Math.ceil(cell));
-      }
+      drawShipyardRaster(sctx,shipyard,{x:-geometry.width/2,y:-geometry.height/2,cell,background:null});
       sctx.restore();
       if(this.prop.shield&&size>=14){sctx.strokeStyle="rgba(143,208,255,.65)";sctx.beginPath();sctx.arc(Math.round(X),Math.round(Y),size+3,0,Math.PI*2);sctx.stroke();}
       const fire=this.mode==="cruise"||this.burning;

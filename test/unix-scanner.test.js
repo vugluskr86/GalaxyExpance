@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {Assembler,CPU} from "../src/game/cpu.js";
 import {ComputerTerminal} from "../src/game/terminal.js";
+import { SCANNER_MEDIA_MANIFEST } from "../src/game/scanner-media.generated.js";
 
 test("scanner is compiled from scanner.c and renders both SCAN_DESIGN screens inside PCVM",()=>{
   const c=fs.readFileSync(new URL("../examples/c/scanner.c",import.meta.url),"utf8");
@@ -55,4 +56,13 @@ test("graphics mode consumes raw keys without invoking the shell line editor",()
   assert.equal(prevented,true);
   assert.equal(stopped,true);
   globalThis.window=previousWindow;
+});
+
+test("scanner source disk contains the native binary, C source, ABI and documentation",()=>{
+  const paths=SCANNER_MEDIA_MANIFEST.entries.map(entry=>entry.path);
+  assert.equal(SCANNER_MEDIA_MANIFEST.entry,"/usr/bin/scanner.bin");
+  assert.equal(SCANNER_MEDIA_MANIFEST.compiler,"PCVM native C compiler");
+  for(const required of ["/usr/bin/scanner.bin","/usr/src/pcos-scanner/scanner.c","/usr/src/pcos-scanner/build/scanner.asm","/usr/include/pcos.h","/usr/share/doc/pcos-scanner/BUILD.md","/usr/share/doc/pcos-scanner/INTEGRATION.md"])
+    assert.ok(paths.includes(required),`${required} must be shipped on the scanner disk`);
+  assert.ok(fs.statSync(new URL("../system/unix/build/scanner.pcfd",import.meta.url)).size>0);
 });

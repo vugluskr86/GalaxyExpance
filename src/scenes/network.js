@@ -1,4 +1,4 @@
-import { autoWireNetwork, configureSwitch, connectNetworkPorts, disconnectNetworkPort, dhcpAll, networkCommand, networkTopology, switchConfig } from "../game/network.js";
+import { autoWireNetwork, configureScannerClient, configureSwitch, connectNetworkPorts, disconnectNetworkPort, dhcpAll, networkAddressOptions, networkCommand, networkTopology, scannerClientConfig, switchConfig } from "../game/network.js";
 import { t } from "../i18n/index.js";
 
 /** Visual wiring bay for the ship-local Ethernet bus. All cable mutations are
@@ -25,6 +25,9 @@ export class NetworkScene {
     const {nodes,links,byId,network}=networkTopology(prop),switches=nodes.filter(node=>node.kind==="switch");
     this.selectedSwitchId=switches.some(node=>node.id===this.selectedSwitchId)?this.selectedSwitchId:switches[0]?.id||null;
     const selectedSwitch=switches.find(node=>node.id===this.selectedSwitchId)||null,config=selectedSwitch?switchConfig(prop,selectedSwitch.id):null;
+    const scannerComputer=nodes.find(node=>node.kind==="computer")||null;
+    const scannerClient=scannerComputer?scannerClientConfig(prop,scannerComputer.item.instanceId):{computer:null,config:null};
+    const scanners=networkAddressOptions(prop,{kind:"scanner"}),antennas=networkAddressOptions(prop,{kind:"antenna"});
     const leases=Object.entries(network.leases||{}).map(([id,lease])=>({node:byId.get(id),lease})).filter(item=>item.node);
     const lines=nodes.filter(node=>node.kind!=="switch").map(node=>{const used=links.filter(link=>link.a===node.id||link.b===node.id).length;return {tag:node.kind.slice(0,3).toUpperCase(),label:node.name,note:`${network.addresses[node.id]||t("ui.networkUnassigned")} · ${used}/${node.ports}`,sub:`${node.mac} · ${node.driver}`,actions:switches.filter(sw=>used<node.ports).map(sw=>({label:t("ui.networkConnect"),run:()=>{const r=connectNetworkPorts(prop,node.id,sw.id);this.message=r.ok?t("ui.networkConnected"):r.reason;}}))};});
     return [
@@ -45,6 +48,11 @@ export class NetworkScene {
       ]:[]),
       {kind:"readout",label:t("ui.network"),value:`${nodes.length} ${t("ui.networkNodes")} · ${links.length} ${t("ui.networkLinks")}`},
       {kind:"buttons",items:[{label:t("ui.networkAutoWire"),run:()=>{const r=autoWireNetwork(prop);this.message=r.ok?`${t("ui.networkConnected")}: ${r.connected}`:r.reason;}},{label:"DHCP",run:()=>{dhcpAll(prop);this.run("ip");}}]},
+      ...(scannerClient.computer?[{kind:"sect",label:t("scan.networkSetup")},
+        {kind:"readout",label:t("scan.networkComputer"),value:`${scannerClient.computer.host} · ${network.addresses[scannerClient.computer.id]||t("ui.networkUnassigned")}`},
+        {kind:"select",label:t("scan.networkScanner"),options:[["",t("ui.networkUnassigned")],...scanners.map(item=>[item.address,item.label])],get:()=>scannerClient.config.scannerAddress||"",set:value=>configureScannerClient(prop,scannerComputer.item.instanceId,{scannerAddress:value})},
+        {kind:"select",label:t("scan.networkAntenna"),options:[["",t("ui.networkUnassigned")],...antennas.map(item=>[item.address,item.label])],get:()=>scannerClient.config.antennaAddress||"",set:value=>configureScannerClient(prop,scannerComputer.item.instanceId,{antennaAddress:value})}
+      ]:[]),
       {kind:"sect",label:t("ui.networkDevices")},{kind:"rows",empty:t("ui.networkNoNodes"),items:lines},
       {kind:"sect",label:t("ui.networkLinks")},{kind:"rows",empty:t("ui.networkNoLinks"),items:links.map(link=>({tag:"ETH",label:`${byId.get(link.a)?.host||link.a} ↔ ${byId.get(link.b)?.host||link.b}`,note:"cable",actions:[{label:t("ui.networkDisconnect"),warn:true,run:()=>disconnectNetworkPort(prop,link.a,link.b)}]}))},
       {kind:"sect",label:t("ui.networkDiagnostics")},{kind:"buttons",items:["ip","dhcp","netstat","ping engine","nslookup engine","curl engine/status"].map(command=>({label:command,run:()=>this.run(command)}))},

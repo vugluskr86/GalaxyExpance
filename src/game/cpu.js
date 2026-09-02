@@ -1319,7 +1319,7 @@ class BiosSetupSession {
 class InstallerSession {
   constructor(runtime,terminal,source){
     this.runtime=runtime;this.terminal=terminal;this.source=source;this.state="target";
-    this.targets=runtime.bootDevices().filter(device=>device.storage!==source.storage);
+    this.targets=runtime.bootDevices().filter(device=>device.storage&&device.storage!==source.storage);
     this.selected=0;this.rootPassword="";this.guest=true;this.error="";this.result=null;
     this.render();
   }
@@ -1391,16 +1391,28 @@ export class ComputerRuntime {
   get ramBytes(){ return (this.parts.ram?.stats.capacityKb || 0)*1024; }
   get outputMode(){ return this.parts.gpu?.stats.output || null; }
   get storage(){ return this.activeStorage || this.computer.memory; }
-  bootDevices(){
+  /** Physical storage visible to PCOS.  Reader hardware and removable media
+   * are separate Item instances, so an ejected disk disappears immediately
+   * while its files remain on that disk object in cargo. */
+  storageDevices(){
     return this.computer.slotDefs.flatMap(slot=>{
-      const item=this.parts[slot.id];
-      return item?.storage ? [{id:slot.id,name:`${slot.name}: ${item.name}`,item,storage:item.storage}] : [];
+      const reader=this.parts[slot.id];if(!reader)return [];
+      const media=reader.insertedMedia||null,storage=media?.storage||reader.storage||null;
+      if(!storage&&!reader.stats.removableMedia)return [];
+      const removable=!!reader.stats.removableMedia;
+      const name=removable?(reader.stats.deviceName||slot.id):(slot.id==="drive"?"drive0":slot.id);
+      return [{id:slot.id,name,device:`/dev/${name}`,slot,reader,media,storage,removable,
+        label:removable?`${slot.name}: ${reader.name} — ${media?.name||"носитель не вставлен"}`:`${slot.name}: ${reader.name}`}];
     });
+  }
+  bootDevices(){
+    return this.storageDevices().map(device=>({id:device.id,name:device.label,item:device.reader,
+      media:device.media,storage:device.storage,device:device.device}));
   }
   selectedBootDevice(){
     const devices=this.bootDevices(),selected=this.computer.firmware?.settings?.bootDevice;
     return devices.find(device=>device.id===selected) ||
-      devices.find(device=>device.storage.installationMedia) || devices[0] || null;
+      devices.find(device=>device.storage?.installationMedia) || devices.find(device=>device.storage) || devices[0] || null;
   }
   attachTerminal(terminal){
     if(!terminal || terminal===this._terminal)return;
@@ -1438,6 +1450,7 @@ export class ComputerRuntime {
         `RAM: ${label(this.parts.ram)} · ${this.ramBytes/1024} КБ`,
         `GPU: ${label(this.parts.gpu)} · режим ${this.outputMode || "нет"}`,
         `DRIVE: ${label(this.parts.drive)} · ${this.parts.drive?.stats.capacityKb || 0} КБ`,
+        ...this.storageDevices().map(device=>`${device.device}: ${device.label}`),
         `NVRAM: BIOS ${this.computer.firmware?.biosSource.length || 0} Б · boot ${this.selectedBootDevice()?.name || "не выбран"}`
       ],
       slots:()=>this.computer.slotDefs.map(slot=>
@@ -1447,7 +1460,10 @@ export class ComputerRuntime {
         "KEYBOARD: browser key events",
         "MOUSE: x/y/buttons/wheel",
         ...this.computer.slotDefs.filter(s=>s.id.startsWith("peripheral"))
-          .map(s=>`${s.name.toUpperCase()}: ${this.computer.slots[s.id]?.name || "пусто"}`)
+          .map(s=>{
+            const reader=this.computer.slots[s.id];
+            return `${s.name.toUpperCase()}: ${reader?.name || "пусто"}${reader?.stats.removableMedia?` · ${reader.insertedMedia?.name || "носитель не вставлен"}`:""}`;
+          })
       ],
       /** Textual ABI payload for the Assembly scanner.  Keeping formatting
        * here means the ABI exposes a copy, not mutable host equipment. */
@@ -1468,7 +1484,10 @@ export class ComputerRuntime {
         "KEYBOARD: browser key events",
         "MOUSE: x/y/buttons/wheel",
         ...this.computer.slotDefs.filter(s=>s.id.startsWith("peripheral"))
-          .map(s=>`${s.name.toUpperCase()}: ${this.computer.slots[s.id]?.name || "empty"}`)
+          .map(s=>{
+            const reader=this.computer.slots[s.id];
+            return `${s.name.toUpperCase()}: ${reader?.name || "empty"}${reader?.stats.removableMedia?` · ${reader.insertedMedia?.name || "no media"}`:""}`;
+          })
       ].join("\n")+"\n",
       openSystemScanner:()=>this.openSystemScanner?.()===true,
       pid:()=>context?.pid||0,

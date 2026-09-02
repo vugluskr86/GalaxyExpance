@@ -9,7 +9,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         game: resolve(import.meta.dirname, "index.html"),
-        "landing-sandbox": resolve(import.meta.dirname, "landing-sandbox.html")
+        "landing-sandbox": resolve(import.meta.dirname, "landing-sandbox.html"),
+        "pixel-shipyard": resolve(import.meta.dirname, "pixel-shipyard.html")
       }
     }
   },

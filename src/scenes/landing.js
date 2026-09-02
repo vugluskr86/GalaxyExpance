@@ -5,7 +5,6 @@ import { t } from "../i18n/index.js";
 import { TradeScene } from "./trade.js";
 import { StationScene } from "./station.js";
 import { OutfitScene } from "./outfit.js";
-import { BalanceLabScene } from "./balance-lab.js";
 import { configValue } from "../config/balance.js";
 import { communicationStatus, equipmentReason } from "../game/equipment.js";
 
@@ -168,7 +167,6 @@ export class LandingScene {
       /* This is navigation only: the ship remains landed and the LandingScene
        * stays on the stack, so Back returns to exactly the same surface. */
       {kind:"action",label:t("ui.toShip"),run:()=>{this.mgr.push(new OutfitScene(this.sys));return true;}},
-      {kind:"action",label:t("ui.balanceLab"),run:()=>{this.mgr.push(new BalanceLabScene(this.sys));return true;}},
       ...(this.p.settlement&&comm.ok ? [
         {kind:"action",label:t("ui.tradeCenter"),run:()=>this.mgr.push(new TradeScene(this.sys,this.selRef))},
         {kind:"action",label:t("ui.stationServices"),run:()=>this.mgr.push(new StationScene(this.sys,this.selRef))}

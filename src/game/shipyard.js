@@ -38,7 +38,7 @@ export function validateShipyardData(value){
     stats:clone(value.stats),slots,parameters:clone(value.parameters),...(raster?{raster}:{})};
 }
 
-const MATERIALS=new Set(["h","a","g","e","m"]);
+const MATERIALS=new Set(["h","a","g","e","l","m"]);
 const validRaster=(raster,width,height)=>Array.isArray(raster)&&raster.length===height&&raster.every(row=>typeof row==="string"&&row.length===width&&[...row].every(cell=>cell==="."||MATERIALS.has(cell)));
 const seeded=(seed=>{let state=seed>>>0;return()=>{state|=0;state=state+0x6d2b79f5|0;let q=Math.imul(state^state>>>15,1|state);q=q+Math.imul(q^q>>>7,61|q)^q;return((q^q>>>14)>>>0)/4294967296;};});
 
@@ -116,6 +116,12 @@ export function shipyardPngSize(image){
   return {width:cells.w*image.scale,height:cells.h*image.scale};
 }
 
+/** Top-left grid cell that lands on the raster/PNG one-cell border. Cropping
+ *  shifts the raster origin to bounds.x0/bounds.y0; otherwise it stays at 0. */
+export function shipyardRasterOffset(image){
+  return {x:image.crop?image.bounds.x0:0,y:image.crop?image.bounds.y0:0};
+}
+
 /**
  * Translate a generator grid mount into the PNG coordinate system.
  *
@@ -128,8 +134,8 @@ export function shipyardPngSize(image){
  * top-left coordinates from the interchange specification.
  */
 export function shipyardSlotToPng(slot,image){
-  const offsetX=image.crop?image.bounds.x0:0,offsetY=image.crop?image.bounds.y0:0;
-  const x=(slot.x-offsetX+1)*image.scale,y=(slot.y-offsetY+1)*image.scale;
+  const offset=shipyardRasterOffset(image);
+  const x=(slot.x-offset.x+1)*image.scale,y=(slot.y-offset.y+1)*image.scale;
   return {x,y,centerX:x+image.scale/2,centerY:y+image.scale/2};
 }
 
@@ -147,10 +153,31 @@ export function shipyardBindings(data){
   });
 }
 
+/* Old v1 exports did not have a raster.  Keep them visible after migration,
+ * but new exports always carry the exact generator mask. */
+function fallbackRaster(data){
+  const {gridWidth:width,gridHeight:height}=data.image,random=seeded(data.seed);
+  const rows=[];
+  for(let y=0;y<height;y++){
+    const t=height<=1?0:y/(height-1),half=(.10+.38*Math.sin(Math.PI*t)**.72)*(1-.16*Math.max(0,t-.8)/.2);
+    let row="";
+    for(let x=0;x<width;x++){
+      const distance=Math.abs(x-(width-1)/2)/(width/2),inside=distance<half;
+      row+=inside?(distance>half-.05?"a":random()<.04?"m":"h"):".";
+    }
+    rows.push(row);
+  }
+  for(const slot of data.slots){
+    const material=slot.type==="cockpit"?"g":slot.type==="engine"?"e":"m";
+    rows[slot.y]=rows[slot.y].slice(0,slot.x)+material+rows[slot.y].slice(slot.x+1);
+  }
+  return rows;
+}
+
 /** A save-safe custom hull payload. pngDataUrl is added only after PNG import. */
 export function makeShipyardHull(data,pngDataUrl=null){
   const normalised=validateShipyardData(data);
-  return {...normalised,...(typeof pngDataUrl==="string"?{pngDataUrl}: {})};
+  return {...normalised,raster:normalised.raster||fallbackRaster(normalised),...(typeof pngDataUrl==="string"?{pngDataUrl}: {})};
 }
 
 const imageCache=new Map();

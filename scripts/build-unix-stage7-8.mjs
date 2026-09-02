@@ -18,7 +18,7 @@ const libcNames=["crt0.asm","syscall.asm","string.asm","stdlib.asm","io.asm","pa
 const libc=libcNames.map(name=>compile(`lib/${name}`));
 const utilities=compile("lib/utilities.asm");
 const shellParser=compile("lib/shell-parser.asm");
-const names=["ls","cat","grep","cp","mv","mkdir","rm","link","chown","chgrp","user","find","ps"];
+const names=["ls","cat","grep","cp","mv","mkdir","rm","link","chown","chgrp","user","find","ps","mount","umount","lsblk"];
 const programs=[["bin/sh.asm","sh.bin",[shellParser]],
   ...names.map(name=>[`bin/${name}.asm`,`${name}.bin`,[utilities]]),
   // Scanner is now a C program (examples/c/scanner.c).  Compile it with the

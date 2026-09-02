@@ -46,10 +46,16 @@ const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 
 /** Normalize optional generator/UI data before it reaches persisted markets. */
 export function marketProfileFor(settlement=null, body=null){
+  const surface=body?.surface||settlement?.surface||{};
   return {
     specialization:settlement?.specialization||"general",
     security:clamp(Number(settlement?.security??.5),0,1),
     population:clamp(Number(settlement?.population??.4),.05,1),
+    techLevel:clamp(Math.floor(Number(settlement?.techLevel??1)),1,5),
+    minerals:clamp(Number(surface.minerals??settlement?.minerals??.35),0,1),
+    vegetation:clamp(Number(surface.vegetation??settlement?.vegetation??0),0,1),
+    liquid:clamp(Number(surface.liquid??settlement?.liquid??0),0,1),
+    volcanism:clamp(Number(surface.volcanism??settlement?.volcanism??0),0,1),
     /* Orbital distance is a small local logistics cost now. Future stages may
        replace it with route distance without invalidating saved stock deltas. */
     distance:Math.max(0,Number(body?.dist??0)), event:settlement?.event||null,
@@ -59,6 +65,34 @@ export function marketProfileFor(settlement=null, body=null){
 }
 const produces=(good,profile)=>good.producedBy.includes(profile.specialization);
 const consumes=(good,profile)=>good.consumedBy.includes(profile.specialization);
+
+/** Deterministic local production: the generated settlement and surface
+ * profile decide what an inhabited world can actually make.  No frame-time
+ * or global randomness is involved, so the same seed starts with the same
+ * industry; save data only stores stock deltas. */
+export function productionFor(good,profile){
+  const people=Math.max(1,Math.round(profile.population*4));
+  const tech=.55+profile.techLevel*.22;
+  const resource=.35+profile.minerals*.95;
+  const biosphere=.25+profile.vegetation*.85+profile.liquid*.35;
+  let factor=produces(good,profile)?1:0;
+  if(good.id==="food"||good.id==="water"||good.id==="luxury")factor*=biosphere;
+  if(good.id==="ore"||good.id==="rareMinerals"||good.category==="resource")factor*=resource;
+  if(["components","electronics","fuel","arms"].includes(good.id))factor*=tech*(.65+profile.volcanism*.25+profile.minerals*.3);
+  if(["medicine","data"].includes(good.id))factor*=tech;
+  return factor>0?Math.max(1,Math.round(people*factor)):0;
+}
+
+/** Civilisations buy food and water for their population, then buy the
+ * inputs their specialisation cannot provide locally. */
+export function demandFor(good,profile){
+  const people=Math.max(1,Math.round(profile.population*4));
+  const basic=good.category==="basic"?Math.max(1,Math.round(people*(.7+profile.techLevel*.08))):0;
+  const industrial=["ore","rareMinerals","fuel","electronics","components"].includes(good.id)
+    && ["industrial","military","science"].includes(profile.specialization)?Math.max(1,Math.round(people*(.4+profile.techLevel*.12))):0;
+  const localPenalty=produces(good,profile)?0:consumes(good,profile)?Math.max(1,Math.round(people*.7)):0;
+  return basic+industrial+localPenalty;
+}
 
 export function stableSystemId(galaxy, star){
   return systemId(galaxy.def.seed,galaxy.systemSeedOf(star));
@@ -145,8 +179,9 @@ export function baseMarket(world, locationId, context={}){
     /* Producers begin with a surplus; consumers begin nearer their desired
        reserve. This makes specializations visibly different before a player
        performs the first transaction. */
-    const target=configValue("economy.marketTargetBase")+Math.floor(rng()*configValue("economy.marketTargetRandom"))+(consumes(good,profile)?configValue("economy.consumerReserve"):0);
-    const stock=Math.max(3,target-18+Math.floor(rng()*35)+(produces(good,profile)?configValue("economy.producerSurplus"):0)-(consumes(good,profile)?12:0));
+    const target=configValue("economy.marketTargetBase")+Math.floor(rng()*configValue("economy.marketTargetRandom"))+
+      (demandFor(good,profile)>productionFor(good,profile)?configValue("economy.consumerReserve"):0);
+    const stock=Math.max(3,target-18+Math.floor(rng()*35)+(productionFor(good,profile)>demandFor(good,profile)?configValue("economy.producerSurplus"):0)-Math.min(18,demandFor(good,profile)*2));
     return [good.id,{stock,target}];
   }));
 }
@@ -267,7 +302,12 @@ export function buyGoods(world,locationId,context,propulsion,goodId,quantity=1){
   if(!access.ok)return {ok:false,reason:access.reason};
   const quote=marketQuote(world,locationId,goodId,context);
   const capacity=Math.floor(Math.max(0,propulsion.cargoCap-propulsion.cargoMass)/good.mass);
-  const flightCapacity=Math.floor(Math.max(0,propulsion.maxTakeoffMass-propulsion.mass)/good.mass);
+  /* A legacy save can already be over its hull take-off limit. It must still
+     be able to trade while docked; departure remains blocked by Propulsion's
+     own overload rule. Only a currently flyable ship has its purchase capped
+     by the remaining launch mass. */
+  const flightCapacity=propulsion.mass>propulsion.maxTakeoffMass
+    ? capacity:Math.floor(Math.max(0,propulsion.maxTakeoffMass-propulsion.mass)/good.mass);
   const accepted=Math.min(qty,quote.stock,capacity,flightCapacity);
   if(!accepted)return {ok:false,reason:quote.stock<=0?"stock":flightCapacity<=0?"overload":"capacity",quote};
   const total=quote.buyPrice*accepted;
@@ -342,8 +382,8 @@ export function economicTick(world,gameDay){
         /* Local production fills shelves; consumption removes stock. A small
            pull toward the generated reserve prevents an unattended market
            from drifting infinitely far after a temporary imbalance. */
-        const production=produces(good,profile)?Math.max(1,Math.round(4*profile.population)):0;
-        const consumption=(good.category==="basic"?2:0)+(consumes(good,profile)?Math.max(1,Math.round(3*profile.population)):0);
+        const production=productionFor(good,profile);
+        const consumption=demandFor(good,profile);
         const recovery=Math.sign(baseline[good.id].target-current);
         const delta=production-consumption+(recovery&&Math.abs(current-baseline[good.id].target)>18?recovery:0);
         const ceiling=baseline[good.id].target*3;

@@ -8,6 +8,8 @@ import { primaryState } from "../game/physics.js";
 import { knownTier } from "../game/intel.js";
 import { t } from "../i18n/index.js";
 
+const BODY_SHIP_ZOOM=1.35;
+
 export class BodyScene {
   constructor(sysScene, selRef){
     this.sys = sysScene;
@@ -199,12 +201,12 @@ export class BodyScene {
   drawShips(sctx, t){
     for(const n of this.sys.npcs){
       const p = this.shipScreenPos(n.ship);
-      if (p) n.ship.draw(sctx, p[0], p[1], t);
+      if (p) n.ship.draw(sctx, p[0], p[1], t,BODY_SHIP_ZOOM);
     }
     const ps = this.sys.playerShip;
     if (ps && ps.mode !== "landed"){
       const p = this.shipScreenPos(ps);
-      if (p) ps.draw(sctx, p[0], p[1], t);
+      if (p) ps.draw(sctx, p[0], p[1], t,BODY_SHIP_ZOOM);
     }
   }
   /** Позиция спутника на экране (центр). */

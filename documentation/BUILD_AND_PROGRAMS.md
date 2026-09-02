@@ -37,6 +37,25 @@ system/unix/build/scanner.bin
 
 Scanner обязан рисовать UI и обрабатывать ввод внутри PCVM через syscall. Вызов специальной JS-сцены вместо нативной программы запрещён архитектурным решением.
 
+## Removable-media utilities
+
+`mount.bin`, `umount.bin` and `lsblk.bin` are built with the ordinary native
+PCOS Assembly/libc pipeline from `system/unix/bin/`. They are installed into
+`/bin`, included in the PCFD installer image, and operate on the PCOS
+removable-device table (`/dev/drive0`, `/dev/fd0`, `/dev/tape0`). The mounting
+rules and the default scanner disk are described in
+[architecture/COMPUTERS.md](architecture/COMPUTERS.md).
+
+In the computer editor, select an item in **Removable media** and press
+**Insert selected medium**. The scanner disk is in cargo for new games and is
+migrated once into cargo for older player saves when absent. Insert it into
+`drive_floppy`, then mount and launch it as a normal native PCOS utility:
+
+```text
+mount /dev/fd0 /mnt/scanner
+scanner
+```
+
 ## Пересборка системных программ
 
 ```bash
