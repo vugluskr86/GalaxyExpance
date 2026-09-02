@@ -820,8 +820,8 @@
     },
     {
       "path": "/usr/src/pcos/system/unix/FILESYSTEM.md",
-      "size": 4147,
-      "checksum": 3103998367,
+      "size": 4509,
+      "checksum": 2119444704,
       "uid": 0,
       "gid": 0,
       "mode": 420
@@ -1107,6 +1107,6 @@
       "mode": 420
     }
   ],
-  "requiredBytes": 947759,
+  "requiredBytes": 948121,
   "bootFile": "kernel.bin"
 }
